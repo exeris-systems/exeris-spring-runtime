@@ -19,6 +19,7 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Auto-configuration for Exeris Pure Mode web routing and dispatcher bridge.
@@ -44,8 +45,9 @@ public class ExerisWebAutoConfiguration {
         Map<String, ExerisRequestHandler> handlers = ctx.getBeansOfType(ExerisRequestHandler.class);
         ExerisRouteRegistry.Builder builder = ExerisRouteRegistry.builder();
         for (Map.Entry<String, ExerisRequestHandler> entry : handlers.entrySet()) {
+            String beanName = Objects.requireNonNull(entry.getKey());
             ExerisRequestHandler handler = entry.getValue();
-            ExerisRoute route = handler.getClass().getAnnotation(ExerisRoute.class);
+            ExerisRoute route = ctx.findAnnotationOnBean(beanName, ExerisRoute.class);
             if (route == null) {
                 continue;
             }

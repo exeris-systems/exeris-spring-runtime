@@ -14,9 +14,10 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * Exeris runtime integration properties.
  *
  * <p>Bound from the {@code exeris.runtime.*} namespace in the Spring {@code Environment}.
- * These properties are also the source of truth for the kernel {@code ConfigProvider}
- * bridge: {@link ExerisSpringConfigProvider} reads this record to construct the kernel
- * {@code KernelSettings}.
+ * This record defines autoconfiguration and lifecycle toggles consumed by the Spring
+ * integration layer. The kernel {@code ConfigProvider} bridge is provided by
+ * {@link ExerisSpringConfigProvider}, which reads directly from the Spring
+ * {@code Environment} during bootstrap.
  *
  * <h2>Mode Semantics</h2>
  * <ul>

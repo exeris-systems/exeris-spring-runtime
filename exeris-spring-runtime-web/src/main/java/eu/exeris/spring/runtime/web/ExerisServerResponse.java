@@ -6,9 +6,18 @@
  */
 package eu.exeris.spring.runtime.web;
 
+import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpStatus;
+import eu.exeris.kernel.spi.http.HttpVersion;
+import eu.exeris.kernel.spi.memory.LoanedBuffer;
+import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import org.springframework.http.MediaType;
+
+import java.lang.foreign.MemorySegment;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Application-facing HTTP response builder for Pure Mode handlers.
@@ -62,25 +71,46 @@ public final class ExerisServerResponse {
     /**
      * Converts to the kernel {@link HttpResponse}.
      *
-     * <p>Called exclusively by {@code ExerisHttpDispatcher}. The returned
-     * {@code HttpResponse} will have its body buffer owned by the engine after
-     * {@code HttpExchange.respond()} is called.
+     * <p>Called exclusively by {@code ExerisHttpDispatcher}, which passes the
+     * protocol version from the inbound request so the response honours the same
+     * negotiated version.
      *
-     * <p>Phase 1 note: body bytes are copied into a {@code LoanedBuffer} here.
-     * Phase 2+ will allow pre-allocated {@code LoanedBuffer} pass-through.
+     * <h2>Body Allocation</h2>
+     * <p>When a body is present, this method:
+     * <ol>
+     *   <li>Acquires the per-request {@link MemoryAllocator} from
+     *       {@code KernelProviders.MEMORY_ALLOCATOR} (always bound by the engine
+     *       before invoking the handler virtual thread).</li>
+     *   <li>Allocates a network-tier {@link LoanedBuffer} sized to the body.</li>
+     *   <li>Copies the staged heap bytes to the off-heap segment (one copy — the
+     *       unavoidable cost of a String/byte[] API; zero-copy variants using a
+     *       pre-allocated buffer are a Phase 2 addition).</li>
+     *   <li>Transfers buffer ownership to the {@code HttpResponse} record; the
+     *       engine takes final ownership when the exchange is responded.</li>
+     * </ol>
      *
+     * @param version the HTTP version negotiated on the inbound connection
      * @return the kernel response; never {@code null}
      */
-    public HttpResponse toKernelResponse() {
-        /*
-         * Full implementation in Phase 1 once KernelBootstrap + HttpResponse
-         * builder API is confirmed against exeris-kernel 0.5.0-SNAPSHOT.
-         * The builder will allocate a LoanedBuffer via MemoryAllocator and
-         * copy the body bytes off-heap.
-         */
-        throw new UnsupportedOperationException(
-                "ExerisServerResponse.toKernelResponse() is not yet implemented. " +
-                "Complete Phase 1 implementation against exeris-kernel HttpResponse builder API.");
+    public HttpResponse toKernelResponse(HttpVersion version) {
+        List<HttpHeader> responseHeaders = new ArrayList<>();
+        responseHeaders.add(new HttpHeader("Content-Type", contentType));
+
+        if (body == null || body.length == 0) {
+            return HttpResponse.noBody(status, version, List.copyOf(responseHeaders));
+        }
+
+        MemoryAllocator allocator = KernelProviders.allocator();
+        LoanedBuffer buffer = allocator.allocateNetwork(body.length);
+        MemorySegment.copy(
+                MemorySegment.ofArray(body), 0L,
+                buffer.segment(), 0L,
+                body.length
+        );
+        buffer.setSize(body.length);
+        responseHeaders.add(new HttpHeader("Content-Length", String.valueOf(body.length)));
+
+        return new HttpResponse(status, version, List.copyOf(responseHeaders), buffer);
     }
 
     public HttpStatus status() { return status; }

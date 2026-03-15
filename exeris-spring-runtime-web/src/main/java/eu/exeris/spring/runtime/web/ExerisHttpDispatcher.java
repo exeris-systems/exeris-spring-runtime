@@ -6,10 +6,11 @@
  */
 package eu.exeris.spring.runtime.web;
 
+import eu.exeris.kernel.spi.exceptions.http.HttpException;
 import eu.exeris.kernel.spi.http.HttpExchange;
 import eu.exeris.kernel.spi.http.HttpHandler;
-import eu.exeris.kernel.spi.exceptions.http.HttpException;
 import eu.exeris.kernel.spi.http.HttpStatus;
+import eu.exeris.kernel.spi.http.HttpVersion;
 
 /**
  * The primary bridge between the Exeris HTTP runtime and Spring application handlers.
@@ -49,20 +50,21 @@ public final class ExerisHttpDispatcher implements HttpHandler {
 
     @Override
     public void handle(HttpExchange exchange) throws HttpException {
-        var request = new ExerisServerRequest(exchange.request());
+        var kernelRequest = exchange.request();
+        var request = new ExerisServerRequest(kernelRequest);
+        HttpVersion version = kernelRequest.version();
         try {
             var handler = routeRegistry.resolve(request.method(), request.path());
             if (handler == null) {
-                exchange.respond(errorMapper.mapStatus(HttpStatus.NOT_FOUND));
+                exchange.respond(errorMapper.mapStatus(HttpStatus.NOT_FOUND, version));
                 return;
             }
             var response = handler.handle(request);
-            exchange.respond(response.toKernelResponse());
+            exchange.respond(response.toKernelResponse(version));
         } catch (HttpException ex) {
-            exchange.respond(errorMapper.map(ex));
-            throw ex;
+            exchange.respond(errorMapper.map(ex, version));
         } catch (Exception ex) {
-            exchange.respond(errorMapper.mapUnhandled(ex));
+            exchange.respond(errorMapper.mapUnhandled(ex, version));
         }
     }
 }

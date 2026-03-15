@@ -29,7 +29,9 @@ Forbidden:
 - Cross-module utility dumping ground behaviour
 
 Rule: If a class in this module exceeds 100 lines of logic (excluding properties), it is a smell.
-Rule: If a class imports `HttpExchange` or `HttpHandler` directly, it belongs in `web`.
+Rule: `HttpExchange` imports belong in `web`. `HttpHandler` imports are allowed in
+autoconfigure only for conditional activation and optional lifecycle wiring, not for
+request-path processing.
 
 ---
 
@@ -187,7 +189,8 @@ in any module of this project when operating in pure mode:
 | `jakarta.servlet:jakarta.servlet-api` | Servlet API is not the request model in pure mode |
 | `com.zaxxer:HikariCP` | Exeris owns connection lifecycle, not HikariCP |
 
-CI must enforce these via `maven-enforcer-plugin` banned-dependencies rules.
+CI enforcement via `maven-enforcer-plugin` banned-dependencies rules is planned/phase-gated
+and should be treated as an explicit delivery target until configured in the root reactor.
 
 ---
 

@@ -26,10 +26,12 @@ import java.util.Map;
  */
 public final class ExerisRouteRegistry {
 
-    private final Map<RouteKey, ExerisRequestHandler> routes;
+    private final Map<HttpMethod, Map<String, ExerisRequestHandler>> routes;
 
-    private ExerisRouteRegistry(Map<RouteKey, ExerisRequestHandler> routes) {
-        this.routes = Map.copyOf(routes);
+    private ExerisRouteRegistry(Map<HttpMethod, Map<String, ExerisRequestHandler>> routes) {
+        Map<HttpMethod, Map<String, ExerisRequestHandler>> immutable = new HashMap<>();
+        routes.forEach((method, pathMap) -> immutable.put(method, Map.copyOf(pathMap)));
+        this.routes = Map.copyOf(immutable);
     }
 
     /**
@@ -40,7 +42,11 @@ public final class ExerisRouteRegistry {
      * @return the registered handler, or {@code null} if no route matches
      */
     public ExerisRequestHandler resolve(HttpMethod method, String path) {
-        return routes.get(new RouteKey(method, path));
+        Map<String, ExerisRequestHandler> handlersByPath = routes.get(method);
+        if (handlersByPath == null) {
+            return null;
+        }
+        return handlersByPath.get(path);
     }
 
     public static Builder builder() {
@@ -49,15 +55,16 @@ public final class ExerisRouteRegistry {
 
     public static final class Builder {
 
-        private final Map<RouteKey, ExerisRequestHandler> routes = new HashMap<>();
+        private final Map<HttpMethod, Map<String, ExerisRequestHandler>> routes = new HashMap<>();
 
         public Builder register(HttpMethod method, String path, ExerisRequestHandler handler) {
-            var key = new RouteKey(method, path);
-            if (routes.containsKey(key)) {
+            Map<String, ExerisRequestHandler> handlersByPath =
+                    routes.computeIfAbsent(method, ignored -> new HashMap<>());
+            if (handlersByPath.containsKey(path)) {
                 throw new IllegalStateException(
                         "Duplicate route registration: " + method + " " + path);
             }
-            routes.put(key, handler);
+            handlersByPath.put(path, handler);
             return this;
         }
 
@@ -65,6 +72,4 @@ public final class ExerisRouteRegistry {
             return new ExerisRouteRegistry(routes);
         }
     }
-
-    private record RouteKey(HttpMethod method, String path) {}
 }
