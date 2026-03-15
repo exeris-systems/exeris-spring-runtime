@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>eu.exeris</groupId>
+        <artifactId>exeris-spring-runtime-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>exeris-spring-runtime-data</artifactId>
+
+    <name>Exeris Spring Runtime :: Data</name>
+    <description>
+        Optional, high-risk persistence integration module.
+
+        This module is a PLANNED PLACEHOLDER and MUST NOT be activated by default.
+        It will be populated in Phase 3 only after the persistence integration
+        strategy has been validated and formally decided.
+
+        Potential scope (Phase 3, subject to architectural review):
+          - DataSource adapter backed by Exeris PersistenceEngine,
+          - thin JDBC compatibility bridge if explicitly justified,
+          - Exeris-native repository implementation strategy,
+          - explicit compatibility layer for JDBC-expecting frameworks.
+
+        DANGER: This module is the highest risk for architectural regression.
+        Designs that orbit around DataSource/HikariCP/JPA/Hibernate and treat
+        Exeris as a secondary component will be rejected.
+
+        See docs/phases/phase-3-tx-persistence.md for the full risk analysis.
+        See docs/adr/ADR-001-host-runtime-model.md sections 4.2 and 4.3.
+    </description>
+
+    <dependencies>
+
+        <!-- Kernel SPI — PersistenceProvider, PersistenceEngine, ConnectionFactory,
+             PersistenceConnection, QueryExecutor, QueryResult, StorageContext -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-spi</artifactId>
+        </dependency>
+
+        <!-- Spring TX — needed for DataSource integration and TransactionSynchronization -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-tx</artifactId>
+        </dependency>
+
+        <!-- spring-jdbc — OPTIONAL. Only added if JDBC compatibility bridge is approved.
+             Commented out by default. Activation requires explicit architectural decision. -->
+        <!--
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-jdbc</artifactId>
+        </dependency>
+        -->
+
+        <!-- Test scope -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>

@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>eu.exeris</groupId>
+        <artifactId>exeris-spring-runtime-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>exeris-spring-runtime-tx</artifactId>
+
+    <name>Exeris Spring Runtime :: Transaction</name>
+    <description>
+        Transaction boundary bridge between Exeris runtime resource semantics
+        and the Spring transaction abstraction (@Transactional, PlatformTransactionManager).
+
+        Scope (Phase 3):
+          - implements PlatformTransactionManager backed by Exeris StorageContext,
+          - bridges @Transactional semantics to Exeris transaction lifecycle,
+          - propagates ScopedValue-based transaction context across virtual threads,
+          - manages resource cleanup on commit/rollback using Exeris PersistenceConnection,
+          - Spring transaction synchronization callbacks → kernel resource release.
+
+        Phase 2 Note:
+          This module is a planned placeholder in Phase 1. It will be activated in
+          Phase 3 once the persistence integration strategy is decided.
+
+        ThreadLocal is BANNED as a transaction context carrier. ScopedValue is the
+        correct propagation mechanism aligned with the kernel's execution model.
+
+        See docs/phases/phase-3-tx-persistence.md for the full delivery plan.
+    </description>
+
+    <dependencies>
+
+        <!-- Kernel SPI — PersistenceProvider, PersistenceConnection, StorageContext -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-spi</artifactId>
+        </dependency>
+
+        <!-- Spring TX abstraction — PlatformTransactionManager, TransactionDefinition,
+             TransactionSynchronizationManager.
+             NOTE: spring-tx is the transaction abstraction only. It does NOT include
+             JDBC pool, DataSource, or ORM assumptions. Those belong in data module. -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-tx</artifactId>
+        </dependency>
+
+        <!-- Spring Context — ApplicationContext and @Transactional AOP support -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+        </dependency>
+
+        <!-- Test scope -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>

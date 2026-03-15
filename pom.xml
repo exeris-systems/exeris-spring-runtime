@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+        Exeris Spring Runtime — Root Reactor POM
+        =========================================
+        This is the top-level reactor. It orchestrates the build order and
+        centralises version management via the BOM submodule.
+
+        This project is NOT a Spring Boot starter.
+        It is a host-runtime integration layer in which:
+          - Spring provides application model, DI, and configuration ergonomics.
+          - Exeris owns transport ingress, request lifecycle, backpressure,
+            off-heap memory, provider discovery, and runtime telemetry.
+
+        See docs/architecture/overview.md for the full architectural contract.
+    -->
+
+    <groupId>eu.exeris</groupId>
+    <artifactId>exeris-spring-runtime-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>Exeris Spring Runtime :: Parent</name>
+    <description>Host-runtime integration layer enabling Spring applications to run on top of the Exeris execution model.</description>
+
+    <modules>
+        <module>exeris-spring-runtime-bom</module>
+        <module>exeris-spring-runtime-build-config</module>
+        <module>exeris-spring-boot-autoconfigure</module>
+        <module>exeris-spring-runtime-web</module>
+        <module>exeris-spring-runtime-tx</module>
+        <module>exeris-spring-runtime-data</module>
+        <module>exeris-spring-runtime-actuator</module>
+    </modules>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+        <!-- Java version — aligned with exeris-kernel -->
+        <maven.compiler.source>26</maven.compiler.source>
+        <maven.compiler.target>26</maven.compiler.target>
+        <maven.compiler.release>26</maven.compiler.release>
+
+        <!-- Dependency versions -->
+        <exeris.kernel.version>0.5.0-SNAPSHOT</exeris.kernel.version>
+        <spring.boot.version>3.4.3</spring.boot.version>
+        <spring.framework.version>6.2.4</spring.framework.version>
+
+        <!-- Build tooling -->
+        <maven.compiler.plugin.version>3.14.1</maven.compiler.plugin.version>
+        <maven.surefire.plugin.version>3.2.5</maven.surefire.plugin.version>
+        <maven.failsafe.plugin.version>3.2.5</maven.failsafe.plugin.version>
+
+            <!-- Test tooling -->
+            <archunit.version>1.3.0</archunit.version>
+
+        <!-- Test JVM args — aligned with kernel conventions -->
+        <test.jvm.args>
+            -XX:+UnlockExperimentalVMOptions
+            -XX:+UseZGC
+        </test.jvm.args>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Exeris Kernel BOM -->
+            <dependency>
+                <groupId>eu.exeris</groupId>
+                <artifactId>exeris-kernel-bom</artifactId>
+                <version>${exeris.kernel.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Spring Boot BOM — governs all Spring dependency versions.
+                 IMPORTANT: spring-boot-starter-web and spring-boot-starter-webflux
+                 are NEVER imported in any module. Tomcat, Jetty, Undertow, and Netty
+                 are excluded from the runtime classpath.
+                 Exeris owns the transport layer. -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring.boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Internal module versions -->
+            <dependency>
+                <groupId>eu.exeris</groupId>
+                <artifactId>exeris-spring-boot-autoconfigure</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>eu.exeris</groupId>
+                <artifactId>exeris-spring-runtime-web</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>eu.exeris</groupId>
+                <artifactId>exeris-spring-runtime-tx</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>eu.exeris</groupId>
+                <artifactId>exeris-spring-runtime-data</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>eu.exeris</groupId>
+                <artifactId>exeris-spring-runtime-actuator</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+                <!-- Architecture guards -->
+                <dependency>
+                    <groupId>com.tngtech.archunit</groupId>
+                    <artifactId>archunit-junit5</artifactId>
+                    <version>${archunit.version}</version>
+                    <scope>test</scope>
+                </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>${maven.compiler.plugin.version}</version>
+                    <configuration>
+                        <release>${maven.compiler.release}</release>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${maven.surefire.plugin.version}</version>
+                    <configuration>
+                        <argLine>${test.jvm.args}</argLine>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-failsafe-plugin</artifactId>
+                    <version>${maven.failsafe.plugin.version}</version>
+                    <configuration>
+                        <argLine>${test.jvm.args}</argLine>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+
+</project>

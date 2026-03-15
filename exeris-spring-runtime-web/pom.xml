@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>eu.exeris</groupId>
+        <artifactId>exeris-spring-runtime-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>exeris-spring-runtime-web</artifactId>
+
+    <name>Exeris Spring Runtime :: Web</name>
+    <description>
+        Bridge between the Exeris HTTP/transport runtime and the Spring handler
+        invocation model.
+
+        Scope in Pure Mode:
+          - implements HttpHandler (kernel SPI) as the transport-to-Spring bridge,
+          - route registration against Exeris HttpServerEngine,
+          - request/response abstraction (ExerisServerRequest / ExerisServerResponse),
+          - codec integration for body serialization without heap copies,
+          - error mapping (ExerisKernelException → HTTP status),
+          - graceful connection close coordination.
+
+        Explicitly excluded in Pure Mode:
+          - Spring DispatcherServlet, HandlerMapping, HandlerAdapter (no MVC dispatch),
+          - Servlet API, HttpServletRequest, HttpServletResponse,
+          - WebFlux ServerWebExchange or ReactorHttpHandlerAdapter.
+
+        Compatibility mode (Phase 2) will add an opt-in MVC dispatch bridge.
+        It will be clearly labelled and must not activate by default.
+
+        See docs/architecture/module-boundaries.md for enforcement rules.
+        See docs/architecture/kernel-integration-seams.md for the exact SPI seams.
+    </description>
+
+    <dependencies>
+
+        <!-- Kernel SPI — HttpHandler, HttpExchange, HttpRequest, HttpResponse,
+             TransportProvider, LoanedBuffer, MemoryAllocator, KernelProviders -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-spi</artifactId>
+        </dependency>
+
+        <!-- Kernel Core — HttpClientEngine/HttpServerEngine bootstrap coordination -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-core</artifactId>
+        </dependency>
+
+        <!-- Boot autoconfigure — lifecycle coordination and properties -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-spring-boot-autoconfigure</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+
+        <!-- Spring context — ApplicationContext, BeanFactory, SmartLifecycle -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+        </dependency>
+
+        <!-- Spring Web — HandlerMethod, MediaType, HttpMethod, HttpStatus.
+             NOTE: This is spring-web (the programming model library), NOT
+             spring-webmvc. Including spring-webmvc would pull in DispatcherServlet.
+             Including spring-boot-starter-web would pull in Tomcat.
+             Neither is permitted in pure mode. -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-web</artifactId>
+            <!-- Exclude any transitive servlet-api or tomcat pulls -->
+            <exclusions>
+                <exclusion>
+                    <groupId>jakarta.servlet</groupId>
+                    <artifactId>jakarta.servlet-api</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.tomcat.embed</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <!-- Test scope -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>
