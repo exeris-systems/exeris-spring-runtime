@@ -6,12 +6,15 @@
  */
 package eu.exeris.spring.boot.autoconfigure;
 
+import eu.exeris.kernel.spi.http.HttpHandler;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.env.Environment;
+
+import java.util.Optional;
 
 /**
  * Boot autoconfiguration entry point for the Exeris runtime integration.
@@ -50,7 +53,8 @@ public class ExerisRuntimeAutoConfiguration {
     @ConditionalOnMissingBean
     public ExerisRuntimeLifecycle exerisRuntimeLifecycle(
             ExerisRuntimeProperties properties,
-            ExerisSpringConfigProvider configProvider) {
-        return new ExerisRuntimeLifecycle(properties, configProvider);
+            ExerisSpringConfigProvider configProvider,
+            Optional<HttpHandler> httpHandler) {
+        return new ExerisRuntimeLifecycle(properties, configProvider, httpHandler);
     }
 }

@@ -33,7 +33,7 @@ class ExerisBootstrapIntegrationTest {
 
     @Test
     void contextLoads_withDefaultProperties() {
-        try (var ctx = createContext(Map.of())) {
+        try (var ctx = createContext(Map.of("exeris.runtime.auto-start", "false"))) {
             assertThat(ctx.getBeanNamesForType(ExerisRuntimeProperties.class)).hasSize(1);
             assertThat(ctx.getBeanNamesForType(ExerisSpringConfigProvider.class)).hasSize(1);
             assertThat(ctx.getBeanNamesForType(ExerisRuntimeLifecycle.class)).hasSize(1);
@@ -42,7 +42,7 @@ class ExerisBootstrapIntegrationTest {
 
     @Test
     void exerisIsEnabled_byDefault() {
-        try (var ctx = createContext(Map.of())) {
+        try (var ctx = createContext(Map.of("exeris.runtime.auto-start", "false"))) {
             ExerisRuntimeProperties props = ctx.getBean(ExerisRuntimeProperties.class);
             assertThat(props.enabled()).isTrue();
         }
@@ -58,7 +58,7 @@ class ExerisBootstrapIntegrationTest {
 
     @Test
     void defaultMode_isPure() {
-        try (var ctx = createContext(Map.of())) {
+        try (var ctx = createContext(Map.of("exeris.runtime.auto-start", "false"))) {
             ExerisRuntimeProperties props = ctx.getBean(ExerisRuntimeProperties.class);
             assertThat(props.web().mode()).isEqualTo(ExerisRuntimeProperties.Mode.PURE);
         }
@@ -66,7 +66,7 @@ class ExerisBootstrapIntegrationTest {
 
     @Test
     void configProviderPriority_is150() {
-        try (var ctx = createContext(Map.of())) {
+        try (var ctx = createContext(Map.of("exeris.runtime.auto-start", "false"))) {
             ExerisSpringConfigProvider provider = ctx.getBean(ExerisSpringConfigProvider.class);
             assertThat(provider.priority()).isEqualTo(150);
         }

@@ -7,6 +7,8 @@
 package eu.exeris.spring.boot.autoconfigure;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
+import org.springframework.boot.context.properties.bind.DefaultValue;
 
 /**
  * Exeris runtime integration properties.
@@ -26,23 +28,58 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *       via {@code exeris.runtime.web.mode=compatibility}.</li>
  * </ul>
  *
+ * <h2>Property Binding</h2>
+ * <p>This record has two constructors: the canonical constructor annotated with
+ * {@code @ConstructorBinding} (used by Spring Boot's binder) and a convenience
+ * no-arg constructor for direct instantiation outside Spring. The {@code @DefaultValue}
+ * annotations declare the authoritative defaults for each component.
+ *
  * @since 0.1.0
  */
 @ConfigurationProperties(prefix = "exeris.runtime")
 public record ExerisRuntimeProperties(
 
-        boolean enabled,
-        int port,
+        @DefaultValue("true") boolean enabled,
+        @DefaultValue("true") boolean autoStart,
+        @DefaultValue("8080") int port,
         WebProperties web,
         ShutdownProperties shutdown
 
 ) {
 
+    /**
+     * Canonical constructor anchor for Spring Boot's {@code @ConfigurationProperties} binder.
+     * Required because a convenience no-arg constructor is also present; without this
+     * annotation Spring Boot would prefer the no-arg constructor and ignore property overrides.
+     */
+    @ConstructorBinding
+    public ExerisRuntimeProperties {
+            if (web == null) {
+                web = new WebProperties();
+            }
+            if (shutdown == null) {
+                shutdown = new ShutdownProperties();
+            }
+        }
+
+    /**
+     * Convenience constructor for direct instantiation outside a Spring context.
+     * {@code @ConfigurationProperties} binding always uses the annotated canonical constructor.
+     *
+     * <p>{@code autoStart=false} keeps the lifecycle bean present in the context while
+     * preventing automatic kernel bootstrap during {@code ApplicationContext.refresh()}.
+     * Correct for tests and environments requiring manual lifecycle control.
+     */
     public ExerisRuntimeProperties() {
-        this(true, 8080, new WebProperties(), new ShutdownProperties());
+        this(true, true, 8080, new WebProperties(), new ShutdownProperties());
     }
 
-    public record WebProperties(Mode mode) {
+    public record WebProperties(@DefaultValue("pure") Mode mode) {
+
+        @ConstructorBinding
+        public WebProperties {
+        }
+
         public WebProperties() {
             this(Mode.PURE);
         }
@@ -56,7 +93,15 @@ public record ExerisRuntimeProperties(
         }
     }
 
-    public record ShutdownProperties(boolean graceful, int timeoutSeconds) {
+    public record ShutdownProperties(
+            @DefaultValue("true") boolean graceful,
+            @DefaultValue("30") int timeoutSeconds
+    ) {
+
+        @ConstructorBinding
+        public ShutdownProperties {
+        }
+
         public ShutdownProperties() {
             this(true, 30);
         }

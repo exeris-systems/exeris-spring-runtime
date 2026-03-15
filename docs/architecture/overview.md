@@ -81,6 +81,35 @@ Every feature in this repository must declare which mode it belongs to.
 
 ---
 
+## Documentation Precedence
+
+When documentation differs, use this source-of-truth hierarchy:
+
+1. **Strategic architecture truth**
+    - ADRs in `docs/adr/`
+    - `docs/architecture/module-boundaries.md`
+    - `docs/architecture/kernel-integration-seams.md`
+2. **Delivery truth**
+    - phase plans in `docs/phases/phase-*.md`
+3. **Review behavior**
+    - `.github/copilot-instructions.md`
+
+Interpretation rules:
+- ADRs define long-lived architecture intent.
+- module boundaries and integration seams define structural contracts.
+- phase docs define current implementation scope and roadmap sequence unless an ADR supersedes them.
+
+---
+
+## Canonical Roadmap Semantics
+
+- **Phase 0** proves bootstrap coexistence and Wall integrity.
+- **Phase 1** proves host-runtime legitimacy (Exeris-owned ingress path).
+- **Phase 2** adds explicitly scoped, opt-in Spring compatibility.
+- **Phase 3** expands into high-risk tx/context/persistence concerns.
+
+---
+
 ## Module Dependency Graph
 
 ```
@@ -141,7 +170,7 @@ Bootstrap order invariant:
 1. Spring `ApplicationContext` refreshes (beans wire, properties bind).
 2. `ExerisRuntimeLifecycle.start()` triggers kernel bootstrap via `KernelBootstrap`.
 3. Kernel loads providers via `ServiceLoader`, initialises all subsystems.
-4. On `KERNEL READY`: `exeris-spring-runtime-web` registers Spring handlerss as `HttpHandler` instances.
+4. On `KERNEL READY`: `exeris-spring-runtime-web` registers Spring handlers as `HttpHandler` instances.
 5. Exeris `HttpServerEngine` starts accepting ingress.
 
 Shutdown order is the exact reverse.

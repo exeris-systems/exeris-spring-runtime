@@ -37,6 +37,25 @@ Always consult the local integration docs and ADRs first, especially:
 
 If this documentation does not exist yet, you must say so and limit assumptions accordingly.
 
+### Documentation Precedence (Source of Truth Hierarchy)
+
+When documents differ, apply this order:
+
+1. **Strategic architecture truth**
+  - ADRs in `docs/adr/`
+  - `docs/architecture/module-boundaries.md`
+  - `docs/architecture/kernel-integration-seams.md`
+2. **Delivery truth**
+  - phased plans in `docs/phases/phase-*.md`
+3. **Repo-wide review behavior**
+  - this `copilot-instructions.md`
+
+Conflict resolution:
+- ADRs win on architecture intent.
+- module boundaries and integration seams win on structural contracts.
+- phase docs win on current delivery target unless explicitly superseded by ADR.
+- if disagreement is detected, state it explicitly before making strong recommendations.
+
 ---
 
 ## 🚫 Critical Bans (Integration-Level Enforcement)
@@ -225,6 +244,15 @@ When in doubt, prioritize:
 - fewer abstractions,
 - smaller compatibility surface,
 - explicit trade-offs.
+
+### ThreadLocal Rule Clarification
+
+- In pure mode and foundational runtime paths, `ThreadLocal`-based context models are banned.
+- In compatibility-scoped bridges, narrowly isolated `ThreadLocal` bridging may be acceptable when required by Spring internals, but it must be:
+  - explicitly documented,
+  - virtual-thread scoped,
+  - cleared deterministically in `finally`,
+  - isolated from pure-mode execution paths.
 
 ### 5. Honest Compatibility
 If a feature adds compatibility at the cost of performance, ownership clarity, or architectural purity, state that clearly.

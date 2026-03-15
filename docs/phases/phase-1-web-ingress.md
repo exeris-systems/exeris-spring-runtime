@@ -177,6 +177,10 @@ the request scope on the primary path.
 - Creates `ExerisHttpDispatcher` bean
 - Registers dispatcher with `HttpServerEngine` during `ExerisRuntimeLifecycle.start()`
 
+Boundary rule for this phase:
+- autoconfigure only wires and activates dispatcher components;
+- dispatcher implementation, request handling, routing, codec behavior, and error mapping remain in `exeris-spring-runtime-web`.
+
 Activation condition: `@ConditionalOnClass(ExerisHttpDispatcher.class)` and
 `@ConditionalOnProperty("exeris.runtime.enabled", matchIfMissing = true)`.
 

@@ -1,4 +1,4 @@
-# ADR-001: Exeris as Host Runtime for Spring Applications
+# ADR-010: Exeris as Host Runtime for Spring Applications
 
 | Attribute | Value                                                                 |
 |:----------|:----------------------------------------------------------------------|
@@ -64,12 +64,14 @@ It bridges Spring application model semantics to Exeris runtime ownership.
 ### 3.1 Ownership Model
 
 **Spring owns:**
+
 - Dependency injection and bean lifecycle
 - Configuration binding
 - Application logic composition
 - Optionally: management/control-plane (actuator)
 
 **Exeris owns:**
+
 - HTTP transport ingress/egress
 - Request execution lifecycle (1 VT per request)
 - Backpressure and PAQS scheduling
@@ -99,6 +101,7 @@ as a kernel ADR first and must not introduce Spring types into SPI or Core.
 ### 3.4 Exeris Owns the Hot Path
 
 In host-runtime mode:
+
 - Request ingress must flow through Exeris, not Tomcat/Jetty/Undertow/Netty
 - The `HttpHandler` SPI is the only entry point into application logic
 - Body handling must target zero heap copy in pure mode
@@ -108,6 +111,7 @@ In host-runtime mode:
 
 Full Spring MVC / WebFlux / JPA compatibility is not the entry goal. Compatibility
 features are introduced incrementally and explicitly. Each compatibility feature must:
+
 - be opt-in (not default)
 - document its trade-offs against pure mode
 - live in a dedicated `*.compat.*` package

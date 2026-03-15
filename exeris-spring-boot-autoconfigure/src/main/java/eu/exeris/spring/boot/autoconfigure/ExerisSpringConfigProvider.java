@@ -46,10 +46,50 @@ import java.util.function.Supplier;
  */
 public final class ExerisSpringConfigProvider implements ConfigProvider {
 
+    /**
+     * Bounded static holder populated by {@link #prepareBootstrap()} immediately before
+     * {@code KernelBootstrap.boot()} and cleared in the corresponding finally block.
+     *
+     * <p>This holder bridges the gap between ServiceLoader instantiation (which requires
+     * a no-arg constructor) and the need for a Spring {@link Environment} during the
+     * synchronous kernel bootstrap phase. It is never read outside that window and is
+     * never used on the hot request path.
+     */
+    private static volatile Environment BOOTSTRAP_ENVIRONMENT;
+
     private final Environment environment;
+
+    /**
+     * No-arg constructor required by {@link java.util.ServiceLoader}.
+     *
+     * <p>The kernel's {@code KernelBootstrap.resolveConfigProvider()} discovers this
+     * implementation via ServiceLoader and instantiates it through this constructor.
+     * The {@link Environment} reference is obtained from {@link #BOOTSTRAP_ENVIRONMENT},
+     * which must be set by {@link #prepareBootstrap()} before {@code boot()} is called.
+     */
+    public ExerisSpringConfigProvider() {
+        this(BOOTSTRAP_ENVIRONMENT);
+    }
 
     public ExerisSpringConfigProvider(Environment environment) {
         this.environment = environment;
+    }
+
+    /**
+     * Makes this instance's {@link Environment} available for ServiceLoader-created instances
+     * during the synchronous boot window.
+     * Must be called immediately before {@code KernelBootstrap.boot()}.
+     */
+    void prepareBootstrap() {
+        BOOTSTRAP_ENVIRONMENT = this.environment;
+    }
+
+    /**
+     * Clears the bootstrap environment holder. Must be called in a finally block
+     * after {@code KernelBootstrap.boot()} returns or throws.
+     */
+    void clearBootstrap() {
+        BOOTSTRAP_ENVIRONMENT = null;
     }
 
     @Override
@@ -60,7 +100,10 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
     @Override
     public Supplier<KernelSettings> kernelSettings() {
         return () -> {
-            KernelSettings defaults = KernelSettings.defaults();
+                if (environment == null) {
+                    return KernelSettings.defaults();
+                }
+                KernelSettings defaults = KernelSettings.defaults();
 
             KernelProfile profile = environment
                     .getProperty("exeris.runtime.profile", KernelProfile.class, defaults.profile());
@@ -101,27 +144,32 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
 
     @Override
     public Optional<String> getString(String key) {
-        return Optional.ofNullable(environment.getProperty(key));
+        return environment == null ? Optional.empty()
+            : Optional.ofNullable(environment.getProperty(key));
     }
 
     @Override
     public Optional<Integer> getInt(String key) {
-        return Optional.ofNullable(environment.getProperty(key, Integer.class));
+        return environment == null ? Optional.empty()
+            : Optional.ofNullable(environment.getProperty(key, Integer.class));
     }
 
     @Override
     public Optional<Long> getLong(String key) {
-        return Optional.ofNullable(environment.getProperty(key, Long.class));
+        return environment == null ? Optional.empty()
+            : Optional.ofNullable(environment.getProperty(key, Long.class));
     }
 
     @Override
     public Optional<Boolean> getBoolean(String key) {
-        return Optional.ofNullable(environment.getProperty(key, Boolean.class));
+        return environment == null ? Optional.empty()
+            : Optional.ofNullable(environment.getProperty(key, Boolean.class));
     }
 
     @Override
     public <T> Optional<T> get(String key, Class<T> type) {
-        return Optional.ofNullable(environment.getProperty(key, type));
+        return environment == null ? Optional.empty()
+            : Optional.ofNullable(environment.getProperty(key, type));
     }
 
     @Override

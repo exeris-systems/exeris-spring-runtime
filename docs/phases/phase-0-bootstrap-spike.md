@@ -21,7 +21,7 @@ This phase is completed when the "single process" question is answered with code
 | # | Deliverable | Status |
 |:-:|:------------|:-------|
 | 1 | Maven multi-module reactor with module skeletons | Done |
-| 2 | ADR-001 accepted | Done |
+| 2 | ADR-010 accepted | Done |
 | 3 | Architecture documentation (`overview.md`, `module-boundaries.md`, `kernel-integration-seams.md`) | Done |
 | 4 | `ExerisSpringConfigProvider` — Spring `Environment` → kernel `ConfigProvider` | Not Started |
 | 5 | `ExerisRuntimeLifecycle` — `SmartLifecycle` triggering `KernelBootstrap` | Not Started |

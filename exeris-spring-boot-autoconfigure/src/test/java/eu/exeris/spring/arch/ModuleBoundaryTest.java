@@ -21,7 +21,7 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
  *
  * <h2>Rules Enforced</h2>
  * <ol>
- *   <li>Classes in {@code *.web.pure.*} must not import from {@code *.web.compat.*}.</li>
+ *   <li>Classes in {@code *.web.*} (outside {@code *.web.compat.*}) must not import from {@code *.web.compat.*}.</li>
  *   <li>Classes in {@code *.web.*} (non-compat) must not import {@code DispatcherServlet}.</li>
  *   <li>Classes outside {@code *.data.*} must not import HikariCP or any JDBC pool.</li>
  *   <li>Classes outside {@code *.tx.*} must not import Spring transaction management internals.</li>
@@ -43,7 +43,8 @@ class ModuleBoundaryTest {
     @Test
     void pureModeClasses_mustNotImportCompatClasses() {
         ArchRule rule = noClasses()
-                .that().resideInAPackage("eu.exeris.spring.runtime.web.pure..")
+                .that().resideInAPackage("eu.exeris.spring.runtime.web..")
+                .and().resideOutsideOfPackage("eu.exeris.spring.runtime.web.compat..")
                 .should().dependOnClassesThat()
             .resideInAPackage("eu.exeris.spring.runtime.web.compat..")
             .allowEmptyShould(true);

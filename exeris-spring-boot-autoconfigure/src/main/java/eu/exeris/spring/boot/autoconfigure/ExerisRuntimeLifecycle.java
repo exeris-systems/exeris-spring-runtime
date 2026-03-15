@@ -6,7 +6,13 @@
  */
 package eu.exeris.spring.boot.autoconfigure;
 
+import eu.exeris.kernel.core.bootstrap.KernelBootstrap;
+import eu.exeris.kernel.spi.http.HttpHandler;
+import eu.exeris.kernel.spi.http.HttpKernelProviders;
+import eu.exeris.kernel.spi.http.HttpServerEngine;
 import org.springframework.context.SmartLifecycle;
+
+import java.util.Optional;
 
 /**
  * Spring lifecycle coordinator for the Exeris runtime.
@@ -56,15 +62,17 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
 
     private final ExerisRuntimeProperties properties;
     private final ExerisSpringConfigProvider configProvider;
+    private final Optional<HttpHandler> httpHandler;
 
     private volatile boolean running = false;
-    // KernelHandle will be stored here once KernelBootstrap API is confirmed.
-    // private volatile KernelHandle kernelHandle;
+    private volatile HttpServerEngine serverEngine;
 
     public ExerisRuntimeLifecycle(ExerisRuntimeProperties properties,
-                                   ExerisSpringConfigProvider configProvider) {
+                                   ExerisSpringConfigProvider configProvider,
+                                   Optional<HttpHandler> httpHandler) {
         this.properties = properties;
         this.configProvider = configProvider;
+        this.httpHandler = httpHandler;
     }
 
     @Override
@@ -72,12 +80,23 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         if (!properties.enabled()) {
             return;
         }
-        /*
-         * Phase 0 implementation will call KernelBootstrap.bootstrap(configProvider) here.
-         * The exact bootstrap API will be confirmed against exeris-kernel 0.5.0-SNAPSHOT.
-         * This is the point where Spring yields runtime control to Exeris.
-         */
-        running = true;
+        KernelBootstrap bootstrap = KernelBootstrap.builder()
+                .classLoader(Thread.currentThread().getContextClassLoader())
+                .build();
+             configProvider.prepareBootstrap();
+             try {
+            bootstrap.boot(() -> httpHandler.ifPresent(handler -> {
+                HttpServerEngine engine = HttpKernelProviders.httpServerEngine();
+                this.serverEngine = engine;
+                engine.setHandler(handler);
+                engine.start();
+            }));
+            running = true;
+        } catch (KernelBootstrap.BootstrapException ex) {
+            throw new IllegalStateException("Exeris kernel bootstrap failed", ex);
+            } finally {
+                configProvider.clearBootstrap();
+            }
     }
 
     @Override
@@ -91,12 +110,9 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         if (!running) {
             return;
         }
-        /*
-         * Phase 0 implementation will:
-         * 1. kernelHandle.transport().closeIngress()
-         * 2. drain in-flight requests with timeout from properties.shutdown().timeoutSeconds()
-         * 3. kernelHandle.shutdown()
-         */
+        if (serverEngine != null) {
+            serverEngine.stop();
+        }
         running = false;
     }
 
@@ -112,6 +128,6 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
 
     @Override
     public boolean isAutoStartup() {
-        return properties.enabled();
+        return properties.autoStart();
     }
 }

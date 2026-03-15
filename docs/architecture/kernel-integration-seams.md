@@ -41,7 +41,8 @@ public interface HttpHandler {
 
 **Contract:**
 - Called on a virtual thread (one per request).
-- Must call `exchange.respond(response)` exactly once before returning.
+- Must use exactly one completion path: either call `exchange.respond(response)` once and return, or throw `HttpException` and let the engine respond.
+- Must never both respond and throw for the same request.
 - Must not use `ThreadLocal`. Context propagation via `ScopedValue`.
 - Throwing `HttpException` → engine sends error response.
 
@@ -53,7 +54,7 @@ public interface HttpHandler {
 1. Reads `exchange.request()` to get `HttpRequest` (header map, method, path, body `LoanedBuffer`).
 2. Resolves the matching Spring-managed handler bean via `ExerisRouteRegistry`.
 3. Invokes the handler bean's designated method.
-4. Writes the result to `exchange.respond(response)`.
+4. Completes exactly once: writes result/error to `exchange.respond(response)` and returns, or throws `HttpException` for engine-owned error response.
 
 No `DispatcherServlet`, no `HandlerMapping`, no servlet API involved in pure mode.
 
@@ -70,9 +71,9 @@ HttpExchange arrives on VT
 
 `ExerisCompatDispatcher` wraps the above and additionally:
 
-1. Builds a reduced `DispatcherServlet`-compatible model from `HttpRequest`.
-2. Invokes the Spring `RequestMappingHandlerAdapter` for `@RequestMapping` resolution.
-3. Maps the `ModelAndView` or `ResponseEntity` back to `HttpResponse`.
+1. Uses Spring handler infrastructure directly (`RequestMappingHandlerMapping` + `RequestMappingHandlerAdapter`) without `DispatcherServlet` as a canonical runtime component.
+2. Adapts `HttpRequest`/`HttpResponse` through compatibility request/response adapters for controller invocation.
+3. Maps supported return types (for Phase 2 scope, including `ResponseEntity`) back to `HttpResponse`.
 
 This path is in `eu.exeris.spring.runtime.web.compat.*` and activates only when
 `exeris.runtime.web.mode=compatibility` is set.
