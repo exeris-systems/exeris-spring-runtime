@@ -158,7 +158,7 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         } catch (NoSuchMethodException ex) {
             return false;
         } catch (ReflectiveOperationException | RuntimeException ex) {
-            return true;
+            return false;
         }
     }
 }

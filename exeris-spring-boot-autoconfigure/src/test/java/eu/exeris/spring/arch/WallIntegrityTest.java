@@ -81,7 +81,7 @@ class WallIntegrityTest {
     }
 
     @Test
-    void noClassAnywhere_mustImportServletApi() {
+    void noClassAnywhere_mustNotImportServletApi() {
         ArchRule rule = noClasses()
                 .that().resideInAPackage("eu.exeris..")
                 .should().dependOnClassesThat()
@@ -94,7 +94,7 @@ class WallIntegrityTest {
     }
 
     @Test
-    void noClassAnywhere_mustImportTomcatOrUndertowOrJetty() {
+    void noClassAnywhere_mustNotImportTomcatOrUndertowOrJetty() {
         ArchRule rule = noClasses()
                 .that().resideInAPackage("eu.exeris..")
                 .should().dependOnClassesThat()
@@ -109,7 +109,7 @@ class WallIntegrityTest {
     }
 
     @Test
-    void noClassAnywhere_mustImportReactorOrNetty() {
+    void noClassAnywhere_mustNotImportReactorOrNetty() {
         ArchRule rule = noClasses()
                 .that().resideInAPackage("eu.exeris..")
                 .should().dependOnClassesThat()

@@ -64,11 +64,7 @@
              enable-preview is required because exeris-kernel-core is compiled with
              Java 26 preview features (class file minor version 65535). Without this
              flag the JVM refuses to load those classes at test runtime. -->
-        <test.jvm.args>
-            --enable-preview
-            -XX:+UnlockExperimentalVMOptions
-            -XX:+UseZGC
-        </test.jvm.args>
+        <test.jvm.args>--enable-preview -XX:+UnlockExperimentalVMOptions -XX:+UseZGC</test.jvm.args>
     </properties>
 
     <dependencyManagement>
