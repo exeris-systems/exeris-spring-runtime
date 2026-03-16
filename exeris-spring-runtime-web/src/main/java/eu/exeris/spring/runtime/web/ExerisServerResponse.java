@@ -97,6 +97,7 @@ public final class ExerisServerResponse {
         responseHeaders.add(new HttpHeader("Content-Type", contentType));
 
         if (body == null || body.length == 0) {
+            responseHeaders.add(new HttpHeader("Content-Length", "0"));
             return HttpResponse.noBody(status, version, List.copyOf(responseHeaders));
         }
 

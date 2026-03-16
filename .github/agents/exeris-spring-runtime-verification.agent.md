@@ -4,7 +4,7 @@ description: Verification planner and gatekeeper for unit, integration, runtime 
 model: Auto (copilot)
 target: vscode
 user-invocable: true
-tools: [read/readFile, read/problems, execute/runTests, search/fileSearch, search/textSearch, search/searchSubagent, todo]
+tools: [read/readFile, read/problems, read/terminalLastCommand, read/terminalSelection, search/codebase, search/fileSearch, search/listDirectory, search/textSearch, search/changes, search/searchSubagent, execute/runTests, execute/runInTerminal, execute/getTerminalOutput, execute/awaitTerminal, execute/killTerminal, edit/editFiles, edit/createFile, todo]
 ---
 
 # Mission

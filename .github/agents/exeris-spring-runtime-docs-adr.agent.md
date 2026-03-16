@@ -4,7 +4,7 @@ description: Documentation and ADR integrity agent ensuring architecture claims,
 model: Auto (copilot)
 target: vscode
 user-invocable: true
-tools: [read/readFile, search/fileSearch, search/textSearch, search/searchSubagent, edit/editFiles, todo]
+tools: [read/readFile, search/codebase, search/fileSearch, search/listDirectory, search/textSearch, search/changes, search/searchSubagent, edit/editFiles, edit/createFile, todo, web/fetch, web/githubRepo, agent/runSubagent]
 ---
 
 # Mission

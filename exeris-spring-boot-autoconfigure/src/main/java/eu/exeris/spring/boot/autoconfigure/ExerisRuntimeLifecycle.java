@@ -13,6 +13,7 @@ import eu.exeris.kernel.spi.http.HttpServerEngine;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.lang.NonNull;
 
+import java.lang.reflect.InvocationTargetException;
 import java.util.Optional;
 
 /**
@@ -157,8 +158,17 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
             return true;
         } catch (NoSuchMethodException ex) {
             return false;
+        } catch (InvocationTargetException ex) {
+            Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+            throw new IllegalStateException(
+                    "Failed invoking method '" + methodName + "' on " + target.getClass().getName(),
+                    cause
+            );
         } catch (ReflectiveOperationException | RuntimeException ex) {
-            return false;
+            throw new IllegalStateException(
+                    "Failed invoking method '" + methodName + "' on " + target.getClass().getName(),
+                    ex
+            );
         }
     }
 }

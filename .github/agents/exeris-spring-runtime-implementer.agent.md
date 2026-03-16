@@ -4,7 +4,7 @@ description: Delivery-focused agent for Exeris Spring Runtime bridges and wiring
 model: Auto (copilot)
 target: vscode
 user-invocable: true
-tools: [read/readFile, read/problems, execute/runTests, search/fileSearch, search/textSearch, search/searchSubagent, edit/editFiles, todo]
+tools: [read/readFile, read/problems, read/terminalLastCommand, read/terminalSelection, search/codebase, search/fileSearch, search/listDirectory, search/textSearch, search/changes, search/searchSubagent, edit/editFiles, edit/createFile, edit/createDirectory, execute/runTests, execute/runInTerminal, execute/getTerminalOutput, execute/awaitTerminal, execute/killTerminal, todo]
 ---
 
 # Mission

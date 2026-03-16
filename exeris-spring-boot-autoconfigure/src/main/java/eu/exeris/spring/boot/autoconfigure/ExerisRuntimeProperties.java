@@ -42,7 +42,6 @@ public record ExerisRuntimeProperties(
 
         @DefaultValue("true") boolean enabled,
         @DefaultValue("true") boolean autoStart,
-        @DefaultValue("8080") int port,
         WebProperties web,
         ShutdownProperties shutdown
 
@@ -72,7 +71,7 @@ public record ExerisRuntimeProperties(
      * Correct for tests and environments requiring manual lifecycle control.
      */
     public ExerisRuntimeProperties() {
-        this(true, true, 8080, new WebProperties(), new ShutdownProperties());
+        this(true, true, new WebProperties(), new ShutdownProperties());
     }
 
     public record WebProperties(@DefaultValue("pure") Mode mode) {

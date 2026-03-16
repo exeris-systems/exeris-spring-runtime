@@ -11,6 +11,7 @@ import eu.exeris.kernel.spi.config.KernelProfile;
 import org.springframework.core.env.Environment;
 
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -55,7 +56,7 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
      * synchronous kernel bootstrap phase. It is never read outside that window and is
      * never used on the hot request path.
      */
-    private static volatile Environment BOOTSTRAP_ENVIRONMENT;
+    private static final AtomicReference<Environment> BOOTSTRAP_ENVIRONMENT = new AtomicReference<>();
 
     private final Environment environment;
 
@@ -68,7 +69,7 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
      * which must be set by {@link #prepareBootstrap()} before {@code boot()} is called.
      */
     public ExerisSpringConfigProvider() {
-        this(BOOTSTRAP_ENVIRONMENT);
+        this(BOOTSTRAP_ENVIRONMENT.get());
     }
 
     public ExerisSpringConfigProvider(Environment environment) {
@@ -81,7 +82,9 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
      * Must be called immediately before {@code KernelBootstrap.boot()}.
      */
     void prepareBootstrap() {
-        BOOTSTRAP_ENVIRONMENT = this.environment;
+        if (!BOOTSTRAP_ENVIRONMENT.compareAndSet(null, this.environment)) {
+            throw new IllegalStateException("Exeris bootstrap environment already prepared");
+        }
     }
 
     /**
@@ -89,7 +92,7 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
      * after {@code KernelBootstrap.boot()} returns or throws.
      */
     void clearBootstrap() {
-        BOOTSTRAP_ENVIRONMENT = null;
+        BOOTSTRAP_ENVIRONMENT.compareAndSet(this.environment, null);
     }
 
     @Override
