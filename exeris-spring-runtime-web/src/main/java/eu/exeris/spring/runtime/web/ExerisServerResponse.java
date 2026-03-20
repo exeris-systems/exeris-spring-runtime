@@ -17,6 +17,7 @@ import org.springframework.http.MediaType;
 
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -65,7 +66,7 @@ public final class ExerisServerResponse {
     }
 
     public ExerisServerResponse body(byte[] bytes) {
-        return new ExerisServerResponse(this.status, this.contentType, bytes);
+        return new ExerisServerResponse(this.status, this.contentType, Arrays.copyOf(bytes, bytes.length));
     }
 
     /**
@@ -116,5 +117,5 @@ public final class ExerisServerResponse {
 
     public HttpStatus status() { return status; }
     public String contentType() { return contentType; }
-    public byte[] body() { return body; }
+    public byte[] body() { return Arrays.copyOf(body, body.length); }
 }

@@ -71,7 +71,7 @@ public record ExerisRuntimeProperties(
      * Correct for tests and environments requiring manual lifecycle control.
      */
     public ExerisRuntimeProperties() {
-        this(true, true, new WebProperties(), new ShutdownProperties());
+        this(true, false, new WebProperties(), new ShutdownProperties());
     }
 
     public record WebProperties(@DefaultValue("pure") Mode mode) {

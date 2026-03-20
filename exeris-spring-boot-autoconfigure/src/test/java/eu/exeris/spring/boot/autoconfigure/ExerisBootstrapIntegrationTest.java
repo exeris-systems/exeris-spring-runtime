@@ -92,7 +92,7 @@ class ExerisBootstrapIntegrationTest {
         try {
             Class.forName(className, false, ExerisBootstrapIntegrationTest.class.getClassLoader());
             return true;
-        } catch (ClassNotFoundException _) {
+        } catch (ClassNotFoundException ignored) {
             return false;
         }
     }
