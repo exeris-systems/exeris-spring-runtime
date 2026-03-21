@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>eu.exeris</groupId>
+        <artifactId>exeris-spring-runtime-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>exeris-spring-runtime-actuator</artifactId>
+
+    <name>Exeris Spring Runtime :: Actuator</name>
+    <description>
+        Operational visibility bridge between the Exeris runtime diagnostics and
+        Spring Boot Actuator endpoints.
+
+        Scope:
+          - health indicators reading Exeris KernelProviders state,
+          - info contributors exposing runtime mode and provider inventory,
+          - Micrometer MeterRegistry bridge to Exeris TelemetrySink,
+          - graceful shutdown coordination (SmartLifecycle order with Exeris bootstrap),
+          - runtime diagnostic endpoints (watermark state, provider list, memory pressure).
+
+        This module must not:
+          - redefine the Exeris telemetry model or bypass TelemetrySink,
+          - act as a control-plane for runtime configuration changes,
+          - become a dumping ground for cross-module utilities,
+          - own any data-plane execution path.
+
+        See docs/architecture/module-boundaries.md.
+    </description>
+
+    <dependencies>
+
+        <!-- Kernel SPI — TelemetryProvider, TelemetrySink, KernelProviders,
+             KernelEvent, BootstrapPhase, SubsystemProvider -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-spi</artifactId>
+        </dependency>
+
+        <!-- Boot autoconfigure — lifecycle coordination -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-spring-boot-autoconfigure</artifactId>
+        </dependency>
+
+        <!-- Spring Boot Actuator — HealthIndicator, InfoContributor, Endpoint -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-actuator-autoconfigure</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-actuator</artifactId>
+        </dependency>
+
+        <!-- Micrometer — MeterRegistry bridge for TelemetrySink gauges/counters/timers.
+             Optional: only activated if Micrometer is on the classpath -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-core</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Spring Context -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+        </dependency>
+
+        <!-- Test scope -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>

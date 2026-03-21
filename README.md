@@ -50,3 +50,32 @@ The repository is expected to support two explicit modes:
 ## Status
 
 Early architecture and bootstrap stage.
+
+## Documentation precedence
+
+When documents differ, use this source-of-truth order:
+
+1. **Strategic architecture truth**
+	- `docs/adr/*`
+	- `docs/architecture/module-boundaries.md`
+	- `docs/architecture/kernel-integration-seams.md`
+2. **Delivery truth**
+	- `docs/phases/phase-*.md`
+3. **Repo-wide review behavior**
+	- `.github/copilot-instructions.md`
+
+Conflict handling:
+- ADRs win on architecture intent.
+- module boundaries + integration seams win on structural contracts.
+- phase docs win on current delivery scope unless explicitly superseded by ADR.
+
+## Canonical roadmap semantics
+
+- **Phase 0** proves bootstrap coexistence and Wall integrity.
+- **Phase 1** proves host-runtime legitimacy (Exeris-owned ingress path).
+- **Phase 2** adds explicitly scoped, opt-in Spring compatibility.
+- **Phase 3** expands into high-risk tx/context/persistence concerns.
+
+## Contributing
+
+Please use `CONTRIBUTING.md` for contribution rules, architecture guardrails, testing scope, and docs/ADR update requirements.

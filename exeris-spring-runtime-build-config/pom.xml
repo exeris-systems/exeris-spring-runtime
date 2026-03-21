@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>eu.exeris</groupId>
+        <artifactId>exeris-spring-runtime-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>exeris-spring-runtime-build-config</artifactId>
+    <packaging>pom</packaging>
+
+    <name>Exeris Spring Runtime :: Build Configuration</name>
+    <description>Shared build tooling configuration (Checkstyle, PMD, etc.) for the exeris-spring-runtime project.</description>
+
+    <!--
+        Place checkstyle.xml, pmd.xml, and other build config files here.
+        Modules reference these via build-helper or plugin configuration.
+    -->
+
+</project>
