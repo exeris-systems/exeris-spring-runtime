@@ -96,8 +96,8 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
             }));
             this.bootstrap = kernelBootstrap;
             running = true;
-        } catch (KernelBootstrap.BootstrapException ex) {
-            throw new IllegalStateException("Exeris kernel bootstrap failed", ex);
+        } catch (KernelBootstrap.BootstrapException | RuntimeException ex) {
+            throw failedStart(kernelBootstrap, ex);
         } finally {
             configProvider.clearBootstrap();
         }
@@ -152,6 +152,38 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         invokeNoArg(bootstrap, "close");
     }
 
+    private IllegalStateException failedStart(KernelBootstrap kernelBootstrap, Exception cause) {
+        RuntimeException cleanupFailure = null;
+        HttpServerEngine engine = this.serverEngine;
+
+        this.running = false;
+        this.serverEngine = null;
+        this.bootstrap = null;
+
+        if (engine != null) {
+            try {
+                engine.stop();
+            } catch (RuntimeException ex) {
+                cleanupFailure = ex;
+            }
+        }
+
+        try {
+            shutdownKernel(kernelBootstrap);
+        } catch (RuntimeException ex) {
+            if (cleanupFailure != null) {
+                cleanupFailure.addSuppressed(ex);
+            } else {
+                cleanupFailure = ex;
+            }
+        }
+
+        if (cleanupFailure != null) {
+            cause.addSuppressed(cleanupFailure);
+        }
+        return new IllegalStateException("Exeris runtime startup failed", cause);
+    }
+
     private static boolean invokeNoArg(Object target, String methodName) {
         try {
             target.getClass().getMethod(methodName).invoke(target);
@@ -159,7 +191,10 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         } catch (NoSuchMethodException ex) {
             return false;
         } catch (InvocationTargetException ex) {
-            Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+            Throwable cause = ex.getCause();
+            if (cause == null) {
+                cause = ex;
+            }
             throw new IllegalStateException(
                     "Failed invoking method '" + methodName + "' on " + target.getClass().getName(),
                     cause

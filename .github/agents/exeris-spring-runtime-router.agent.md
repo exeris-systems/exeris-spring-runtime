@@ -4,7 +4,7 @@ description: Entrypoint router for exeris-spring-runtime tasks with strict class
 model: Auto (copilot)
 target: vscode
 user-invocable: true
-tools: [read/readFile, read/problems, search/codebase, search/fileSearch, search/listDirectory, search/textSearch, search/changes, search/searchSubagent, agent/runSubagent, todo]
+tools: [read/getNotebookSummary, read/problems, read/readFile, read/terminalSelection, read/terminalLastCommand, agent/runSubagent, search/changes, search/codebase, search/fileSearch, search/listDirectory, search/searchResults, search/textSearch, search/searchSubagent, search/usages, web/fetch, web/githubRepo, browser/openBrowserPage, browser/readPage, browser/screenshotPage, browser/navigatePage, browser/clickElement, browser/dragElement, browser/hoverElement, browser/typeInPage, browser/runPlaywrightCode, browser/handleDialog, todo]
 ---
 
 # Mission

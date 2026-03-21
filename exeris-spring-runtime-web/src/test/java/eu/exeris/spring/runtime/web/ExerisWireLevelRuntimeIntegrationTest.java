@@ -46,6 +46,9 @@ class ExerisWireLevelRuntimeIntegrationTest {
      * <p>Required kernel seam/API to enable this test:
      * a stable embeddable bootstrap fixture (or equivalent public API) that exposes a started
      * {@code HttpServerEngine} handle in test scope, plus deterministic bound-port visibility.
+     * Blocker tracking is documented in
+     * {@code docs/phases/phase-1-kernel-seam-request-http-engine-fixture.md} and
+     * {@code docs/phases/phase-1-kernel-seam-request-github-issue.md}.
      */
     @Test
     @Disabled("Blocked by kernel boot seam: HttpKernelProviders HTTP_SERVER_ENGINE ScopedValue is not bound during lifecycle bootstrap callback")
