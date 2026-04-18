@@ -48,8 +48,8 @@
         <maven.compiler.release>26</maven.compiler.release>
 
         <!-- Dependency versions -->
-        <exeris.kernel.version>0.5.0-SNAPSHOT</exeris.kernel.version>
-        <spring.boot.version>3.4.3</spring.boot.version>
+        <exeris.kernel.version>0.6.0-SNAPSHOT</exeris.kernel.version>
+        <spring.boot.version>3.5.13</spring.boot.version>
         <spring.framework.version>6.2.4</spring.framework.version>
 
         <!-- Build tooling -->
@@ -59,6 +59,8 @@
 
             <!-- Test tooling -->
             <archunit.version>1.3.0</archunit.version>
+        <!-- Jackson annotations version required by tools.jackson.databind:3.1.1 -->
+        <jackson.annotations.version>2.21</jackson.annotations.version>
 
         <!-- Test JVM args — aligned with kernel conventions.
              enable-preview is required because exeris-kernel-core is compiled with
@@ -125,6 +127,23 @@
                     <version>${archunit.version}</version>
                     <scope>test</scope>
                 </dependency>
+
+            <!--
+                Jackson annotations version override.
+                tools.jackson.core:jackson-databind:3.1.1 (Jackson 3.x, used by exeris-kernel-community)
+                requires jackson-annotations:2.21 since that is where JsonSerializeAs was introduced
+                (see Jackson BOM 3.1.1: jackson.version.annotations=2.21).
+                Spring Boot BOM 3.5.13 manages jackson-annotations to 2.18.2, which predates
+                JsonSerializeAs. This direct dependency management entry takes Maven precedence
+                over the BOM-sourced 2.18.2.
+                jackson-annotations is backward-compatible so upgrading from 2.18.2 to 2.21
+                does not affect Spring Boot components.
+            -->
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-annotations</artifactId>
+                <version>${jackson.annotations.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
