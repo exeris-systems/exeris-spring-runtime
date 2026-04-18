@@ -6,14 +6,12 @@
  */
 package eu.exeris.spring.runtime.web.autoconfigure;
 
-import eu.exeris.kernel.spi.telemetry.TelemetryConfig;
-import eu.exeris.kernel.spi.telemetry.TelemetryProvider;
-import eu.exeris.kernel.spi.telemetry.TelemetrySink;
-import eu.exeris.spring.runtime.web.ExerisErrorMapper;
-import eu.exeris.spring.runtime.web.ExerisHttpDispatcher;
-import eu.exeris.spring.runtime.web.ExerisRequestHandler;
-import eu.exeris.spring.runtime.web.ExerisRoute;
-import eu.exeris.spring.runtime.web.ExerisRouteRegistry;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Supplier;
+
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -22,11 +20,14 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.function.Supplier;
+import eu.exeris.kernel.spi.telemetry.TelemetryConfig;
+import eu.exeris.kernel.spi.telemetry.TelemetryProvider;
+import eu.exeris.kernel.spi.telemetry.TelemetrySink;
+import eu.exeris.spring.runtime.web.ExerisErrorMapper;
+import eu.exeris.spring.runtime.web.ExerisHttpDispatcher;
+import eu.exeris.spring.runtime.web.ExerisRequestHandler;
+import eu.exeris.spring.runtime.web.ExerisRoute;
+import eu.exeris.spring.runtime.web.ExerisRouteRegistry;
 
 /**
  * Auto-configuration for Exeris Pure Mode web routing and dispatcher bridge.
