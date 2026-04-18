@@ -144,9 +144,13 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
                         kernelBootstrap.boot(() -> { });
                         return null;
                     });
-        } catch (KernelBootstrap.BootstrapException | RuntimeException ex) {
-            throw ex;
         } catch (Exception ex) {
+            if (ex instanceof KernelBootstrap.BootstrapException bootstrapException) {
+                throw bootstrapException;
+            }
+            if (ex instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
             throw new IllegalStateException("Exeris runtime startup failed while binding the kernel HTTP handler seam", ex);
         }
     }

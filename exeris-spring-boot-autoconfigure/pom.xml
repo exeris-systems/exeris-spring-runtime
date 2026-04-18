@@ -32,7 +32,8 @@
     <dependencies>
 
         <!-- SPI contracts — the integration seam against the Exeris kernel.
-             NEVER import exeris-kernel-community or exeris-kernel-enterprise here.
+             NEVER add exeris-kernel-community or exeris-kernel-enterprise to this module's
+             main/runtime scope. Test-scope usage is allowed for focused integration tests only.
              Direct driver coupling belongs in the web/tx/data runtime modules. -->
         <dependency>
             <groupId>eu.exeris</groupId>

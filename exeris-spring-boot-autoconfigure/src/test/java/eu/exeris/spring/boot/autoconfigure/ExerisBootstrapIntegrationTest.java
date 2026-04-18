@@ -211,7 +211,7 @@ class ExerisBootstrapIntegrationTest {
 
         @Bean
         HttpHandler lifecycleTestHandler() {
-            return eu.exeris.kernel.spi.http.HttpExchange::request;
+            return exchange -> { };
         }
     }
 }
