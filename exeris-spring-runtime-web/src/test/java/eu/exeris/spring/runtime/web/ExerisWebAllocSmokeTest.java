@@ -12,111 +12,42 @@ import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
-import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeAutoConfiguration;
-import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
-import eu.exeris.spring.runtime.web.autoconfigure.ExerisWebAutoConfiguration;
 import org.junit.jupiter.api.Test;
-import org.springframework.context.annotation.AnnotationConfigApplicationContext;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.core.env.MapPropertySource;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.Type;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Runtime integration verification for Pure Mode request dispatch ownership.
- *
- * <p>This test starts a real Spring context with both
- * {@link ExerisRuntimeAutoConfiguration} and {@link ExerisWebAutoConfiguration},
- * then invokes the runtime {@link ExerisHttpDispatcher} using realistic kernel-SPI
- * doubles for {@link HttpExchange}/{@link HttpRequest}.
- *
- * <p>Full socket-level E2E (real ingress port + raw HTTP client) is currently blocked
- * in this module because the kernel does not yet expose a stable embeddable
- * {@code HttpServerEngine} test fixture with deterministic port discovery and request
- * context setup for body-buffer allocation in unit/integration tests.
- */
-class ExerisPureModeRequestPathIntegrationTest {
+class ExerisWebAllocSmokeTest {
 
     @Test
-    void pureMode_dispatchesExchangeToAnnotatedSpringHandler_andRespondsThroughKernelExchange() throws Exception {
-        try (var context = createContext()) {
-            ExerisHttpDispatcher dispatcher = context.getBean(ExerisHttpDispatcher.class);
-            HelloHandler handler = context.getBean(HelloHandler.class);
+    void dispatcherHotPath_emptyBody_staysWithinGenerousLatencyBudget() throws Exception {
+        ExerisRouteRegistry routes = ExerisRouteRegistry.builder()
+                .register(HttpMethod.GET, "/alloc", request -> ExerisServerResponse.ok())
+                .build();
+        ExerisHttpDispatcher dispatcher = new ExerisHttpDispatcher(routes, new ExerisErrorMapper());
+        TestExchange exchange = TestExchange.get(HttpMethod.GET, "/alloc", anyHttpVersion());
 
-            TestExchange exchange = TestExchange.get(HttpMethod.GET, "/hello", anyHttpVersion());
+        for (int i = 0; i < 3_000; i++) {
             dispatcher.handle(exchange.proxy());
-
-            assertThat(handler.invocations()).isEqualTo(1);
-            assertThat(exchange.response()).isNotNull();
-            assertThat(readStatus(exchange.response())).isEqualTo(HttpStatus.ACCEPTED);
         }
-    }
 
-    @Test
-    void pureMode_mapsMissingRouteToNotFound() throws Exception {
-        try (var context = createContext()) {
-            ExerisHttpDispatcher dispatcher = context.getBean(ExerisHttpDispatcher.class);
-
-            TestExchange exchange = TestExchange.get(HttpMethod.GET, "/missing", anyHttpVersion());
+        int iterations = 30_000;
+        long start = System.nanoTime();
+        for (int i = 0; i < iterations; i++) {
             dispatcher.handle(exchange.proxy());
-
-            assertThat(exchange.response()).isNotNull();
-            assertThat(readStatus(exchange.response())).isEqualTo(HttpStatus.NOT_FOUND);
         }
-    }
+        long elapsedNanos = System.nanoTime() - start;
 
-    @Test
-    void pureMode_mapsUnhandledApplicationExceptionToInternalServerError() throws Exception {
-        try (var context = createContext()) {
-            ExerisHttpDispatcher dispatcher = context.getBean(ExerisHttpDispatcher.class);
-            FailingHandler handler = context.getBean(FailingHandler.class);
-
-            TestExchange exchange = TestExchange.get(HttpMethod.GET, "/boom", anyHttpVersion());
-            dispatcher.handle(exchange.proxy());
-
-            assertThat(handler.invocations()).isEqualTo(1);
-            assertThat(exchange.response()).isNotNull();
-            assertThat(readStatus(exchange.response())).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
-        }
-    }
-
-    @Test
-    void repeatedLifecycleStopOperations_areLifecycleSafeBeforeRuntimeStart() {
-        try (var context = createContext()) {
-            ExerisRuntimeLifecycle lifecycle = context.getBean(ExerisRuntimeLifecycle.class);
-
-            AtomicInteger callbackInvocations = new AtomicInteger();
-
-            lifecycle.stop();
-            lifecycle.stop(callbackInvocations::incrementAndGet);
-            lifecycle.stop(callbackInvocations::incrementAndGet);
-
-            assertThat(callbackInvocations).hasValue(2);
-            assertThat(lifecycle.isRunning()).isFalse();
-        }
-    }
-
-    private AnnotationConfigApplicationContext createContext() {
-        AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("exeris.runtime.auto-start", "false");
-        properties.put("exeris.runtime.web.mode", "pure");
-        context.getEnvironment().getPropertySources().addFirst(
-            new MapPropertySource("testProps", properties));
-        context.register(ExerisRuntimeAutoConfiguration.class, ExerisWebAutoConfiguration.class, TestConfig.class);
-        context.refresh();
-        return context;
+        double averageNanos = (double) elapsedNanos / iterations;
+        assertThat(exchange.response()).isNotNull();
+        assertThat(readStatus(exchange.response())).isEqualTo(HttpStatus.OK);
+        assertThat(averageNanos).isLessThan(2_000_000d);
     }
 
     private static HttpStatus readStatus(HttpResponse response) {
@@ -147,52 +78,6 @@ class ExerisPureModeRequestPathIntegrationTest {
             }
         }
         throw new IllegalStateException("Unable to obtain any HttpVersion constant for test exchange");
-    }
-
-    @Configuration
-    static class TestConfig {
-
-        @Bean
-        HelloHandler helloHandler() {
-            return new HelloHandler();
-        }
-
-        @Bean
-        FailingHandler failingHandler() {
-            return new FailingHandler();
-        }
-    }
-
-    @ExerisRoute(method = HttpMethod.GET, path = "/hello")
-    static class HelloHandler implements ExerisRequestHandler {
-
-        private final AtomicInteger invocations = new AtomicInteger();
-
-        @Override
-        public ExerisServerResponse handle(ExerisServerRequest request) {
-            invocations.incrementAndGet();
-            return ExerisServerResponse.status(HttpStatus.ACCEPTED).body(new byte[0]);
-        }
-
-        int invocations() {
-            return invocations.get();
-        }
-    }
-
-    @ExerisRoute(method = HttpMethod.GET, path = "/boom")
-    static class FailingHandler implements ExerisRequestHandler {
-
-        private final AtomicInteger invocations = new AtomicInteger();
-
-        @Override
-        public ExerisServerResponse handle(ExerisServerRequest request) {
-            invocations.incrementAndGet();
-            throw new IllegalStateException("boom");
-        }
-
-        int invocations() {
-            return invocations.get();
-        }
     }
 
     private static final class TestExchange {
@@ -246,7 +131,7 @@ class ExerisPureModeRequestPathIntegrationTest {
                 } catch (ReflectiveOperationException | IllegalArgumentException ignored) {
                 }
             }
-            throw new IllegalStateException("Unable to construct HttpRequest for runtime integration test");
+            throw new IllegalStateException("Unable to construct HttpRequest for allocation smoke test");
         }
 
         private static Object[] buildConstructorArgs(Type[] parameterTypes,

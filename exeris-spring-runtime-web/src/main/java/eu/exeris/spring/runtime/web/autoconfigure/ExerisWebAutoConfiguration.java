@@ -14,6 +14,7 @@ import eu.exeris.spring.runtime.web.ExerisHttpDispatcher;
 import eu.exeris.spring.runtime.web.ExerisRequestHandler;
 import eu.exeris.spring.runtime.web.ExerisRoute;
 import eu.exeris.spring.runtime.web.ExerisRouteRegistry;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -25,6 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Supplier;
 
 /**
  * Auto-configuration for Exeris Pure Mode web routing and dispatcher bridge.
@@ -65,9 +67,8 @@ public class ExerisWebAutoConfiguration {
     @ConditionalOnMissingBean
     public ExerisHttpDispatcher exerisHttpDispatcher(ExerisRouteRegistry routeRegistry,
                                                       ExerisErrorMapper errorMapper,
-                                                      ApplicationContext ctx) {
-        List<TelemetrySink> fallbackSinks = buildFallbackSinks(ctx);
-        return new ExerisHttpDispatcher(routeRegistry, errorMapper, fallbackSinks);
+                                                      ObjectProvider<TelemetryProvider> telemetryProviders) {
+        return new ExerisHttpDispatcher(routeRegistry, errorMapper, buildFallbackSinksSupplier(telemetryProviders));
     }
 
     /**
@@ -80,16 +81,28 @@ public class ExerisWebAutoConfiguration {
      *
      * <p>Returns an empty list when no {@link TelemetryProvider} beans are present in the context.
      */
-    private static List<TelemetrySink> buildFallbackSinks(ApplicationContext ctx) {
-        Map<String, TelemetryProvider> providers = ctx.getBeansOfType(TelemetryProvider.class);
-        if (providers.isEmpty()) {
-            return List.of();
-        }
-        TelemetryConfig config = TelemetryConfig.defaults();
-        List<TelemetrySink> sinks = new ArrayList<>();
-        for (TelemetryProvider provider : providers.values()) {
-            sinks.addAll(provider.createSinks(config));
-        }
-        return List.copyOf(sinks);
+    private static Supplier<List<TelemetrySink>> buildFallbackSinksSupplier(
+            ObjectProvider<TelemetryProvider> telemetryProviders) {
+        return () -> {
+            if (telemetryProviders == null) {
+                return List.of();
+            }
+
+            TelemetryConfig config = TelemetryConfig.defaults();
+            List<TelemetrySink> sinks = new ArrayList<>();
+            telemetryProviders.orderedStream()
+                    .filter(Objects::nonNull)
+                    .forEach(provider -> {
+                        List<TelemetrySink> providerSinks = provider.createSinks(config);
+                        if (providerSinks == null || providerSinks.isEmpty()) {
+                            return;
+                        }
+                        providerSinks.stream()
+                                .filter(Objects::nonNull)
+                                .forEach(sinks::add);
+                    });
+
+            return sinks.isEmpty() ? List.of() : List.copyOf(sinks);
+        };
     }
 }

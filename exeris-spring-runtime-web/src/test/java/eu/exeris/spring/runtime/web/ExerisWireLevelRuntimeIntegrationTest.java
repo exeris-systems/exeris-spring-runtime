@@ -6,20 +6,7 @@
  */
 package eu.exeris.spring.runtime.web;
 
-import eu.exeris.kernel.spi.http.HttpMethod;
-import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeAutoConfiguration;
-import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
-import eu.exeris.spring.runtime.web.autoconfigure.ExerisWebAutoConfiguration;
-import org.junit.jupiter.api.Disabled;
-import org.junit.jupiter.api.Test;
-import org.springframework.context.annotation.AnnotationConfigApplicationContext;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.core.env.MapPropertySource;
-
 import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.net.ServerSocket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -27,64 +14,73 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
+import org.junit.jupiter.api.Test;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.MapPropertySource;
+
+import eu.exeris.kernel.community.testkit.http.EmbeddedHttpEngineFixture;
+import eu.exeris.kernel.community.testkit.http.EmbeddedHttpEngineFixtures;
+import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.http.HttpMethod;
+import eu.exeris.kernel.spi.http.HttpStatus;
+import eu.exeris.kernel.spi.telemetry.KernelEvent;
+import eu.exeris.spring.runtime.web.autoconfigure.ExerisWebAutoConfiguration;
+import eu.exeris.spring.runtime.web.test.RecordingTelemetryProvider;
 
 class ExerisWireLevelRuntimeIntegrationTest {
 
-    /**
-     * Blocked on kernel bootstrap seam for deterministic embeddable wire-level tests.
-     *
-     * <p>Current blocker in this workspace:
-     * {@code ExerisRuntimeLifecycle.start()} calls {@code HttpKernelProviders.httpServerEngine()},
-     * but at runtime this fails with {@code NoSuchElementException: ScopedValue not bound}
-     * during the bootstrap callback path. The test therefore cannot reliably obtain a concrete
-     * server engine handle and proceed to readiness/assertion steps.
-     *
-     * <p>Required kernel seam/API to enable this test:
-     * a stable embeddable bootstrap fixture (or equivalent public API) that exposes a started
-     * {@code HttpServerEngine} handle in test scope, plus deterministic bound-port visibility.
-     * Blocker tracking is documented in
-     * {@code docs/phases/phase-1-kernel-seam-request-http-engine-fixture.md} and
-     * {@code docs/phases/phase-1-kernel-seam-request-github-issue.md}.
-     */
     @Test
-    @Disabled("Blocked by kernel boot seam: HttpKernelProviders HTTP_SERVER_ENGINE ScopedValue is not bound during lifecycle bootstrap callback")
     void pureMode_bindsPort_routesRequest_and_stopsRuntimeOnContextClose() throws Exception {
-        int port = reserveEphemeralPort();
         HttpClient client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofMillis(250))
+                .version(HttpClient.Version.HTTP_1_1)
                 .build();
 
-        AnnotationConfigApplicationContext context = createContext(port);
-        WireHelloHandler handler = context.getBean(WireHelloHandler.class);
-        ExerisRuntimeLifecycle lifecycle = context.getBean(ExerisRuntimeLifecycle.class);
+        AnnotationConfigApplicationContext context = createContext();
+        EmbeddedHttpEngineFixture fixture = EmbeddedHttpEngineFixtures.kernelBootstrapFixture();
+        int port;
 
-        assertThat(lifecycle.isRunning()).isTrue();
+        try {
+            ExerisHttpDispatcher dispatcher = context.getBean(ExerisHttpDispatcher.class);
+            WireHelloHandler handler = context.getBean(WireHelloHandler.class);
 
-        HttpResponse<String> response = awaitSuccessfulGet(client, port, "/wire-hello", Duration.ofSeconds(8));
+            fixture.start(dispatcher);
+            port = fixture.boundPort();
 
-        assertThat(response.statusCode()).isEqualTo(200);
-        assertThat(response.body()).isEqualTo("wire-hello");
-        assertThat(handler.invocations()).isGreaterThanOrEqualTo(1);
+            HttpResponse<String> response = awaitSuccessfulGet(client, port, "/wire-hello", Duration.ofSeconds(8));
 
-        context.close();
+            assertThat(response.statusCode()).isEqualTo(200);
+            assertThat(handler.invocations()).isGreaterThanOrEqualTo(1);
+            assertThat(fixture.isRunning()).isTrue();
+        } finally {
+            fixture.close();
+            context.close();
+        }
 
-        assertThat(lifecycle.isRunning()).isFalse();
         assertEventuallyUnavailable(client, port, "/wire-hello", Duration.ofSeconds(5));
     }
 
-    private static AnnotationConfigApplicationContext createContext(int port) {
+    private static AnnotationConfigApplicationContext createContext() {
+        return createContextWith(TestConfig.class);
+    }
+
+    private static AnnotationConfigApplicationContext createContextWith(Class<?>... additionalConfigs) {
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
         context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("testProps", Map.of(
-                "exeris.runtime.enabled", "true",
-                "exeris.runtime.auto-start", "true",
-                "exeris.runtime.web.mode", "pure",
-                "exeris.runtime.network.port", String.valueOf(port)
+                "exeris.runtime.web.mode", "pure"
         )));
-        context.register(ExerisRuntimeAutoConfiguration.class, ExerisWebAutoConfiguration.class, TestConfig.class);
+        context.register(ExerisWebAutoConfiguration.class);
+        context.register(additionalConfigs);
         context.refresh();
         return context;
     }
@@ -110,6 +106,31 @@ class ExerisWireLevelRuntimeIntegrationTest {
         }
 
         fail("Exeris runtime did not become HTTP-ready on localhost:" + port, lastFailure);
+        throw new IllegalStateException("unreachable");
+    }
+
+    private static HttpResponse<String> awaitResponseWithStatus(HttpClient client,
+                                                                   int port,
+                                                                   String path,
+                                                                   int expectedStatus,
+                                                                   Duration timeout) throws Exception {
+        Instant deadline = Instant.now().plus(timeout);
+        Throwable lastFailure = null;
+
+        while (Instant.now().isBefore(deadline)) {
+            try {
+                HttpResponse<String> response = client.send(request(port, path), HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() == expectedStatus) {
+                    return response;
+                }
+                lastFailure = new IllegalStateException("Unexpected status: " + response.statusCode());
+            } catch (IOException ex) {
+                lastFailure = ex;
+            }
+            Thread.sleep(100);
+        }
+
+        fail("Did not receive expected status " + expectedStatus + " from localhost:" + port, lastFailure);
         throw new IllegalStateException("unreachable");
     }
 
@@ -139,10 +160,174 @@ class ExerisWireLevelRuntimeIntegrationTest {
                 .build();
     }
 
-    private static int reserveEphemeralPort() throws IOException {
-        try (ServerSocket serverSocket = new ServerSocket()) {
-            serverSocket.bind(new InetSocketAddress("127.0.0.1", 0));
-            return serverSocket.getLocalPort();
+    @Test
+    void pureMode_bodyResponse_returnsCorrectPayloadAndHeaders() throws Exception {
+        HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofMillis(250))
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
+
+        AnnotationConfigApplicationContext context = createContextWith(WireBodyTestConfig.class);
+        EmbeddedHttpEngineFixture fixture = EmbeddedHttpEngineFixtures.kernelBootstrapFixture();
+
+        try {
+            ExerisHttpDispatcher dispatcher = context.getBean(ExerisHttpDispatcher.class);
+            fixture.start(dispatcher);
+            int port = fixture.boundPort();
+
+            HttpResponse<String> response = awaitSuccessfulGet(client, port, "/wire-body", Duration.ofSeconds(8));
+
+            assertThat(response.statusCode()).isEqualTo(200);
+            assertThat(response.body()).isEqualTo("wire-hello");
+            assertThat(response.headers().firstValue("Content-Length")).hasValue("10");
+            assertThat(response.headers().firstValue("Content-Type")).isPresent()
+                    .hasValueSatisfying(ct -> assertThat(ct).contains("text/plain"));
+        } finally {
+            fixture.close();
+            context.close();
+        }
+    }
+
+    @Test
+    void pureMode_missingRoute_returns404_wireLevel() throws Exception {
+        HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofMillis(250))
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
+
+        AnnotationConfigApplicationContext context = createContextWith(TestConfig.class);
+        EmbeddedHttpEngineFixture fixture = EmbeddedHttpEngineFixtures.kernelBootstrapFixture();
+
+        try {
+            ExerisHttpDispatcher dispatcher = context.getBean(ExerisHttpDispatcher.class);
+            fixture.start(dispatcher);
+            int port = fixture.boundPort();
+
+            HttpResponse<String> response = awaitResponseWithStatus(client, port, "/nonexistent", 404, Duration.ofSeconds(8));
+
+            assertThat(response.statusCode()).isEqualTo(404);
+        } finally {
+            fixture.close();
+            context.close();
+        }
+    }
+
+    @Test
+    void pureMode_customStatus_bodyResponse_returns201WithPayload() throws Exception {
+        HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofMillis(250))
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
+
+        AnnotationConfigApplicationContext context = createContextWith(WireCreatedBodyTestConfig.class);
+        EmbeddedHttpEngineFixture fixture = EmbeddedHttpEngineFixtures.kernelBootstrapFixture();
+
+        try {
+            ExerisHttpDispatcher dispatcher = context.getBean(ExerisHttpDispatcher.class);
+            fixture.start(dispatcher);
+            int port = fixture.boundPort();
+
+            HttpResponse<String> response = awaitResponseWithStatus(client, port, "/wire-created", 201, Duration.ofSeconds(8));
+
+            assertThat(response.statusCode()).isEqualTo(201);
+            assertThat(response.body()).isEqualTo("wire-created");
+            assertThat(response.headers().firstValue("Content-Length")).hasValue("12");
+        } finally {
+            fixture.close();
+            context.close();
+        }
+    }
+
+    @Test
+    void pureMode_shutdownDrainsInFlightRequest_beforeIngressBecomesUnavailable() throws Exception {
+        HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofMillis(250))
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
+
+        AnnotationConfigApplicationContext context = createContextWith(WireDrainTestConfig.class);
+        EmbeddedHttpEngineFixture fixture = EmbeddedHttpEngineFixtures.kernelBootstrapFixture();
+        int port = -1;
+
+        CountDownLatch closeStarted = new CountDownLatch(1);
+        CompletableFuture<Void> closeFuture = null;
+        CompletableFuture<HttpResponse<String>> requestFuture = null;
+
+        try {
+            ExerisHttpDispatcher dispatcher = context.getBean(ExerisHttpDispatcher.class);
+            WireDrainHandler handler = context.getBean(WireDrainHandler.class);
+
+            fixture.start(dispatcher);
+            port = fixture.boundPort();
+
+            requestFuture = client.sendAsync(
+                    request(port, "/wire-drain", Duration.ofSeconds(5)),
+                    HttpResponse.BodyHandlers.ofString()
+            );
+
+            assertThat(handler.awaitEntered(Duration.ofSeconds(5))).isTrue();
+
+            closeFuture = CompletableFuture.runAsync(() -> {
+                closeStarted.countDown();
+                fixture.close();
+            });
+
+            assertThat(closeStarted.await(2, TimeUnit.SECONDS)).isTrue();
+
+            handler.release();
+
+            HttpResponse<String> response = requestFuture.get(5, TimeUnit.SECONDS);
+            assertThat(response.statusCode()).isEqualTo(200);
+            assertThat(response.body()).isEqualTo("drained");
+
+            // The kernel fixture may spend up to 10s draining in-flight work before close returns.
+            closeFuture.get(15, TimeUnit.SECONDS);
+        } finally {
+            if (closeFuture != null) {
+                closeFuture.join();
+            } else {
+                fixture.close();
+            }
+            if (port != -1) {
+                assertEventuallyUnavailable(client, port, "/wire-drain", Duration.ofSeconds(5));
+            }
+            context.close();
+        }
+    }
+
+    @Test
+    void pureMode_wireRequest_providesTelemetryScopeEvidence() throws Exception {
+        HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofMillis(250))
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
+
+        AnnotationConfigApplicationContext context = createContextWith(WireTelemetryEvidenceTestConfig.class);
+        EmbeddedHttpEngineFixture fixture = EmbeddedHttpEngineFixtures.kernelBootstrapFixture();
+
+        try {
+            ExerisHttpDispatcher dispatcher = context.getBean(ExerisHttpDispatcher.class);
+            WireTelemetryEvidenceHandler handler = context.getBean(WireTelemetryEvidenceHandler.class);
+
+            RecordingTelemetryProvider.clearEvents();
+
+            fixture.start(dispatcher);
+            int port = fixture.boundPort();
+
+            HttpResponse<String> response = awaitSuccessfulGet(client, port, "/wire-telemetry", Duration.ofSeconds(8));
+
+            assertThat(response.statusCode()).isEqualTo(200);
+            assertThat(response.body()).isEqualTo("telemetry-ok");
+            assertThat(handler.invocations()).isGreaterThanOrEqualTo(1);
+            assertThat(handler.missingScopeFailure()).isNull();
+            assertThat(RecordingTelemetryProvider.recordedEvents())
+                    .anyMatch(event -> "EX-SPRING-WIRE-001".equals(event.code()));
+            assertThat(handler.telemetryProviderBoundObserved()).isNotNull();
+            assertThat(handler.telemetrySinksBoundObserved()).isNotNull();
+            assertThat(handler.telemetryProbeMode()).isEqualTo("direct-kernel-providers");
+        } finally {
+            fixture.close();
+            context.close();
         }
     }
 
@@ -155,6 +340,47 @@ class ExerisWireLevelRuntimeIntegrationTest {
         }
     }
 
+    @Configuration
+    static class WireBodyTestConfig {
+
+        @Bean
+        WireBodyHandler wireBodyHandler() {
+            return new WireBodyHandler();
+        }
+    }
+
+    @Configuration
+    static class WireCreatedBodyTestConfig {
+
+        @Bean
+        WireCreatedBodyHandler wireCreatedBodyHandler() {
+            return new WireCreatedBodyHandler();
+        }
+    }
+
+    @Configuration
+    static class WireDrainTestConfig {
+
+        @Bean
+        WireDrainHandler wireDrainHandler() {
+            return new WireDrainHandler();
+        }
+    }
+
+    @Configuration
+    static class WireTelemetryEvidenceTestConfig {
+
+        @Bean
+        RecordingTelemetryProvider recordingTelemetryProvider() {
+            return new RecordingTelemetryProvider();
+        }
+
+        @Bean
+        WireTelemetryEvidenceHandler wireTelemetryEvidenceHandler() {
+            return new WireTelemetryEvidenceHandler();
+        }
+    }
+
     @ExerisRoute(method = HttpMethod.GET, path = "/wire-hello")
     static class WireHelloHandler implements ExerisRequestHandler {
 
@@ -163,11 +389,121 @@ class ExerisWireLevelRuntimeIntegrationTest {
         @Override
         public ExerisServerResponse handle(ExerisServerRequest request) {
             invocations.incrementAndGet();
-            return ExerisServerResponse.ok().body("wire-hello");
+            return ExerisServerResponse.ok();
         }
 
         int invocations() {
             return invocations.get();
         }
+    }
+
+    @ExerisRoute(method = HttpMethod.GET, path = "/wire-body")
+    static class WireBodyHandler implements ExerisRequestHandler {
+
+        @Override
+        public ExerisServerResponse handle(ExerisServerRequest request) {
+            return ExerisServerResponse.ok().body("wire-hello");
+        }
+    }
+
+    @ExerisRoute(method = HttpMethod.GET, path = "/wire-created")
+    static class WireCreatedBodyHandler implements ExerisRequestHandler {
+
+        @Override
+        public ExerisServerResponse handle(ExerisServerRequest request) {
+            return ExerisServerResponse.status(HttpStatus.CREATED).body("wire-created");
+        }
+    }
+
+    @ExerisRoute(method = HttpMethod.GET, path = "/wire-drain")
+    static class WireDrainHandler implements ExerisRequestHandler {
+
+        private final CountDownLatch entered = new CountDownLatch(1);
+        private final CountDownLatch release = new CountDownLatch(1);
+
+        @Override
+        public ExerisServerResponse handle(ExerisServerRequest request) {
+            entered.countDown();
+            try {
+                if (!release.await(5, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("Timed out waiting for wire-drain release signal");
+                }
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted while waiting for wire-drain release signal", ex);
+            }
+            return ExerisServerResponse.ok().body("drained");
+        }
+
+        boolean awaitEntered(Duration timeout) throws InterruptedException {
+            return entered.await(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        }
+
+        void release() {
+            release.countDown();
+        }
+    }
+
+    @ExerisRoute(method = HttpMethod.GET, path = "/wire-telemetry")
+    static class WireTelemetryEvidenceHandler implements ExerisRequestHandler {
+
+        private final AtomicInteger invocations = new AtomicInteger();
+        private final AtomicReference<Throwable> missingScopeFailure = new AtomicReference<>();
+        private final AtomicReference<Boolean> telemetryProviderBoundObserved = new AtomicReference<>();
+        private final AtomicReference<Boolean> telemetrySinksBoundObserved = new AtomicReference<>();
+        private final AtomicReference<String> telemetryProbeMode = new AtomicReference<>();
+
+        @Override
+        public ExerisServerResponse handle(ExerisServerRequest request) {
+            invocations.incrementAndGet();
+            try {
+                telemetryProviderBoundObserved.set(KernelProviders.TELEMETRY_PROVIDER.isBound());
+                telemetrySinksBoundObserved.set(KernelProviders.TELEMETRY_SINKS.isBound());
+                telemetryProbeMode.set("direct-kernel-providers");
+
+                if (KernelProviders.TELEMETRY_SINKS.isBound()) {
+                    for (var sink : KernelProviders.TELEMETRY_SINKS.get()) {
+                        sink.emit(KernelEvent.info("EX-SPRING-WIRE-001", "wire-telemetry-handler"));
+                    }
+                } else {
+                    missingScopeFailure.compareAndSet(
+                            null,
+                            new IllegalStateException(
+                                    "Telemetry sinks are not bound in KernelProviders during wire telemetry evidence request"
+                            )
+                    );
+                }
+            } catch (Throwable failure) {
+                missingScopeFailure.compareAndSet(null, failure);
+            }
+            return ExerisServerResponse.ok().body("telemetry-ok");
+        }
+
+        int invocations() {
+            return invocations.get();
+        }
+
+        Throwable missingScopeFailure() {
+            return missingScopeFailure.get();
+        }
+
+        Boolean telemetryProviderBoundObserved() {
+            return telemetryProviderBoundObserved.get();
+        }
+
+        Boolean telemetrySinksBoundObserved() {
+            return telemetrySinksBoundObserved.get();
+        }
+
+        String telemetryProbeMode() {
+            return telemetryProbeMode.get();
+        }
+    }
+
+    private static HttpRequest request(int port, String path, Duration timeout) {
+        return HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path))
+                .GET()
+                .timeout(timeout)
+                .build();
     }
 }

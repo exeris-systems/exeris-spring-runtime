@@ -19,6 +19,7 @@ import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -48,17 +49,17 @@ public final class ExerisServerResponse {
     private final List<HttpHeader> extraHeaders;
 
     private ExerisServerResponse(HttpStatus status, String contentType, byte[] body) {
-        this.status = status;
-        this.contentType = contentType;
-        this.body = body;
+        this.status = Objects.requireNonNull(status, "status must not be null");
+        this.contentType = contentType == null ? MediaType.TEXT_PLAIN_VALUE : contentType;
+        this.body = body == null ? new byte[0] : body;
         this.extraHeaders = List.of();
     }
 
     private ExerisServerResponse(HttpStatus status, String contentType, byte[] body, List<HttpHeader> extraHeaders) {
-        this.status = status;
-        this.contentType = contentType;
-        this.body = body;
-        this.extraHeaders = List.copyOf(extraHeaders);
+        this.status = Objects.requireNonNull(status, "status must not be null");
+        this.contentType = contentType == null ? MediaType.TEXT_PLAIN_VALUE : contentType;
+        this.body = body == null ? new byte[0] : body;
+        this.extraHeaders = sanitizeExtraHeaders(extraHeaders);
     }
 
     public static ExerisServerResponse ok() {
@@ -74,8 +75,9 @@ public final class ExerisServerResponse {
     }
 
     public ExerisServerResponse body(String text) {
+        String safeText = text == null ? "" : text;
         return new ExerisServerResponse(this.status, this.contentType,
-                text.getBytes(java.nio.charset.StandardCharsets.UTF_8), this.extraHeaders);
+                safeText.getBytes(java.nio.charset.StandardCharsets.UTF_8), this.extraHeaders);
     }
 
     public ExerisServerResponse body(byte[] bytes) {
@@ -122,9 +124,9 @@ public final class ExerisServerResponse {
     public HttpResponse toKernelResponse(HttpVersion version) {
         List<HttpHeader> responseHeaders = new ArrayList<>();
         responseHeaders.add(new HttpHeader("Content-Type", contentType));
-        responseHeaders.addAll(extraHeaders);
+        addCompatibilityHeaders(responseHeaders);
 
-        if (body == null || body.length == 0) {
+        if (body.length == 0) {
             responseHeaders.add(new HttpHeader("Content-Length", "0"));
             return HttpResponse.noBody(status, version, List.copyOf(responseHeaders));
         }
@@ -159,6 +161,44 @@ public final class ExerisServerResponse {
     public String contentType() { return contentType; }
     public byte[] body() { return Arrays.copyOf(body, body.length); }
 
+    private void addCompatibilityHeaders(List<HttpHeader> responseHeaders) {
+        if (extraHeaders.isEmpty()) {
+            return;
+        }
+
+        for (HttpHeader header : extraHeaders) {
+            if (!isValidCompatibilityHeader(header)) {
+                continue;
+            }
+            responseHeaders.add(header);
+        }
+    }
+
+    private static List<HttpHeader> sanitizeExtraHeaders(List<HttpHeader> headers) {
+        if (headers == null || headers.isEmpty()) {
+            return List.of();
+        }
+
+        List<HttpHeader> sanitized = new ArrayList<>();
+        for (HttpHeader header : headers) {
+            if (header != null) {
+                sanitized.add(header);
+            }
+        }
+        return sanitized.isEmpty() ? List.of() : List.copyOf(sanitized);
+    }
+
+    private static boolean isValidCompatibilityHeader(HttpHeader header) {
+        if (header == null || header.name() == null || header.value() == null) {
+            return false;
+        }
+        String name = header.name().trim();
+        if (name.isEmpty()) {
+            return false;
+        }
+        return !"content-type".equalsIgnoreCase(name) && !"content-length".equalsIgnoreCase(name);
+    }
+
     /**
      * Minimal {@link LoanedBuffer} implementation backed by a heap {@code byte[]}, used as
      * the compatibility fallback in {@link #toKernelResponse} when
@@ -175,7 +215,7 @@ public final class ExerisServerResponse {
         private boolean alive = true;
 
         private HeapBodyBuffer(byte[] bytes) {
-            this.bytes = bytes;
+            this.bytes = bytes == null ? new byte[0] : bytes;
         }
 
         @Override
@@ -195,7 +235,10 @@ public final class ExerisServerResponse {
 
         @Override
         public LoanedBuffer slice(long offset, long length) {
-            return new HeapBodyBuffer(Arrays.copyOfRange(bytes, (int) offset, (int) (offset + length)));
+            int start = checkedIndex(offset, "offset");
+            int requestedLength = checkedIndex(length, "length");
+            int end = checkedEnd(start, requestedLength, bytes.length);
+            return new HeapBodyBuffer(Arrays.copyOfRange(bytes, start, end));
         }
 
         @Override
@@ -205,7 +248,10 @@ public final class ExerisServerResponse {
 
         @Override
         public LoanedBuffer peek(long offset, long length) {
-            return this;
+            int start = checkedIndex(offset, "offset");
+            int requestedLength = checkedIndex(length, "length");
+            int end = checkedEnd(start, requestedLength, bytes.length);
+            return new HeapBodyBuffer(copyRange(start, end));
         }
 
         @Override
@@ -245,7 +291,9 @@ public final class ExerisServerResponse {
         }
 
         @Override
-        public void setSize(long newSize) { /* size is fixed to byte[].length */ }
+        public void setSize(long newSize) {
+            checkedEnd(0, checkedIndex(newSize, "newSize"), bytes.length);
+        }
 
         @Override
         public synchronized boolean isAlive() {
@@ -258,18 +306,34 @@ public final class ExerisServerResponse {
                 return;
             }
 
-            boolean runNow;
             synchronized (this) {
                 if (alive) {
                     closeActions.add(action);
                     return;
                 }
-                runNow = true;
             }
 
-            if (runNow) {
-                action.run();
+            action.run();
+        }
+
+        private byte[] copyRange(int start, int end) {
+            return Arrays.copyOfRange(bytes, start, end);
+        }
+
+        private static int checkedIndex(long value, String label) {
+            if (value < 0 || value > Integer.MAX_VALUE) {
+                throw new IndexOutOfBoundsException(label + " out of bounds: " + value);
             }
+            return Math.toIntExact(value);
+        }
+
+        private static int checkedEnd(int offset, int length, int capacity) {
+            long end = (long) offset + (long) length;
+            if (offset > capacity || end > capacity) {
+                throw new IndexOutOfBoundsException(
+                        "buffer range out of bounds: offset=" + offset + ", length=" + length + ", capacity=" + capacity);
+            }
+            return (int) end;
         }
     }
 }

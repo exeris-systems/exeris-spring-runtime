@@ -8,8 +8,8 @@ package eu.exeris.spring.runtime.web;
 
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
+import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.lang.ArchRule;
-import eu.exeris.spring.runtime.web.autoconfigure.ExerisWebAutoConfiguration;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -22,16 +22,8 @@ class PureModeClasspathGuardTest {
     @BeforeAll
     static void importWebModuleClasses() {
         webModuleClasses = new ClassFileImporter()
-            .importClasses(
-                ExerisHttpDispatcher.class,
-                ExerisErrorMapper.class,
-                ExerisRequestHandler.class,
-                ExerisRoute.class,
-                ExerisRouteRegistry.class,
-                ExerisServerRequest.class,
-                ExerisServerResponse.class,
-                ExerisWebAutoConfiguration.class
-            );
+            .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
+            .importPackages("eu.exeris.spring.runtime.web");
     }
 
     @Test
@@ -49,6 +41,19 @@ class PureModeClasspathGuardTest {
         ArchRule rule = noClasses()
                 .should().dependOnClassesThat()
             .resideInAnyPackage("io.netty..", "reactor..")
+            .allowEmptyShould(true);
+
+        rule.check(webModuleClasses);
+    }
+
+    @Test
+    void pureMode_doesNotImportWebFluxServerAbstractions() {
+        ArchRule rule = noClasses()
+                .should().dependOnClassesThat()
+            .resideInAnyPackage(
+                "org.springframework.web.server..",
+                "org.springframework.web.reactive..",
+                "org.springframework.http.server.reactive..")
             .allowEmptyShould(true);
 
         rule.check(webModuleClasses);

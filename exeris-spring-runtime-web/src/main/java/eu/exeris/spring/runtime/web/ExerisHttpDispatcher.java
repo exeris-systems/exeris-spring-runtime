@@ -15,6 +15,9 @@ import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.telemetry.TelemetrySink;
 
 import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
 /**
  * The primary bridge between the Exeris HTTP runtime and Spring application handlers.
@@ -56,29 +59,44 @@ public final class ExerisHttpDispatcher implements HttpHandler {
 
     private final ExerisRouteRegistry routeRegistry;
     private final ExerisErrorMapper errorMapper;
-    private final List<TelemetrySink> fallbackSinks;
+    private final Supplier<List<TelemetrySink>> fallbackSinksSupplier;
 
     public ExerisHttpDispatcher(ExerisRouteRegistry routeRegistry,
                                  ExerisErrorMapper errorMapper) {
-        this(routeRegistry, errorMapper, List.of());
+        this(routeRegistry, errorMapper, (Supplier<List<TelemetrySink>>) null);
     }
 
     public ExerisHttpDispatcher(ExerisRouteRegistry routeRegistry,
                                  ExerisErrorMapper errorMapper,
                                  List<TelemetrySink> fallbackSinks) {
-        this.routeRegistry = routeRegistry;
-        this.errorMapper = errorMapper;
-        this.fallbackSinks = List.copyOf(fallbackSinks);
+        this(routeRegistry, errorMapper, () -> fallbackSinks);
+    }
+
+    public ExerisHttpDispatcher(ExerisRouteRegistry routeRegistry,
+                                 ExerisErrorMapper errorMapper,
+                                 Supplier<List<TelemetrySink>> fallbackSinksSupplier) {
+        this.routeRegistry = Objects.requireNonNull(routeRegistry, "routeRegistry must not be null");
+        this.errorMapper = Objects.requireNonNull(errorMapper, "errorMapper must not be null");
+        this.fallbackSinksSupplier = memoizeFallbackSinks(fallbackSinksSupplier);
     }
 
     @Override
     public void handle(HttpExchange exchange) throws HttpException {
-        if (KernelProviders.TELEMETRY_SINKS.isBound() || fallbackSinks.isEmpty()) {
+        Objects.requireNonNull(exchange, "exchange must not be null");
+
+        if (KernelProviders.TELEMETRY_SINKS.isBound()) {
             dispatch(exchange);
-        } else {
-            ScopedValue.where(KernelProviders.TELEMETRY_SINKS, fallbackSinks)
-                       .run(() -> dispatch(exchange));
+            return;
         }
+
+        List<TelemetrySink> fallbackSinks = fallbackSinksSupplier.get();
+        if (fallbackSinks.isEmpty()) {
+            dispatch(exchange);
+            return;
+        }
+
+        ScopedValue.where(KernelProviders.TELEMETRY_SINKS, fallbackSinks)
+                .run(() -> dispatch(exchange));
     }
 
     private void dispatch(HttpExchange exchange) {
@@ -97,6 +115,48 @@ public final class ExerisHttpDispatcher implements HttpHandler {
             exchange.respond(errorMapper.map(ex, version));
         } catch (Exception ex) {
             exchange.respond(errorMapper.mapUnhandled(ex, version));
+        }
+    }
+
+    private static Supplier<List<TelemetrySink>> memoizeFallbackSinks(Supplier<List<TelemetrySink>> source) {
+        return new MemoizedTelemetrySinkSupplier(source);
+    }
+
+    private static final class MemoizedTelemetrySinkSupplier implements Supplier<List<TelemetrySink>> {
+
+        private final Supplier<List<TelemetrySink>> source;
+        private final Object lock = new Object();
+        private final AtomicReference<List<TelemetrySink>> cached = new AtomicReference<>();
+
+        private MemoizedTelemetrySinkSupplier(Supplier<List<TelemetrySink>> source) {
+            this.source = source;
+        }
+
+        @Override
+        public List<TelemetrySink> get() {
+            List<TelemetrySink> resolved = cached.get();
+            if (resolved != null) {
+                return resolved;
+            }
+
+            synchronized (lock) {
+                resolved = cached.get();
+                if (resolved == null) {
+                    resolved = sanitizeFallbackSinks(source == null ? null : source.get());
+                    cached.set(resolved);
+                }
+                return resolved;
+            }
+        }
+
+        private static List<TelemetrySink> sanitizeFallbackSinks(List<TelemetrySink> sinks) {
+            if (sinks == null || sinks.isEmpty()) {
+                return List.of();
+            }
+            List<TelemetrySink> sanitized = sinks.stream()
+                    .filter(Objects::nonNull)
+                    .toList();
+            return sanitized.isEmpty() ? List.of() : List.copyOf(sanitized);
         }
     }
 }

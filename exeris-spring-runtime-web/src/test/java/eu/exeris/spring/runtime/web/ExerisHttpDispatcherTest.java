@@ -6,26 +6,19 @@
  */
 package eu.exeris.spring.runtime.web;
 
+import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.exceptions.http.HttpException;
 import eu.exeris.kernel.spi.http.HttpExchange;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpResponse;
-import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
-import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeAutoConfiguration;
-import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
-import eu.exeris.spring.runtime.web.autoconfigure.ExerisWebAutoConfiguration;
+import eu.exeris.kernel.spi.telemetry.KernelEvent;
+import eu.exeris.kernel.spi.telemetry.TelemetrySink;
 import org.junit.jupiter.api.Test;
-import org.springframework.context.annotation.AnnotationConfigApplicationContext;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.core.env.MapPropertySource;
 
-import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.Type;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -33,99 +26,90 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Runtime integration verification for Pure Mode request dispatch ownership.
- *
- * <p>This test starts a real Spring context with both
- * {@link ExerisRuntimeAutoConfiguration} and {@link ExerisWebAutoConfiguration},
- * then invokes the runtime {@link ExerisHttpDispatcher} using realistic kernel-SPI
- * doubles for {@link HttpExchange}/{@link HttpRequest}.
- *
- * <p>Full socket-level E2E (real ingress port + raw HTTP client) is currently blocked
- * in this module because the kernel does not yet expose a stable embeddable
- * {@code HttpServerEngine} test fixture with deterministic port discovery and request
- * context setup for body-buffer allocation in unit/integration tests.
- */
-class ExerisPureModeRequestPathIntegrationTest {
+class ExerisHttpDispatcherTest {
 
     @Test
-    void pureMode_dispatchesExchangeToAnnotatedSpringHandler_andRespondsThroughKernelExchange() throws Exception {
-        try (var context = createContext()) {
-            ExerisHttpDispatcher dispatcher = context.getBean(ExerisHttpDispatcher.class);
-            HelloHandler handler = context.getBean(HelloHandler.class);
+    void fallbackTelemetrySinks_bindOnlyWhenKernelScopeIsUnbound() throws Exception {
+        AtomicInteger supplierCalls = new AtomicInteger();
+        TelemetrySink fallbackSink = new NamedTelemetrySink("fallback");
+        AtomicReference<List<TelemetrySink>> observedSinks = new AtomicReference<>();
 
-            TestExchange exchange = TestExchange.get(HttpMethod.GET, "/hello", anyHttpVersion());
-            dispatcher.handle(exchange.proxy());
+        ExerisRequestHandler handler = request -> {
+            observedSinks.set(KernelProviders.TELEMETRY_SINKS.isBound()
+                    ? KernelProviders.TELEMETRY_SINKS.get()
+                    : List.of());
+            return ExerisServerResponse.ok().body("ok");
+        };
 
-            assertThat(handler.invocations()).isEqualTo(1);
-            assertThat(exchange.response()).isNotNull();
-            assertThat(readStatus(exchange.response())).isEqualTo(HttpStatus.ACCEPTED);
-        }
-    }
+        ExerisHttpDispatcher dispatcher = new ExerisHttpDispatcher(
+                routeRegistry(handler),
+                new ExerisErrorMapper(),
+                () -> {
+                    supplierCalls.incrementAndGet();
+                    return List.of(fallbackSink);
+                });
 
-    @Test
-    void pureMode_mapsMissingRouteToNotFound() throws Exception {
-        try (var context = createContext()) {
-            ExerisHttpDispatcher dispatcher = context.getBean(ExerisHttpDispatcher.class);
+        dispatcher.handle(TestExchange.get(HttpMethod.GET, "/telemetry", anyHttpVersion()).proxy());
 
-            TestExchange exchange = TestExchange.get(HttpMethod.GET, "/missing", anyHttpVersion());
-            dispatcher.handle(exchange.proxy());
-
-            assertThat(exchange.response()).isNotNull();
-            assertThat(readStatus(exchange.response())).isEqualTo(HttpStatus.NOT_FOUND);
-        }
+        assertThat(supplierCalls).hasValue(1);
+        assertThat(observedSinks.get()).containsExactly(fallbackSink);
     }
 
     @Test
-    void pureMode_mapsUnhandledApplicationExceptionToInternalServerError() throws Exception {
-        try (var context = createContext()) {
-            ExerisHttpDispatcher dispatcher = context.getBean(ExerisHttpDispatcher.class);
-            FailingHandler handler = context.getBean(FailingHandler.class);
+    void existingTelemetryBindingTakesPrecedenceOverFallbackSupplier() {
+        AtomicInteger supplierCalls = new AtomicInteger();
+        TelemetrySink existingSink = new NamedTelemetrySink("existing");
+        TelemetrySink fallbackSink = new NamedTelemetrySink("fallback");
+        AtomicReference<List<TelemetrySink>> observedSinks = new AtomicReference<>();
 
-            TestExchange exchange = TestExchange.get(HttpMethod.GET, "/boom", anyHttpVersion());
-            dispatcher.handle(exchange.proxy());
+        ExerisRequestHandler handler = request -> {
+            observedSinks.set(KernelProviders.TELEMETRY_SINKS.get());
+            return ExerisServerResponse.ok().body("ok");
+        };
 
-            assertThat(handler.invocations()).isEqualTo(1);
-            assertThat(exchange.response()).isNotNull();
-            assertThat(readStatus(exchange.response())).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
-        }
+        ExerisHttpDispatcher dispatcher = new ExerisHttpDispatcher(
+                routeRegistry(handler),
+                new ExerisErrorMapper(),
+                () -> {
+                    supplierCalls.incrementAndGet();
+                    return List.of(fallbackSink);
+                });
+
+        ScopedValue.where(KernelProviders.TELEMETRY_SINKS, List.of(existingSink)).run(() -> {
+            try {
+                dispatcher.handle(TestExchange.get(HttpMethod.GET, "/telemetry", anyHttpVersion()).proxy());
+            } catch (HttpException ex) {
+                throw new RuntimeException(ex);
+            }
+        });
+
+        assertThat(supplierCalls).hasValue(0);
+        assertThat(observedSinks.get()).containsExactly(existingSink);
     }
 
     @Test
-    void repeatedLifecycleStopOperations_areLifecycleSafeBeforeRuntimeStart() {
-        try (var context = createContext()) {
-            ExerisRuntimeLifecycle lifecycle = context.getBean(ExerisRuntimeLifecycle.class);
+    void nullFallbackTelemetryPath_isHandledSafely() throws Exception {
+        AtomicReference<Boolean> telemetryBound = new AtomicReference<>();
 
-            AtomicInteger callbackInvocations = new AtomicInteger();
+        ExerisRequestHandler handler = request -> {
+            telemetryBound.set(KernelProviders.TELEMETRY_SINKS.isBound());
+            return ExerisServerResponse.ok().body("ok");
+        };
 
-            lifecycle.stop();
-            lifecycle.stop(callbackInvocations::incrementAndGet);
-            lifecycle.stop(callbackInvocations::incrementAndGet);
+        ExerisHttpDispatcher dispatcher = new ExerisHttpDispatcher(
+                routeRegistry(handler),
+                new ExerisErrorMapper(),
+                (java.util.function.Supplier<List<TelemetrySink>>) null);
 
-            assertThat(callbackInvocations).hasValue(2);
-            assertThat(lifecycle.isRunning()).isFalse();
-        }
+        dispatcher.handle(TestExchange.get(HttpMethod.GET, "/telemetry", anyHttpVersion()).proxy());
+
+        assertThat(telemetryBound.get()).isFalse();
     }
 
-    private AnnotationConfigApplicationContext createContext() {
-        AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("exeris.runtime.auto-start", "false");
-        properties.put("exeris.runtime.web.mode", "pure");
-        context.getEnvironment().getPropertySources().addFirst(
-            new MapPropertySource("testProps", properties));
-        context.register(ExerisRuntimeAutoConfiguration.class, ExerisWebAutoConfiguration.class, TestConfig.class);
-        context.refresh();
-        return context;
-    }
-
-    private static HttpStatus readStatus(HttpResponse response) {
-        try {
-            Method accessor = response.getClass().getMethod("status");
-            return (HttpStatus) accessor.invoke(response);
-        } catch (ReflectiveOperationException ex) {
-            throw new AssertionError("Unable to access HttpResponse status", ex);
-        }
+    private static ExerisRouteRegistry routeRegistry(ExerisRequestHandler handler) {
+        return ExerisRouteRegistry.builder()
+                .register(HttpMethod.GET, "/telemetry", handler)
+                .build();
     }
 
     private static HttpVersion anyHttpVersion() {
@@ -142,57 +126,12 @@ class ExerisPureModeRequestPathIntegrationTest {
                     if (value instanceof HttpVersion version) {
                         return version;
                     }
-                } catch (IllegalAccessException ignored) {
+                } catch (IllegalAccessException _) {
+                    // Ignore inaccessible constants while probing a usable test HttpVersion.
                 }
             }
         }
         throw new IllegalStateException("Unable to obtain any HttpVersion constant for test exchange");
-    }
-
-    @Configuration
-    static class TestConfig {
-
-        @Bean
-        HelloHandler helloHandler() {
-            return new HelloHandler();
-        }
-
-        @Bean
-        FailingHandler failingHandler() {
-            return new FailingHandler();
-        }
-    }
-
-    @ExerisRoute(method = HttpMethod.GET, path = "/hello")
-    static class HelloHandler implements ExerisRequestHandler {
-
-        private final AtomicInteger invocations = new AtomicInteger();
-
-        @Override
-        public ExerisServerResponse handle(ExerisServerRequest request) {
-            invocations.incrementAndGet();
-            return ExerisServerResponse.status(HttpStatus.ACCEPTED).body(new byte[0]);
-        }
-
-        int invocations() {
-            return invocations.get();
-        }
-    }
-
-    @ExerisRoute(method = HttpMethod.GET, path = "/boom")
-    static class FailingHandler implements ExerisRequestHandler {
-
-        private final AtomicInteger invocations = new AtomicInteger();
-
-        @Override
-        public ExerisServerResponse handle(ExerisServerRequest request) {
-            invocations.incrementAndGet();
-            throw new IllegalStateException("boom");
-        }
-
-        int invocations() {
-            return invocations.get();
-        }
     }
 
     private static final class TestExchange {
@@ -227,10 +166,6 @@ class ExerisPureModeRequestPathIntegrationTest {
             return proxy;
         }
 
-        HttpResponse response() {
-            return response.get();
-        }
-
         private static HttpRequest createHttpRequest(HttpMethod method, String path, HttpVersion version) {
             var constructors = HttpRequest.class.getDeclaredConstructors();
             for (var constructor : constructors) {
@@ -243,10 +178,11 @@ class ExerisPureModeRequestPathIntegrationTest {
                             && path.equals(request.path())) {
                         return request;
                     }
-                } catch (ReflectiveOperationException | IllegalArgumentException ignored) {
+                } catch (ReflectiveOperationException | IllegalArgumentException _) {
+                    // Ignore constructor shapes that do not match this lightweight test request.
                 }
             }
-            throw new IllegalStateException("Unable to construct HttpRequest for runtime integration test");
+            throw new IllegalStateException("Unable to construct HttpRequest for test exchange");
         }
 
         private static Object[] buildConstructorArgs(Type[] parameterTypes,
@@ -319,6 +255,33 @@ class ExerisPureModeRequestPathIntegrationTest {
                 return '\0';
             }
             return null;
+        }
+    }
+
+    private record NamedTelemetrySink(String sinkName) implements TelemetrySink {
+        @Override
+        public void emit(KernelEvent event) {
+            // No-op for test telemetry binding checks.
+        }
+
+        @Override
+        public void increment(String metric, long value) {
+            // No-op for test telemetry binding checks.
+        }
+
+        @Override
+        public void gauge(String metric, long value) {
+            // No-op for test telemetry binding checks.
+        }
+
+        @Override
+        public void latency(String metric, long value) {
+            // No-op for test telemetry binding checks.
+        }
+
+        @Override
+        public void close() {
+            // No-op for test telemetry binding checks.
         }
     }
 }
