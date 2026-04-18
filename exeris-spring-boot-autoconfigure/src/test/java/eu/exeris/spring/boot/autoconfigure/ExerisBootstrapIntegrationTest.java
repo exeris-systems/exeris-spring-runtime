@@ -7,8 +7,6 @@
 package eu.exeris.spring.boot.autoconfigure;
 
 import java.lang.reflect.Proxy;
-import java.net.InetSocketAddress;
-import java.net.ServerSocket;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -105,12 +103,13 @@ class ExerisBootstrapIntegrationTest {
     }
 
     @Test
-    void lifecycleStartup_timeoutFailsFastWhenBootNeverBecomesReady() {
+    void lifecycleStartup_timeoutUsesDedicatedLifecycleTimeout() {
         ExerisRuntimeProperties properties = new ExerisRuntimeProperties(
                 true,
                 false,
                 new ExerisRuntimeProperties.WebProperties(ExerisRuntimeProperties.Mode.PURE),
-                new ExerisRuntimeProperties.ShutdownProperties(true, 1)
+                new ExerisRuntimeProperties.LifecycleProperties(1),
+                new ExerisRuntimeProperties.ShutdownProperties(true, 30)
         );
         CountDownLatch propertyReadStarted = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
@@ -121,9 +120,11 @@ class ExerisBootstrapIntegrationTest {
         );
 
         try {
+            long startedAt = System.nanoTime();
             assertThatThrownBy(lifecycle::start)
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("startup timed out");
+            assertThat(Duration.ofNanos(System.nanoTime() - startedAt)).isLessThan(Duration.ofSeconds(5));
             assertThat(lifecycle.isRunning()).isFalse();
             assertThat(propertyReadStarted.await(2, TimeUnit.SECONDS)).isTrue();
         } catch (InterruptedException ex) {
@@ -136,8 +137,25 @@ class ExerisBootstrapIntegrationTest {
     }
 
     @Test
+    void prepareBootstrap_withNullEnvironmentStillReservesSingleSlot() {
+        ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider(null);
+
+        provider.prepareBootstrap();
+        try {
+            assertThatThrownBy(provider::prepareBootstrap)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("already prepared");
+        } finally {
+            provider.clearBootstrap();
+        }
+
+        assertThatCode(provider::prepareBootstrap).doesNotThrowAnyException();
+        provider.clearBootstrap();
+    }
+
+    @Test
     void lifecycleStartup_withHttpHandlerOverride_doesNotFailFromUnboundScopedValue() throws Exception {
-        int port = reserveLoopbackPort();
+        int port = 0;
         withKernelHttpSystemProperties(port, () -> {
             try (var ctx = createContext(
                     Map.of(
@@ -170,7 +188,7 @@ class ExerisBootstrapIntegrationTest {
 
     @Test
     void lifecycleStart_remainsRunningUntilStopRequested() throws Exception {
-        int port = reserveLoopbackPort();
+        int port = 0;
         withKernelHttpSystemProperties(port, () -> {
             try (var ctx = createContext(
                     Map.of(
@@ -202,7 +220,7 @@ class ExerisBootstrapIntegrationTest {
 
     @Test
     void lifecycleRunning_keepsNonDaemonBootThreadAlive() throws Exception {
-        int port = reserveLoopbackPort();
+        int port = 0;
         withKernelHttpSystemProperties(port, () -> {
             try (var ctx = createContext(
                     Map.of(
@@ -234,7 +252,7 @@ class ExerisBootstrapIntegrationTest {
 
     @Test
     void concurrentStopDuringStartup_leavesLifecycleStopped() throws Exception {
-        int port = reserveLoopbackPort();
+        int port = 0;
         withKernelHttpSystemProperties(port, () -> {
             try (var ctx = createContext(
                     Map.of(
@@ -386,13 +404,6 @@ class ExerisBootstrapIntegrationTest {
             LockSupport.parkNanos(Duration.ofMillis(10).toNanos());
         }
         throw new TimeoutException("Exeris lifecycle did not begin startup within " + timeout);
-    }
-
-    private static int reserveLoopbackPort() throws Exception {
-        try (ServerSocket socket = new ServerSocket()) {
-            socket.bind(new InetSocketAddress("127.0.0.1", 0));
-            return socket.getLocalPort();
-        }
     }
 
     private static void withKernelHttpSystemProperties(int port, Runnable action) {

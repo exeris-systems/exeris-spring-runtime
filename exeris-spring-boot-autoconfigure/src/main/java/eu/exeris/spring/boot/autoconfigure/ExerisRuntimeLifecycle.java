@@ -108,6 +108,7 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
                 .daemon(false)
                 .unstarted(() -> runKernelLifetime(kernelBootstrap, bootReady, releaseSignal, bootFailure));
 
+        this.bootstrap.set(kernelBootstrap);
         heldBootScope.set(releaseSignal);
         bootThread.set(thread);
         thread.start();
@@ -119,6 +120,7 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
                 starting = false;
                 stopRequested = true;
                 running = false;
+                lifecycleMonitor.notifyAll();
             }
             throw ex;
         }
@@ -132,6 +134,7 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
                 this.bootstrap.set(kernelBootstrap);
                 running = true;
             }
+            lifecycleMonitor.notifyAll();
         }
 
         if (failure != null) {
@@ -154,21 +157,23 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         KernelBootstrap kernelBootstrap;
         CountDownLatch releaseSignal;
         Thread thread;
+        boolean startupInProgress;
         synchronized (lifecycleMonitor) {
-            if (starting) {
+            startupInProgress = starting;
+            if (startupInProgress) {
                 stopRequested = true;
             }
             kernelBootstrap = this.bootstrap.getAndSet(null);
             releaseSignal = heldBootScope.getAndSet(null);
             thread = bootThread.get();
-            if (!running && kernelBootstrap == null && releaseSignal == null) {
+            if (!running && !startupInProgress && kernelBootstrap == null && releaseSignal == null && thread == null) {
                 return;
             }
             this.running = false;
         }
         releaseBootScope(releaseSignal);
         shutdownKernel(kernelBootstrap);
-        awaitShutdown(thread);
+        awaitStopCompletion(thread, startupInProgress);
     }
 
     @Override
@@ -205,6 +210,7 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
                     running = false;
                 }
                 starting = false;
+                lifecycleMonitor.notifyAll();
             }
         }
     }
@@ -266,6 +272,10 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
     }
 
     private long startupTimeoutMillis() {
+        return Math.max(1L, properties.lifecycle().startupTimeoutSeconds()) * 1_000L;
+    }
+
+    private long shutdownTimeoutMillis() {
         return Math.max(1L, properties.shutdown().timeoutSeconds()) * 1_000L;
     }
 
@@ -307,11 +317,41 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         }
     }
 
+    private void awaitStopCompletion(Thread thread, boolean startupInProgress) {
+        if (thread != null) {
+            awaitShutdown(thread);
+            return;
+        }
+        if (!startupInProgress || !properties.shutdown().graceful()) {
+            return;
+        }
+
+        long timeoutMillis = shutdownTimeoutMillis();
+        long deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+        synchronized (lifecycleMonitor) {
+            while (starting || bootThread.get() != null) {
+                long remainingNanos = deadlineNanos - System.nanoTime();
+                if (remainingNanos <= 0L) {
+                    throw new IllegalStateException(
+                            "Exeris runtime shutdown timed out after " + timeoutMillis
+                                    + " ms waiting for startup cancellation"
+                    );
+                }
+                try {
+                    TimeUnit.NANOSECONDS.timedWait(lifecycleMonitor, remainingNanos);
+                } catch (InterruptedException _) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+        }
+    }
+
     private void awaitShutdown(Thread thread) {
         if (thread == null || thread == Thread.currentThread() || !properties.shutdown().graceful()) {
             return;
         }
-        long timeoutMillis = startupTimeoutMillis();
+        long timeoutMillis = shutdownTimeoutMillis();
         try {
             thread.join(timeoutMillis);
         } catch (InterruptedException _) {

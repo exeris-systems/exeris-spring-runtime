@@ -7,6 +7,7 @@
 package eu.exeris.spring.boot.autoconfigure;
 
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -61,6 +62,7 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
      * never used on the hot request path.
      */
     private static final AtomicReference<Environment> BOOTSTRAP_ENVIRONMENT = new AtomicReference<>();
+    private static final AtomicBoolean BOOTSTRAP_PREPARED = new AtomicBoolean(false);
 
     private final Environment environment;
 
@@ -86,9 +88,10 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
      * Must be called immediately before {@code KernelBootstrap.boot()}.
      */
     void prepareBootstrap() {
-        if (!BOOTSTRAP_ENVIRONMENT.compareAndSet(null, this.environment)) {
+        if (!BOOTSTRAP_PREPARED.compareAndSet(false, true)) {
             throw new IllegalStateException("Exeris bootstrap environment already prepared");
         }
+        BOOTSTRAP_ENVIRONMENT.set(this.environment);
     }
 
     /**
@@ -96,7 +99,8 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
      * after {@code KernelBootstrap.boot()} returns or throws.
      */
     void clearBootstrap() {
-        BOOTSTRAP_ENVIRONMENT.compareAndSet(this.environment, null);
+        BOOTSTRAP_ENVIRONMENT.set(null);
+        BOOTSTRAP_PREPARED.set(false);
     }
 
     @Override
