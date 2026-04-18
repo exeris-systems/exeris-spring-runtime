@@ -10,6 +10,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.springframework.context.SmartLifecycle;
@@ -74,6 +75,7 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
     private volatile boolean running = false;
     private boolean starting = false;
     private boolean stopRequested = false;
+    private final AtomicBoolean shutdownTriggered = new AtomicBoolean(false);
     private final AtomicReference<KernelBootstrap> bootstrap = new AtomicReference<>();
     private final AtomicReference<CountDownLatch> heldBootScope = new AtomicReference<>();
     private final AtomicReference<Thread> bootThread = new AtomicReference<>();
@@ -94,6 +96,7 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
             }
             starting = true;
             stopRequested = false;
+            shutdownTriggered.set(false);
         }
 
         KernelBootstrap kernelBootstrap = KernelBootstrap.builder()
@@ -142,7 +145,7 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         }
         if (shutdownImmediately) {
             releaseBootScope(releaseSignal);
-            shutdownKernel(kernelBootstrap);
+            shutdownKernelOnce(kernelBootstrap);
         }
     }
 
@@ -172,7 +175,7 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
             this.running = false;
         }
         releaseBootScope(releaseSignal);
-        shutdownKernel(kernelBootstrap);
+        shutdownKernelOnce(kernelBootstrap);
         awaitStopCompletion(thread, startupInProgress);
     }
 
@@ -219,7 +222,6 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
                             CountDownLatch bootReady,
                             CountDownLatch releaseSignal) throws KernelBootstrap.BootstrapException {
         Runnable holdKernelScopeOpen = () -> {
-            configProvider.clearBootstrap();
             bootReady.countDown();
             awaitStopSignal(releaseSignal);
         };
@@ -287,13 +289,7 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         releaseBootScope(releaseSignal);
 
         try {
-            configProvider.clearBootstrap();
-        } catch (RuntimeException ex) {
-            failure.addSuppressed(ex);
-        }
-
-        try {
-            shutdownKernel(kernelBootstrap);
+            shutdownKernelOnce(kernelBootstrap);
         } catch (RuntimeException ex) {
             failure.addSuppressed(ex);
         }
@@ -367,6 +363,13 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         }
     }
 
+    private void shutdownKernelOnce(KernelBootstrap kernelBootstrap) {
+        if (kernelBootstrap == null || !shutdownTriggered.compareAndSet(false, true)) {
+            return;
+        }
+        shutdownKernel(kernelBootstrap);
+    }
+
     private static void shutdownKernel(KernelBootstrap bootstrap) {
         if (bootstrap == null) {
             return;
@@ -379,10 +382,10 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
 
     private IllegalStateException failedStart(KernelBootstrap kernelBootstrap, Exception cause) {
         this.running = false;
-        this.bootstrap.set(null);
+        this.bootstrap.compareAndSet(kernelBootstrap, null);
 
         try {
-            shutdownKernel(kernelBootstrap);
+            shutdownKernelOnce(kernelBootstrap);
         } catch (RuntimeException ex) {
             cause.addSuppressed(ex);
         }

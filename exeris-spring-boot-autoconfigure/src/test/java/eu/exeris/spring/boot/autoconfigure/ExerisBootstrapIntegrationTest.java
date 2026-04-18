@@ -178,7 +178,7 @@ class ExerisBootstrapIntegrationTest {
                 } finally {
                     lifecycle.stop();
                     assertThatCode(() -> startFuture.get(10, TimeUnit.SECONDS)).doesNotThrowAnyException();
-                    executor.shutdownNow();
+                    shutdownExecutor(executor);
                 }
             } catch (Exception ex) {
                 throw new RuntimeException(ex);
@@ -275,7 +275,7 @@ class ExerisBootstrapIntegrationTest {
                     assertThat(lifecycle.isRunning()).isFalse();
                 } finally {
                     lifecycle.stop();
-                    executor.shutdownNow();
+                    shutdownExecutor(executor);
                 }
             } catch (Exception ex) {
                 throw new RuntimeException(ex);
@@ -310,6 +310,22 @@ class ExerisBootstrapIntegrationTest {
                 .filter(Thread::isAlive)
                 .findFirst()
                 .orElse(null);
+    }
+
+    private static void shutdownExecutor(ExecutorService executor) {
+        executor.shutdown();
+        try {
+            if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
+                executor.shutdownNow();
+                assertThat(executor.awaitTermination(10, TimeUnit.SECONDS))
+                        .as("test executor should terminate after forced shutdown")
+                        .isTrue();
+            }
+        } catch (InterruptedException ex) {
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
+            throw new AssertionError("Interrupted while shutting down test executor", ex);
+        }
     }
 
     private static Environment blockingEnvironment(CountDownLatch propertyReadStarted,
