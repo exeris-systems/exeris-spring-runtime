@@ -97,7 +97,9 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
 
     @Override
     public int priority() {
-        return 150;
+        // Prefer this provider only when a Spring Environment is actually available.
+        // In fixture-only bootstrap paths (no prepared Environment), defer to kernel/community providers.
+        return environment == null ? 0 : 150;
     }
 
     @Override

@@ -6,15 +6,16 @@
  */
 package eu.exeris.spring.boot.autoconfigure;
 
-import eu.exeris.kernel.core.bootstrap.KernelBootstrap;
-import eu.exeris.kernel.spi.http.HttpHandler;
-import eu.exeris.kernel.spi.http.HttpKernelProviders;
-import eu.exeris.kernel.spi.http.HttpServerEngine;
+import java.lang.reflect.InvocationTargetException;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
+
 import org.springframework.context.SmartLifecycle;
 import org.springframework.lang.NonNull;
 
-import java.lang.reflect.InvocationTargetException;
-import java.util.Optional;
+import eu.exeris.kernel.core.bootstrap.KernelBootstrap;
+import eu.exeris.kernel.spi.http.HttpHandler;
+import eu.exeris.kernel.spi.http.HttpKernelProviders;
 
 /**
  * Spring lifecycle coordinator for the Exeris runtime.
@@ -28,11 +29,12 @@ import java.util.Optional;
  * Spring ApplicationContext.refresh() completes
  *   → SmartLifecycle.start() called (ordered by phase)
  *   → ExerisRuntimeLifecycle.start()
+ *       → binds the optional kernel HTTP handler seam when a Spring HttpHandler is present
  *       → KernelBootstrap.bootstrap(configProvider)
  *           → ServiceLoader discovers SubsystemProviders
  *           → subsystems initialise in DAG order (Config → Memory → Transport ...)
  *           → KERNEL READY
- *       → stores KernelHandle for stop() and isRunning()
+ *       → stores KernelBootstrap for stop() and isRunning()
  * </pre>
  *
  * <h2>Stop Sequence</h2>
@@ -67,8 +69,7 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
     private final Optional<HttpHandler> httpHandler;
 
     private volatile boolean running = false;
-    private volatile HttpServerEngine serverEngine;
-    private volatile KernelBootstrap bootstrap;
+    private final AtomicReference<KernelBootstrap> bootstrap = new AtomicReference<>();
 
     public ExerisRuntimeLifecycle(ExerisRuntimeProperties properties,
                                    ExerisSpringConfigProvider configProvider,
@@ -88,13 +89,8 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
                 .build();
         configProvider.prepareBootstrap();
         try {
-            kernelBootstrap.boot(() -> httpHandler.ifPresent(handler -> {
-                HttpServerEngine engine = HttpKernelProviders.httpServerEngine();
-                this.serverEngine = engine;
-                engine.setHandler(handler);
-                engine.start();
-            }));
-            this.bootstrap = kernelBootstrap;
+            bootKernel(kernelBootstrap);
+            this.bootstrap.set(kernelBootstrap);
             running = true;
         } catch (KernelBootstrap.BootstrapException | RuntimeException ex) {
             throw failedStart(kernelBootstrap, ex);
@@ -111,19 +107,13 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
 
     @Override
     public void stop() {
-        HttpServerEngine engine = this.serverEngine;
-        KernelBootstrap kernelBootstrap = this.bootstrap;
-        if (!running && engine == null && kernelBootstrap == null) {
+        KernelBootstrap kernelBootstrap = this.bootstrap.getAndSet(null);
+        if (!running && kernelBootstrap == null) {
             return;
         }
 
         this.running = false;
-        this.serverEngine = null;
-        this.bootstrap = null;
 
-        if (engine != null) {
-            engine.stop();
-        }
         shutdownKernel(kernelBootstrap);
     }
 
@@ -142,6 +132,25 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         return properties.autoStart();
     }
 
+    private void bootKernel(KernelBootstrap kernelBootstrap) throws KernelBootstrap.BootstrapException {
+        if (httpHandler.isEmpty()) {
+            kernelBootstrap.boot(() -> { });
+            return;
+        }
+
+        try {
+            ScopedValue.where(HttpKernelProviders.HTTP_SERVER_HANDLER, httpHandler.get())
+                    .call(() -> {
+                        kernelBootstrap.boot(() -> { });
+                        return null;
+                    });
+        } catch (KernelBootstrap.BootstrapException | RuntimeException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new IllegalStateException("Exeris runtime startup failed while binding the kernel HTTP handler seam", ex);
+        }
+    }
+
     private static void shutdownKernel(KernelBootstrap bootstrap) {
         if (bootstrap == null) {
             return;
@@ -153,33 +162,13 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
     }
 
     private IllegalStateException failedStart(KernelBootstrap kernelBootstrap, Exception cause) {
-        RuntimeException cleanupFailure = null;
-        HttpServerEngine engine = this.serverEngine;
-
         this.running = false;
-        this.serverEngine = null;
-        this.bootstrap = null;
-
-        if (engine != null) {
-            try {
-                engine.stop();
-            } catch (RuntimeException ex) {
-                cleanupFailure = ex;
-            }
-        }
+        this.bootstrap.set(null);
 
         try {
             shutdownKernel(kernelBootstrap);
         } catch (RuntimeException ex) {
-            if (cleanupFailure != null) {
-                cleanupFailure.addSuppressed(ex);
-            } else {
-                cleanupFailure = ex;
-            }
-        }
-
-        if (cleanupFailure != null) {
-            cause.addSuppressed(cleanupFailure);
+            cause.addSuppressed(ex);
         }
         return new IllegalStateException("Exeris runtime startup failed", cause);
     }
@@ -188,7 +177,7 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         try {
             target.getClass().getMethod(methodName).invoke(target);
             return true;
-        } catch (NoSuchMethodException ex) {
+        } catch (NoSuchMethodException _) {
             return false;
         } catch (InvocationTargetException ex) {
             Throwable cause = ex.getCause();
