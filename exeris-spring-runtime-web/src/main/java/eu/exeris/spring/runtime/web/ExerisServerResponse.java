@@ -6,6 +6,15 @@
  */
 package eu.exeris.spring.runtime.web;
 
+import java.lang.foreign.MemorySegment;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import org.springframework.http.MediaType;
+
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpResponse;
@@ -13,14 +22,6 @@ import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
-import org.springframework.http.MediaType;
-
-import java.lang.foreign.MemorySegment;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Objects;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Application-facing HTTP response builder for Pure Mode handlers.

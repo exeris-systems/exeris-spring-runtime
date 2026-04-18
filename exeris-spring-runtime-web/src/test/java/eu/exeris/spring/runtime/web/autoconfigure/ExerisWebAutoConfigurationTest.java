@@ -6,6 +6,21 @@
  */
 package eu.exeris.spring.runtime.web.autoconfigure;
 
+import java.lang.reflect.Proxy;
+import java.lang.reflect.Type;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Test;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.MapPropertySource;
+
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.http.HttpExchange;
 import eu.exeris.kernel.spi.http.HttpMethod;
@@ -22,21 +37,6 @@ import eu.exeris.spring.runtime.web.ExerisRouteRegistry;
 import eu.exeris.spring.runtime.web.ExerisServerRequest;
 import eu.exeris.spring.runtime.web.ExerisServerResponse;
 import eu.exeris.spring.runtime.web.compat.ExerisCompatDispatcher;
-import org.junit.jupiter.api.Test;
-import org.springframework.context.annotation.AnnotationConfigApplicationContext;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.core.env.MapPropertySource;
-
-import java.lang.reflect.Proxy;
-import java.lang.reflect.Type;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class ExerisWebAutoConfigurationTest {
 

@@ -6,10 +6,10 @@
  */
 package eu.exeris.spring.runtime.web;
 
-import eu.exeris.kernel.spi.http.HttpRequest;
-import eu.exeris.kernel.spi.http.HttpMethod;
-
 import java.util.Objects;
+
+import eu.exeris.kernel.spi.http.HttpMethod;
+import eu.exeris.kernel.spi.http.HttpRequest;
 
 /**
  * Thin, non-copying view over a kernel {@link HttpRequest}.

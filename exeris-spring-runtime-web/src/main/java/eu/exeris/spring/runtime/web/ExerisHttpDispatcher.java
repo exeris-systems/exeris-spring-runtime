@@ -6,6 +6,11 @@
  */
 package eu.exeris.spring.runtime.web;
 
+import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
+
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.http.HttpException;
 import eu.exeris.kernel.spi.http.HttpExchange;
@@ -13,11 +18,6 @@ import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.telemetry.TelemetrySink;
-
-import java.util.List;
-import java.util.Objects;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Supplier;
 
 /**
  * The primary bridge between the Exeris HTTP runtime and Spring application handlers.

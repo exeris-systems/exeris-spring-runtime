@@ -6,20 +6,20 @@
  */
 package eu.exeris.spring.runtime.web;
 
-import eu.exeris.kernel.spi.http.HttpHeader;
-import eu.exeris.kernel.spi.http.HttpResponse;
-import eu.exeris.kernel.spi.http.HttpStatus;
-import eu.exeris.kernel.spi.http.HttpVersion;
-import eu.exeris.kernel.spi.memory.LoanedBuffer;
-import org.junit.jupiter.api.Test;
-import org.springframework.http.MediaType;
-
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
+
+import eu.exeris.kernel.spi.http.HttpHeader;
+import eu.exeris.kernel.spi.http.HttpResponse;
+import eu.exeris.kernel.spi.http.HttpStatus;
+import eu.exeris.kernel.spi.http.HttpVersion;
+import eu.exeris.kernel.spi.memory.LoanedBuffer;
 
 class ExerisServerResponseTest {
 

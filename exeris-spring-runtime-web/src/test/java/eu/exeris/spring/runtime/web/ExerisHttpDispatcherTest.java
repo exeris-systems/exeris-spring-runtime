@@ -6,6 +6,16 @@
  */
 package eu.exeris.spring.runtime.web;
 
+import java.lang.reflect.Proxy;
+import java.lang.reflect.Type;
+import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Test;
+
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.http.HttpException;
 import eu.exeris.kernel.spi.http.HttpExchange;
@@ -15,16 +25,6 @@ import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.telemetry.KernelEvent;
 import eu.exeris.kernel.spi.telemetry.TelemetrySink;
-import org.junit.jupiter.api.Test;
-
-import java.lang.reflect.Proxy;
-import java.lang.reflect.Type;
-import java.util.List;
-import java.util.Optional;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class ExerisHttpDispatcherTest {
 
