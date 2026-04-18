@@ -107,9 +107,11 @@ class ExerisHttpDispatcherTest {
     }
 
     @Test
-    void fallbackTelemetrySupplierFailure_doesNotBreakRequestHandling() throws Exception {
+    void fallbackTelemetrySupplierFailure_doesNotBreakRequestHandling_orRetrySupplierResolution() throws Exception {
         AtomicInteger handlerInvocations = new AtomicInteger();
-        TestExchange exchange = TestExchange.get(HttpMethod.GET, "/telemetry", anyHttpVersion());
+        AtomicInteger supplierCalls = new AtomicInteger();
+        TestExchange firstExchange = TestExchange.get(HttpMethod.GET, "/telemetry", anyHttpVersion());
+        TestExchange secondExchange = TestExchange.get(HttpMethod.GET, "/telemetry", anyHttpVersion());
 
         ExerisRequestHandler handler = request -> {
             handlerInvocations.incrementAndGet();
@@ -120,13 +122,17 @@ class ExerisHttpDispatcherTest {
                 routeRegistry(handler),
                 new ExerisErrorMapper(),
                 () -> {
+                    supplierCalls.incrementAndGet();
                     throw new IllegalStateException("fallback sink creation failed");
                 });
 
-        dispatcher.handle(exchange.proxy());
+        dispatcher.handle(firstExchange.proxy());
+        dispatcher.handle(secondExchange.proxy());
 
-        assertThat(handlerInvocations).hasValue(1);
-        assertThat(exchange.response()).isNotNull();
+        assertThat(supplierCalls).hasValue(1);
+        assertThat(handlerInvocations).hasValue(2);
+        assertThat(firstExchange.response()).isNotNull();
+        assertThat(secondExchange.response()).isNotNull();
     }
 
     private static ExerisRouteRegistry routeRegistry(ExerisRequestHandler handler) {

@@ -63,8 +63,7 @@ class ExerisWireLevelRuntimeIntegrationTest {
             assertThat(handler.invocations()).isGreaterThanOrEqualTo(1);
             assertThat(fixture.isRunning()).isTrue();
         } finally {
-            fixture.close();
-            context.close();
+            closeFixtureAndContext(fixture, context);
         }
 
         if (port != -1) {
@@ -162,6 +161,15 @@ class ExerisWireLevelRuntimeIntegrationTest {
                 .build();
     }
 
+    private static void closeFixtureAndContext(EmbeddedHttpEngineFixture fixture,
+                                               AnnotationConfigApplicationContext context) {
+        try {
+            fixture.close();
+        } finally {
+            context.close();
+        }
+    }
+
     @Test
     void pureMode_bodyResponse_returnsCorrectPayloadAndHeaders() throws Exception {
         HttpClient client = HttpClient.newBuilder()
@@ -185,8 +193,7 @@ class ExerisWireLevelRuntimeIntegrationTest {
             assertThat(response.headers().firstValue("Content-Type")).isPresent()
                     .hasValueSatisfying(ct -> assertThat(ct).contains("text/plain"));
         } finally {
-            fixture.close();
-            context.close();
+            closeFixtureAndContext(fixture, context);
         }
     }
 
@@ -209,8 +216,7 @@ class ExerisWireLevelRuntimeIntegrationTest {
 
             assertThat(response.statusCode()).isEqualTo(404);
         } finally {
-            fixture.close();
-            context.close();
+            closeFixtureAndContext(fixture, context);
         }
     }
 
@@ -235,8 +241,7 @@ class ExerisWireLevelRuntimeIntegrationTest {
             assertThat(response.body()).isEqualTo("wire-created");
             assertThat(response.headers().firstValue("Content-Length")).hasValue("12");
         } finally {
-            fixture.close();
-            context.close();
+            closeFixtureAndContext(fixture, context);
         }
     }
 
@@ -285,15 +290,18 @@ class ExerisWireLevelRuntimeIntegrationTest {
             // The kernel fixture may spend up to 10s draining in-flight work before close returns.
             closeFuture.get(15, TimeUnit.SECONDS);
         } finally {
-            if (closeFuture != null) {
-                closeFuture.join();
-            } else {
-                fixture.close();
+            try {
+                if (closeFuture != null) {
+                    closeFuture.join();
+                } else {
+                    fixture.close();
+                }
+                if (port != -1) {
+                    assertEventuallyUnavailable(client, port, "/wire-drain", Duration.ofSeconds(5));
+                }
+            } finally {
+                context.close();
             }
-            if (port != -1) {
-                assertEventuallyUnavailable(client, port, "/wire-drain", Duration.ofSeconds(5));
-            }
-            context.close();
         }
     }
 
@@ -328,8 +336,7 @@ class ExerisWireLevelRuntimeIntegrationTest {
             assertThat(handler.telemetrySinksBoundObserved()).isNotNull();
             assertThat(handler.telemetryProbeMode()).isEqualTo("direct-kernel-providers");
         } finally {
-            fixture.close();
-            context.close();
+            closeFixtureAndContext(fixture, context);
         }
     }
 

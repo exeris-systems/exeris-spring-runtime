@@ -100,11 +100,7 @@ public final class ExerisHttpDispatcher implements HttpHandler {
     }
 
     private List<TelemetrySink> resolveFallbackSinks() {
-        try {
-            return fallbackSinksSupplier.get();
-        } catch (RuntimeException _) {
-            return List.of();
-        }
+        return fallbackSinksSupplier.get();
     }
 
     private void dispatch(HttpExchange exchange) {
@@ -150,10 +146,18 @@ public final class ExerisHttpDispatcher implements HttpHandler {
             synchronized (lock) {
                 resolved = cached.get();
                 if (resolved == null) {
-                    resolved = sanitizeFallbackSinks(source == null ? null : source.get());
+                    resolved = resolveSafely(source);
                     cached.set(resolved);
                 }
                 return resolved;
+            }
+        }
+
+        private static List<TelemetrySink> resolveSafely(Supplier<List<TelemetrySink>> source) {
+            try {
+                return sanitizeFallbackSinks(source == null ? null : source.get());
+            } catch (RuntimeException _) {
+                return List.of();
             }
         }
 

@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
@@ -104,6 +105,24 @@ class ExerisWebAutoConfigurationTest {
         }
     }
 
+    @Test
+    void pureMode_allowsNamedFallbackTelemetrySupplierOverride() throws Exception {
+        try (AnnotationConfigApplicationContext context = createContext(
+                Map.of("exeris.runtime.web.mode", "pure"),
+                TelemetryHandlerConfig.class,
+                FallbackTelemetryOverrideConfig.class)) {
+            ExerisHttpDispatcher dispatcher = context.getBean(ExerisHttpDispatcher.class);
+            TelemetryAwareHandler handler = context.getBean(TelemetryAwareHandler.class);
+            AtomicInteger supplierCalls = context.getBean("overrideFallbackSupplierCalls", AtomicInteger.class);
+
+            dispatcher.handle(TestExchange.get(HttpMethod.GET, "/telemetry", anyHttpVersion()).proxy());
+            dispatcher.handle(TestExchange.get(HttpMethod.GET, "/telemetry", anyHttpVersion()).proxy());
+
+            assertThat(handler.telemetryBound()).isTrue();
+            assertThat(supplierCalls).hasValue(1);
+        }
+    }
+
     @SuppressWarnings("null")
     private AnnotationConfigApplicationContext createContext(Map<String, Object> properties, Class<?>... extraConfigs) {
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
@@ -153,6 +172,25 @@ class ExerisWebAutoConfigurationTest {
         @SuppressWarnings("unused")
         CountingTelemetryProvider countingTelemetryProvider() {
             return new CountingTelemetryProvider();
+        }
+    }
+
+    @Configuration
+    static class FallbackTelemetryOverrideConfig {
+
+        @Bean("overrideFallbackSupplierCalls")
+        @SuppressWarnings("unused")
+        AtomicInteger overrideFallbackSupplierCalls() {
+            return new AtomicInteger();
+        }
+
+        @Bean(name = "exerisFallbackTelemetrySinks")
+        @SuppressWarnings("unused")
+        Supplier<List<TelemetrySink>> exerisFallbackTelemetrySinksOverride(AtomicInteger overrideFallbackSupplierCalls) {
+            return () -> {
+                overrideFallbackSupplierCalls.incrementAndGet();
+                return List.of(new OverrideTelemetrySink());
+            };
         }
     }
 
@@ -209,6 +247,7 @@ class ExerisWebAutoConfigurationTest {
         private CountingTelemetrySink(AtomicInteger closedSinkCount) {
             this.closedSinkCount = closedSinkCount;
         }
+
         @Override
         public void emit(KernelEvent event) {
             // No-op for provider wiring verification in tests.
@@ -237,6 +276,39 @@ class ExerisWebAutoConfigurationTest {
         @Override
         public void close() {
             closedSinkCount.incrementAndGet();
+        }
+    }
+
+    private static final class OverrideTelemetrySink implements TelemetrySink {
+
+        @Override
+        public void emit(KernelEvent event) {
+            // No-op for explicit fallback override verification.
+        }
+
+        @Override
+        public void close() {
+            // No-op for explicit fallback override verification.
+        }
+
+        @Override
+        public void increment(String metric, long value) {
+            // No-op for explicit fallback override verification.
+        }
+
+        @Override
+        public void gauge(String metric, long value) {
+            // No-op for explicit fallback override verification.
+        }
+
+        @Override
+        public void latency(String metric, long value) {
+            // No-op for explicit fallback override verification.
+        }
+
+        @Override
+        public String sinkName() {
+            return "override-test-sink";
         }
     }
 

@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -42,6 +43,8 @@ import eu.exeris.spring.runtime.web.ExerisRouteRegistry;
         matchIfMissing = true)
 public class ExerisWebAutoConfiguration {
 
+    private static final String FALLBACK_TELEMETRY_SINKS_BEAN_NAME = "exerisFallbackTelemetrySinks";
+
     @Bean
     @ConditionalOnMissingBean
     public ExerisErrorMapper exerisErrorMapper() {
@@ -65,18 +68,20 @@ public class ExerisWebAutoConfiguration {
         return builder.build();
     }
 
-    @Bean(destroyMethod = "close")
-    @ConditionalOnMissingBean
+    @Bean(name = FALLBACK_TELEMETRY_SINKS_BEAN_NAME, destroyMethod = "close")
+    @ConditionalOnMissingBean(name = FALLBACK_TELEMETRY_SINKS_BEAN_NAME)
     @SuppressWarnings("unused")
-    FallbackTelemetrySinksSupplier exerisFallbackTelemetrySinks(ObjectProvider<TelemetryProvider> telemetryProviders) {
+    Supplier<List<TelemetrySink>> exerisFallbackTelemetrySinks(ObjectProvider<TelemetryProvider> telemetryProviders) {
         return buildFallbackSinksSupplier(telemetryProviders);
     }
 
     @Bean
     @ConditionalOnMissingBean
+    @SuppressWarnings("unused")
     ExerisHttpDispatcher exerisHttpDispatcher(ExerisRouteRegistry routeRegistry,
                                                ExerisErrorMapper errorMapper,
-                                               FallbackTelemetrySinksSupplier fallbackTelemetrySinks) {
+                                               @Qualifier(FALLBACK_TELEMETRY_SINKS_BEAN_NAME)
+                                               Supplier<List<TelemetrySink>> fallbackTelemetrySinks) {
         return new ExerisHttpDispatcher(routeRegistry, errorMapper, fallbackTelemetrySinks);
     }
 
@@ -90,12 +95,12 @@ public class ExerisWebAutoConfiguration {
      *
      * <p>Returns an empty list when no {@link TelemetryProvider} beans are present in the context.
      */
-    private static FallbackTelemetrySinksSupplier buildFallbackSinksSupplier(
+    private static Supplier<List<TelemetrySink>> buildFallbackSinksSupplier(
             ObjectProvider<TelemetryProvider> telemetryProviders) {
         return new FallbackTelemetrySinksSupplier(telemetryProviders);
     }
 
-    static final class FallbackTelemetrySinksSupplier implements Supplier<List<TelemetrySink>>, AutoCloseable {
+    private static final class FallbackTelemetrySinksSupplier implements Supplier<List<TelemetrySink>>, AutoCloseable {
 
         private final ObjectProvider<TelemetryProvider> telemetryProviders;
         private final Object lock = new Object();
