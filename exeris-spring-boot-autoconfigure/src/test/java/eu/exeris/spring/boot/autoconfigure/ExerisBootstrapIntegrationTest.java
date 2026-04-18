@@ -6,13 +6,14 @@
  */
 package eu.exeris.spring.boot.autoconfigure;
 
-import java.lang.reflect.Field;
+import java.lang.reflect.Proxy;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -27,24 +28,17 @@ import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 import org.springframework.core.env.MapPropertySource;
 
-import eu.exeris.kernel.core.bootstrap.KernelBootstrap;
 import eu.exeris.kernel.spi.http.HttpExchange;
 import eu.exeris.kernel.spi.http.HttpHandler;
 
 /**
- * Integration test for the Exeris bootstrap lifecycle within a Spring application context.
+ * Integration tests for the real Exeris boot and shutdown bridge inside a Spring context.
  *
- * <h2>Phase 0 Exit Criteria</h2>
- * <p>These tests verify that Spring and the Exeris runtime can co-start in a single JVM
- * without any servlet container (Tomcat, Jetty, Undertow) or reactive runtime (Netty,
- * WebFlux) appearing on the classpath.
- *
- * <h2>Runtime Coordinator</h2>
- * <p>{@link ExerisRuntimeLifecycle#start()} is a stub in Phase 0. The actual
- * {@code KernelBootstrap} invocation is guarded and will only succeed when the kernel API
- * is confirmed. Until then, the Spring context must still start and expose the expected beans.
+ * <p>These assertions cover truthful Pure Mode bootstrap behavior: Spring bean wiring,
+ * Exeris lifecycle coordination, clean stop behavior, and a servlet/reactive-free baseline.
  *
  * @since 0.1.0
  */
@@ -111,6 +105,37 @@ class ExerisBootstrapIntegrationTest {
     }
 
     @Test
+    void lifecycleStartup_timeoutFailsFastWhenBootNeverBecomesReady() {
+        ExerisRuntimeProperties properties = new ExerisRuntimeProperties(
+                true,
+                false,
+                new ExerisRuntimeProperties.WebProperties(ExerisRuntimeProperties.Mode.PURE),
+                new ExerisRuntimeProperties.ShutdownProperties(true, 1)
+        );
+        CountDownLatch propertyReadStarted = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ExerisRuntimeLifecycle lifecycle = new ExerisRuntimeLifecycle(
+                properties,
+                new ExerisSpringConfigProvider(blockingEnvironment(propertyReadStarted, release)),
+                java.util.Optional.empty()
+        );
+
+        try {
+            assertThatThrownBy(lifecycle::start)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("startup timed out");
+            assertThat(lifecycle.isRunning()).isFalse();
+            assertThat(propertyReadStarted.await(2, TimeUnit.SECONDS)).isTrue();
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("Interrupted while waiting for blocking startup evidence", ex);
+        } finally {
+            release.countDown();
+            lifecycle.stop();
+        }
+    }
+
+    @Test
     void lifecycleStartup_withHttpHandlerOverride_doesNotFailFromUnboundScopedValue() throws Exception {
         int port = reserveLoopbackPort();
         withKernelHttpSystemProperties(port, () -> {
@@ -144,7 +169,7 @@ class ExerisBootstrapIntegrationTest {
     }
 
     @Test
-    void lifecycleStart_keepsKernelBootScopeActiveUntilStopRequested() throws Exception {
+    void lifecycleStart_remainsRunningUntilStopRequested() throws Exception {
         int port = reserveLoopbackPort();
         withKernelHttpSystemProperties(port, () -> {
             try (var ctx = createContext(
@@ -160,17 +185,15 @@ class ExerisBootstrapIntegrationTest {
                 ExerisRuntimeLifecycle lifecycle = ctx.getBean(ExerisRuntimeLifecycle.class);
 
                 lifecycle.start();
+                Thread runtimeThread = awaitRuntimeThread(Duration.ofSeconds(10));
                 assertThat(lifecycle.isRunning()).isTrue();
-
-                KernelBootstrap kernelBootstrap = extractBootstrap(lifecycle);
-                assertThat(kernelBootstrap).isNotNull();
-                assertThatCode(kernelBootstrap::healthMonitor).doesNotThrowAnyException();
+                assertThat(runtimeThread).isNotNull();
+                assertThat(runtimeThread.isAlive()).isTrue();
 
                 lifecycle.stop();
+                runtimeThread.join(Duration.ofSeconds(10).toMillis());
                 assertThat(lifecycle.isRunning()).isFalse();
-                assertThatThrownBy(kernelBootstrap::healthMonitor)
-                        .isInstanceOf(IllegalStateException.class)
-                        .hasMessageContaining("not active");
+                assertThat(runtimeThread.isAlive()).isFalse();
             } catch (Exception ex) {
                 throw new RuntimeException(ex);
             }
@@ -196,7 +219,7 @@ class ExerisBootstrapIntegrationTest {
                 lifecycle.start();
                 try {
                     assertThat(lifecycle.isRunning()).isTrue();
-                    Thread runtimeThread = extractBootThread(lifecycle);
+                    Thread runtimeThread = awaitRuntimeThread(Duration.ofSeconds(10));
                     assertThat(runtimeThread).isNotNull();
                     assertThat(runtimeThread.isAlive()).isTrue();
                     assertThat(runtimeThread.isDaemon()).isFalse();
@@ -251,20 +274,84 @@ class ExerisBootstrapIntegrationTest {
         }
     }
 
-    private static KernelBootstrap extractBootstrap(ExerisRuntimeLifecycle lifecycle) throws Exception {
-        Field bootstrapField = ExerisRuntimeLifecycle.class.getDeclaredField("bootstrap");
-        bootstrapField.setAccessible(true);
-        @SuppressWarnings("unchecked")
-        var bootstrapRef = (java.util.concurrent.atomic.AtomicReference<KernelBootstrap>) bootstrapField.get(lifecycle);
-        return bootstrapRef.get();
+    private static Thread awaitRuntimeThread(Duration timeout) throws TimeoutException {
+        long deadlineNanos = System.nanoTime() + timeout.toNanos();
+        while (System.nanoTime() < deadlineNanos) {
+            Thread runtimeThread = findRuntimeThread();
+            if (runtimeThread != null) {
+                return runtimeThread;
+            }
+            LockSupport.parkNanos(Duration.ofMillis(10).toNanos());
+        }
+        throw new TimeoutException("Exeris lifecycle thread was not observed within " + timeout);
     }
 
-    private static Thread extractBootThread(ExerisRuntimeLifecycle lifecycle) throws Exception {
-        Field bootThreadField = ExerisRuntimeLifecycle.class.getDeclaredField("bootThread");
-        bootThreadField.setAccessible(true);
-        @SuppressWarnings("unchecked")
-        var bootThreadRef = (java.util.concurrent.atomic.AtomicReference<Thread>) bootThreadField.get(lifecycle);
-        return bootThreadRef.get();
+    private static Thread findRuntimeThread() {
+        return Thread.getAllStackTraces().keySet().stream()
+                .filter(thread -> "exeris-runtime-lifecycle".equals(thread.getName()))
+                .filter(Thread::isAlive)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static Environment blockingEnvironment(CountDownLatch propertyReadStarted,
+                                                   CountDownLatch release) {
+        return (Environment) Proxy.newProxyInstance(
+                ExerisBootstrapIntegrationTest.class.getClassLoader(),
+                new Class<?>[]{Environment.class},
+                (proxy, method, args) -> {
+                    if (method.getDeclaringClass() == Object.class) {
+                        return switch (method.getName()) {
+                            case "toString" -> "blocking-test-environment";
+                            case "hashCode" -> System.identityHashCode(proxy);
+                            case "equals" -> proxy == args[0];
+                            default -> null;
+                        };
+                    }
+
+                    propertyReadStarted.countDown();
+                    try {
+                        release.await();
+                    } catch (InterruptedException _) {
+                        Thread.currentThread().interrupt();
+                    }
+                    return defaultEnvironmentValue(method.getReturnType());
+                }
+        );
+    }
+
+    private static Object defaultEnvironmentValue(Class<?> returnType) {
+        if (!returnType.isPrimitive()) {
+            if (returnType == String[].class) {
+                return new String[0];
+            }
+            return null;
+        }
+        if (returnType == boolean.class) {
+            return false;
+        }
+        if (returnType == byte.class) {
+            return (byte) 0;
+        }
+        if (returnType == short.class) {
+            return (short) 0;
+        }
+        if (returnType == int.class) {
+            return 0;
+        }
+        if (returnType == long.class) {
+            return 0L;
+        }
+        if (returnType == float.class) {
+            return 0f;
+        }
+        if (returnType == double.class) {
+            return 0d;
+        }
+        if (returnType == char.class) {
+            return '\0';
+        }
+        return null;
     }
 
     private static void awaitLifecycleStart(ExerisRuntimeLifecycle lifecycle,
@@ -289,7 +376,7 @@ class ExerisBootstrapIntegrationTest {
                                                      Duration timeout) throws Exception {
         long deadlineNanos = System.nanoTime() + timeout.toNanos();
         while (System.nanoTime() < deadlineNanos) {
-            if (extractBootThread(lifecycle) != null || lifecycle.isRunning()) {
+            if (findRuntimeThread() != null || lifecycle.isRunning()) {
                 return;
             }
             if (startFuture.isDone()) {

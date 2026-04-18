@@ -9,6 +9,7 @@ package eu.exeris.spring.boot.autoconfigure;
 import java.lang.reflect.InvocationTargetException;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.springframework.context.SmartLifecycle;
@@ -111,7 +112,16 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         bootThread.set(thread);
         thread.start();
 
-        awaitStartup(bootReady);
+        try {
+            awaitStartup(bootReady, releaseSignal, kernelBootstrap, thread);
+        } catch (IllegalStateException ex) {
+            synchronized (lifecycleMonitor) {
+                starting = false;
+                stopRequested = true;
+                running = false;
+            }
+            throw ex;
+        }
 
         Exception failure = bootFailure.get();
         boolean shutdownImmediately;
@@ -230,12 +240,56 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         }
     }
 
-    private static void awaitStartup(CountDownLatch bootReady) {
+    private void awaitStartup(CountDownLatch bootReady,
+                              CountDownLatch releaseSignal,
+                              KernelBootstrap kernelBootstrap,
+                              Thread thread) {
+        long timeoutMillis = startupTimeoutMillis();
         try {
-            bootReady.await();
+            if (bootReady.await(timeoutMillis, TimeUnit.MILLISECONDS)) {
+                return;
+            }
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("Exeris runtime startup was interrupted", ex);
+            IllegalStateException failure =
+                    new IllegalStateException("Exeris runtime startup was interrupted", ex);
+            bestEffortStartupCleanup(releaseSignal, kernelBootstrap, thread, failure);
+            throw failure;
+        }
+
+        IllegalStateException failure = new IllegalStateException(
+                "Exeris runtime startup timed out after " + timeoutMillis
+                        + " ms waiting for kernel bootstrap readiness"
+        );
+        bestEffortStartupCleanup(releaseSignal, kernelBootstrap, thread, failure);
+        throw failure;
+    }
+
+    private long startupTimeoutMillis() {
+        return Math.max(1L, properties.shutdown().timeoutSeconds()) * 1_000L;
+    }
+
+    private void bestEffortStartupCleanup(CountDownLatch releaseSignal,
+                                          KernelBootstrap kernelBootstrap,
+                                          Thread thread,
+                                          RuntimeException failure) {
+        heldBootScope.compareAndSet(releaseSignal, null);
+        releaseBootScope(releaseSignal);
+
+        try {
+            configProvider.clearBootstrap();
+        } catch (RuntimeException ex) {
+            failure.addSuppressed(ex);
+        }
+
+        try {
+            shutdownKernel(kernelBootstrap);
+        } catch (RuntimeException ex) {
+            failure.addSuppressed(ex);
+        }
+
+        if (thread != null && thread.isAlive()) {
+            thread.interrupt();
         }
     }
 
@@ -257,7 +311,7 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         if (thread == null || thread == Thread.currentThread() || !properties.shutdown().graceful()) {
             return;
         }
-        long timeoutMillis = Math.max(1L, properties.shutdown().timeoutSeconds()) * 1_000L;
+        long timeoutMillis = startupTimeoutMillis();
         try {
             thread.join(timeoutMillis);
         } catch (InterruptedException _) {
