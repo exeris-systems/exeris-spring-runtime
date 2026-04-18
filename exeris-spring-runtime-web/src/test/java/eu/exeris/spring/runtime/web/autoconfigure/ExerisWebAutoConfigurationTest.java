@@ -36,7 +36,6 @@ import eu.exeris.spring.runtime.web.ExerisRoute;
 import eu.exeris.spring.runtime.web.ExerisRouteRegistry;
 import eu.exeris.spring.runtime.web.ExerisServerRequest;
 import eu.exeris.spring.runtime.web.ExerisServerResponse;
-import eu.exeris.spring.runtime.web.compat.ExerisCompatDispatcher;
 
 class ExerisWebAutoConfigurationTest {
 
@@ -48,16 +47,6 @@ class ExerisWebAutoConfigurationTest {
 
             assertThat(routeRegistry.resolve(HttpMethod.GET, "/hello")).isSameAs(handler);
             assertThat(context.getBeanNamesForType(ExerisHttpDispatcher.class)).hasSize(1);
-            assertThat(context.getBeanNamesForType(ExerisCompatDispatcher.class)).isEmpty();
-        }
-    }
-
-    @Test
-    void compatibilityMode_disablesPureModeWebAutoConfigurationBeans() {
-        try (var context = createContext(Map.of("exeris.runtime.web.mode", "compatibility"))) {
-            assertThat(context.getBeanNamesForType(ExerisRouteRegistry.class)).isEmpty();
-            assertThat(context.getBeanNamesForType(ExerisHttpDispatcher.class)).isEmpty();
-            assertThat(context.getBeanNamesForType(ExerisCompatDispatcher.class)).hasSize(1);
         }
     }
 

@@ -48,7 +48,7 @@ class ExerisWireLevelRuntimeIntegrationTest {
 
         AnnotationConfigApplicationContext context = createContext();
         EmbeddedHttpEngineFixture fixture = EmbeddedHttpEngineFixtures.kernelBootstrapFixture();
-        int port;
+        int port = -1;
 
         try {
             ExerisHttpDispatcher dispatcher = context.getBean(ExerisHttpDispatcher.class);
@@ -67,7 +67,9 @@ class ExerisWireLevelRuntimeIntegrationTest {
             context.close();
         }
 
-        assertEventuallyUnavailable(client, port, "/wire-hello", Duration.ofSeconds(5));
+        if (port != -1) {
+            assertEventuallyUnavailable(client, port, "/wire-hello", Duration.ofSeconds(5));
+        }
     }
 
     private static AnnotationConfigApplicationContext createContext() {

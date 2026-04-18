@@ -46,6 +46,20 @@ class ExerisServerResponseTest {
     }
 
     @Test
+    void builderNormalizesNullContentTypeAndByteBody() {
+        ExerisServerResponse response = ExerisServerResponse.status(HttpStatus.OK)
+                .contentType((MediaType) null)
+                .body((byte[]) null);
+
+        HttpResponse kernelResponse = response.toKernelResponse(anyHttpVersion());
+
+        assertThat(response.contentType()).isEqualTo(MediaType.TEXT_PLAIN_VALUE);
+        assertThat(response.body()).isEmpty();
+        assertThat(headerValues(kernelResponse, "Content-Type")).containsExactly(MediaType.TEXT_PLAIN_VALUE);
+        assertThat(headerValues(kernelResponse, "Content-Length")).containsExactly("0");
+    }
+
+    @Test
     void heapFallbackBuffer_sliceAndPeekHonorOffsetsAndBounds() {
         HttpResponse kernelResponse = ExerisServerResponse.ok().body("abcdef").toKernelResponse(anyHttpVersion());
         LoanedBuffer body = kernelResponse.body();

@@ -72,7 +72,8 @@ public final class ExerisServerResponse {
     }
 
     public ExerisServerResponse contentType(MediaType mediaType) {
-        return new ExerisServerResponse(this.status, mediaType.toString(), this.body, this.extraHeaders);
+        return new ExerisServerResponse(this.status, mediaType == null ? null : mediaType.toString(),
+                this.body, this.extraHeaders);
     }
 
     public ExerisServerResponse body(String text) {
@@ -82,8 +83,8 @@ public final class ExerisServerResponse {
     }
 
     public ExerisServerResponse body(byte[] bytes) {
-        return new ExerisServerResponse(this.status, this.contentType, Arrays.copyOf(bytes, bytes.length),
-                this.extraHeaders);
+        return new ExerisServerResponse(this.status, this.contentType,
+                bytes == null ? null : Arrays.copyOf(bytes, bytes.length), this.extraHeaders);
     }
 
     /**

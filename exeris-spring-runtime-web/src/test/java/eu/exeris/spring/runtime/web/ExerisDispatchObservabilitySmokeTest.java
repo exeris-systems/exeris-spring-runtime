@@ -6,20 +6,6 @@
  */
 package eu.exeris.spring.runtime.web;
 
-import eu.exeris.kernel.spi.http.HttpExchange;
-import eu.exeris.kernel.spi.http.HttpMethod;
-import eu.exeris.kernel.spi.http.HttpRequest;
-import eu.exeris.kernel.spi.http.HttpResponse;
-import eu.exeris.kernel.spi.http.HttpStatus;
-import eu.exeris.kernel.spi.http.HttpVersion;
-import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeAutoConfiguration;
-import eu.exeris.spring.runtime.web.autoconfigure.ExerisWebAutoConfiguration;
-import org.junit.jupiter.api.Test;
-import org.springframework.context.annotation.AnnotationConfigApplicationContext;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.core.env.MapPropertySource;
-
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.Type;
@@ -32,36 +18,41 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Test;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.MapPropertySource;
+
+import eu.exeris.kernel.spi.http.HttpExchange;
+import eu.exeris.kernel.spi.http.HttpMethod;
+import eu.exeris.kernel.spi.http.HttpRequest;
+import eu.exeris.kernel.spi.http.HttpResponse;
+import eu.exeris.kernel.spi.http.HttpStatus;
+import eu.exeris.kernel.spi.http.HttpVersion;
+import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeAutoConfiguration;
+import eu.exeris.spring.runtime.web.autoconfigure.ExerisWebAutoConfiguration;
 
 /**
- * Dispatcher-level telemetry integration test.
+ * Dispatcher-level observability smoke test for Pure Mode.
  *
- * <p>Verifies that request-path telemetry signals flow through Pure Mode dispatcher
- * during normal dispatch. This test instruments the dispatcher invocation using
- * manual timer and counter mechanisms to demonstrate observability on the hot path.
+ * <p>Verifies that the dispatcher can be wrapped by simple counter/timer observation
+ * during normal and error dispatch without changing the request outcome.
  *
- * <p>Scope: dispatcher-level only (not socket/wire-level). Demonstrates that
- * the dispatcher is observable and can emit telemetry signals without errors.
+ * <p>Scope: dispatcher-level only. This is intentionally not a telemetry-backend
+ * integration test and does not assert wire-level sink emission.
  */
-class ExerisTelemetryIntegrationTest {
+class ExerisDispatchObservabilitySmokeTest {
 
     @Test
-    void pureMode_dispatcherInvocation_canBeobservedWithTelemetryCounter() {
+    void pureMode_dispatcherInvocation_canBeObservedWithSimpleCounter() throws Exception {
         try (var context = createContext()) {
             ExerisHttpDispatcher dispatcher = context.getBean(ExerisHttpDispatcher.class);
             TestCounterObserver counterObserver = new TestCounterObserver();
 
-            // Wrap dispatcher invocation with counter observation
             TestExchange exchange = TestExchange.get(HttpMethod.GET, "/hello", anyHttpVersion());
-            counterObserver.observeDispatch(() -> {
-                try {
-                    dispatcher.handle(exchange.proxy());
-                } catch (Exception ex) {
-                    throw new RuntimeException("Dispatcher dispatch failed", ex);
-                }
-            });
+            counterObserver.observeDispatch(() -> dispatcher.handle(exchange.proxy()));
 
-            // Verify counter was incremented
             assertThat(counterObserver.invocationCount()).isEqualTo(1);
             assertThat(exchange.response()).isNotNull();
             assertThat(readStatus(exchange.response())).isEqualTo(HttpStatus.ACCEPTED);
@@ -69,22 +60,14 @@ class ExerisTelemetryIntegrationTest {
     }
 
     @Test
-    void pureMode_dispatcherInvocation_canBeobservedWithTelemetryTimer() {
+    void pureMode_dispatcherInvocation_canBeObservedWithSimpleTimer() throws Exception {
         try (var context = createContext()) {
             ExerisHttpDispatcher dispatcher = context.getBean(ExerisHttpDispatcher.class);
             TestTimerObserver timerObserver = new TestTimerObserver();
 
-            // Wrap dispatcher invocation with timer observation
             TestExchange exchange = TestExchange.get(HttpMethod.GET, "/hello", anyHttpVersion());
-            timerObserver.observeDispatch(() -> {
-                try {
-                    dispatcher.handle(exchange.proxy());
-                } catch (Exception ex) {
-                    throw new RuntimeException("Dispatcher dispatch failed", ex);
-                }
-            });
+            timerObserver.observeDispatch(() -> dispatcher.handle(exchange.proxy()));
 
-            // Verify timer was recorded
             assertThat(timerObserver.invocationCount()).isEqualTo(1);
             assertThat(timerObserver.elapsedNanos()).isGreaterThanOrEqualTo(0L);
             assertThat(exchange.response()).isNotNull();
@@ -92,23 +75,15 @@ class ExerisTelemetryIntegrationTest {
     }
 
     @Test
-    void pureMode_dispatcherErrorPath_doesNotThrowTelemetryExceptions() {
+    void pureMode_dispatcherErrorPath_remainsObservableWithoutMaskingErrors() throws Exception {
         try (var context = createContext()) {
             ExerisHttpDispatcher dispatcher = context.getBean(ExerisHttpDispatcher.class);
             FailingHandler failingHandler = context.getBean(FailingHandler.class);
             TestTimerObserver timerObserver = new TestTimerObserver();
 
-            // Wrap error-path dispatcher invocation with timer
             TestExchange exchange = TestExchange.get(HttpMethod.GET, "/boom", anyHttpVersion());
-            timerObserver.observeDispatch(() -> {
-                try {
-                    dispatcher.handle(exchange.proxy());
-                } catch (Exception ex) {
-                    throw new RuntimeException("Dispatcher dispatch failed", ex);
-                }
-            });
+            timerObserver.observeDispatch(() -> dispatcher.handle(exchange.proxy()));
 
-            // Verify error path completed with telemetry intact
             assertThat(timerObserver.invocationCount()).isEqualTo(1);
             assertThat(failingHandler.invocations()).isEqualTo(1);
             assertThat(exchange.response()).isNotNull();
@@ -151,14 +126,16 @@ class ExerisTelemetryIntegrationTest {
                     if (value instanceof HttpVersion version) {
                         return version;
                     }
-                } catch (IllegalAccessException ignored) {
+                } catch (IllegalAccessException _) {
+                    // Ignore inaccessible constants while probing a usable test HttpVersion.
                 }
             }
         }
         throw new IllegalStateException("Unable to obtain any HttpVersion constant for test exchange");
     }
 
-    @Configuration
+    @Configuration(proxyBeanMethods = false)
+    @SuppressWarnings("unused")
     static class TestConfig {
 
         @Bean
@@ -182,10 +159,6 @@ class ExerisTelemetryIntegrationTest {
             invocations.incrementAndGet();
             return ExerisServerResponse.status(HttpStatus.ACCEPTED).body(new byte[0]);
         }
-
-        int invocations() {
-            return invocations.get();
-        }
     }
 
     @ExerisRoute(method = HttpMethod.GET, path = "/boom")
@@ -204,13 +177,18 @@ class ExerisTelemetryIntegrationTest {
         }
     }
 
+    @FunctionalInterface
+    private interface ThrowingDispatchBlock {
+        void run() throws Exception;
+    }
+
     /**
-     * Simple test observer to verify counter telemetry signals.
+     * Simple test observer to verify counter-based observability around dispatch.
      */
     static class TestCounterObserver {
         private final AtomicInteger counter = new AtomicInteger();
 
-        void observeDispatch(Runnable dispatchBlock) {
+        void observeDispatch(ThrowingDispatchBlock dispatchBlock) throws Exception {
             counter.incrementAndGet();
             dispatchBlock.run();
         }
@@ -221,13 +199,13 @@ class ExerisTelemetryIntegrationTest {
     }
 
     /**
-     * Simple test observer to verify timer telemetry signals.
+     * Simple test observer to verify timer-based observability around dispatch.
      */
     static class TestTimerObserver {
         private final AtomicInteger invocations = new AtomicInteger();
         private final AtomicLong elapsedNanos = new AtomicLong();
 
-        void observeDispatch(Runnable dispatchBlock) {
+        void observeDispatch(ThrowingDispatchBlock dispatchBlock) throws Exception {
             long startNanos = System.nanoTime();
             try {
                 dispatchBlock.run();
@@ -295,10 +273,11 @@ class ExerisTelemetryIntegrationTest {
                             && path.equals(request.path())) {
                         return request;
                     }
-                } catch (ReflectiveOperationException | IllegalArgumentException ignored) {
+                } catch (ReflectiveOperationException | IllegalArgumentException _) {
+                    // Ignore constructor shapes that do not match the current kernel HttpRequest signature.
                 }
             }
-            throw new IllegalStateException("Unable to construct HttpRequest for telemetry integration test");
+            throw new IllegalStateException("Unable to construct HttpRequest for observability smoke test");
         }
 
         private static Object[] buildConstructorArgs(Type[] parameterTypes,

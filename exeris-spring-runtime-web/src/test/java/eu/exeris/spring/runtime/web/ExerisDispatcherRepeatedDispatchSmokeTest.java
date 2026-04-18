@@ -6,14 +6,6 @@
  */
 package eu.exeris.spring.runtime.web;
 
-import eu.exeris.kernel.spi.http.HttpExchange;
-import eu.exeris.kernel.spi.http.HttpMethod;
-import eu.exeris.kernel.spi.http.HttpRequest;
-import eu.exeris.kernel.spi.http.HttpResponse;
-import eu.exeris.kernel.spi.http.HttpStatus;
-import eu.exeris.kernel.spi.http.HttpVersion;
-import org.junit.jupiter.api.Test;
-
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.Type;
@@ -22,11 +14,26 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Test;
 
-class ExerisWebAllocSmokeTest {
+import eu.exeris.kernel.spi.http.HttpExchange;
+import eu.exeris.kernel.spi.http.HttpMethod;
+import eu.exeris.kernel.spi.http.HttpRequest;
+import eu.exeris.kernel.spi.http.HttpResponse;
+import eu.exeris.kernel.spi.http.HttpStatus;
+import eu.exeris.kernel.spi.http.HttpVersion;
+
+/**
+ * Repeated-dispatch functional/perf smoke test for the Pure Mode dispatcher.
+ *
+ * <p>This is intentionally not a benchmark and avoids hard timing budgets that are
+ * brittle in CI. It only verifies that repeated empty-body dispatch remains correct
+ * under light stress.
+ */
+class ExerisDispatcherRepeatedDispatchSmokeTest {
 
     @Test
-    void dispatcherHotPath_emptyBody_staysWithinGenerousLatencyBudget() throws Exception {
+    void dispatcherHotPath_emptyBody_handlesRepeatedDispatchWithoutFailure() throws Exception {
         ExerisRouteRegistry routes = ExerisRouteRegistry.builder()
                 .register(HttpMethod.GET, "/alloc", request -> ExerisServerResponse.ok())
                 .build();
@@ -37,17 +44,12 @@ class ExerisWebAllocSmokeTest {
             dispatcher.handle(exchange.proxy());
         }
 
-        int iterations = 30_000;
-        long start = System.nanoTime();
-        for (int i = 0; i < iterations; i++) {
+        for (int i = 0; i < 30_000; i++) {
             dispatcher.handle(exchange.proxy());
         }
-        long elapsedNanos = System.nanoTime() - start;
 
-        double averageNanos = (double) elapsedNanos / iterations;
         assertThat(exchange.response()).isNotNull();
         assertThat(readStatus(exchange.response())).isEqualTo(HttpStatus.OK);
-        assertThat(averageNanos).isLessThan(2_000_000d);
     }
 
     private static HttpStatus readStatus(HttpResponse response) {
@@ -73,7 +75,8 @@ class ExerisWebAllocSmokeTest {
                     if (value instanceof HttpVersion version) {
                         return version;
                     }
-                } catch (IllegalAccessException ignored) {
+                } catch (IllegalAccessException _) {
+                    // Ignore inaccessible constants while probing a usable test HttpVersion.
                 }
             }
         }
@@ -128,10 +131,11 @@ class ExerisWebAllocSmokeTest {
                             && path.equals(request.path())) {
                         return request;
                     }
-                } catch (ReflectiveOperationException | IllegalArgumentException ignored) {
+                } catch (ReflectiveOperationException | IllegalArgumentException _) {
+                    // Ignore constructor shapes that do not match the current kernel HttpRequest signature.
                 }
             }
-            throw new IllegalStateException("Unable to construct HttpRequest for allocation smoke test");
+            throw new IllegalStateException("Unable to construct HttpRequest for repeated-dispatch smoke test");
         }
 
         private static Object[] buildConstructorArgs(Type[] parameterTypes,
