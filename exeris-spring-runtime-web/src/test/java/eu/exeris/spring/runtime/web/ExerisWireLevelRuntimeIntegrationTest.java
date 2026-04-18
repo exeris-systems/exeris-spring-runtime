@@ -40,7 +40,7 @@ import eu.exeris.spring.runtime.web.test.RecordingTelemetryProvider;
 class ExerisWireLevelRuntimeIntegrationTest {
 
     @Test
-    void pureMode_bindsPort_routesRequest_and_stopsRuntimeOnContextClose() throws Exception {
+    void pureMode_bindsPort_routesRequest_and_cleansUpAfterFixtureAndContextClose() throws Exception {
         HttpClient client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofMillis(250))
                 .version(HttpClient.Version.HTTP_1_1)

@@ -84,6 +84,26 @@ class ExerisWebAutoConfigurationTest {
         }
     }
 
+    @Test
+    void pureMode_closesLazilyCreatedFallbackTelemetrySinksOnContextClose() throws Exception {
+        try (AnnotationConfigApplicationContext context = createContext(
+                Map.of("exeris.runtime.web.mode", "pure"),
+                TelemetryHandlerConfig.class,
+                TelemetryProviderConfig.class)) {
+            ExerisHttpDispatcher dispatcher = context.getBean(ExerisHttpDispatcher.class);
+            CountingTelemetryProvider provider = context.getBean(CountingTelemetryProvider.class);
+
+            dispatcher.handle(TestExchange.get(HttpMethod.GET, "/telemetry", anyHttpVersion()).proxy());
+
+            assertThat(provider.createSinksCalls()).isEqualTo(1);
+            assertThat(provider.closedSinkCount()).isZero();
+
+            context.close();
+
+            assertThat(provider.closedSinkCount()).isEqualTo(1);
+        }
+    }
+
     @SuppressWarnings("null")
     private AnnotationConfigApplicationContext createContext(Map<String, Object> properties, Class<?>... extraConfigs) {
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
@@ -155,11 +175,12 @@ class ExerisWebAutoConfigurationTest {
     static final class CountingTelemetryProvider implements TelemetryProvider {
 
         private final AtomicInteger createSinksCalls = new AtomicInteger();
+        private final AtomicInteger closedSinkCount = new AtomicInteger();
 
         @Override
         public List<TelemetrySink> createSinks(TelemetryConfig config) {
             createSinksCalls.incrementAndGet();
-            return List.of(new CountingTelemetrySink());
+            return List.of(new CountingTelemetrySink(closedSinkCount));
         }
 
         @Override
@@ -175,9 +196,19 @@ class ExerisWebAutoConfigurationTest {
         int createSinksCalls() {
             return createSinksCalls.get();
         }
+
+        int closedSinkCount() {
+            return closedSinkCount.get();
+        }
     }
 
     private static final class CountingTelemetrySink implements TelemetrySink {
+
+        private final AtomicInteger closedSinkCount;
+
+        private CountingTelemetrySink(AtomicInteger closedSinkCount) {
+            this.closedSinkCount = closedSinkCount;
+        }
         @Override
         public void emit(KernelEvent event) {
             // No-op for provider wiring verification in tests.
@@ -205,7 +236,7 @@ class ExerisWebAutoConfigurationTest {
 
         @Override
         public void close() {
-            // No-op for provider wiring verification in tests.
+            closedSinkCount.incrementAndGet();
         }
     }
 

@@ -106,6 +106,29 @@ class ExerisHttpDispatcherTest {
         assertThat(telemetryBound.get()).isFalse();
     }
 
+    @Test
+    void fallbackTelemetrySupplierFailure_doesNotBreakRequestHandling() throws Exception {
+        AtomicInteger handlerInvocations = new AtomicInteger();
+        TestExchange exchange = TestExchange.get(HttpMethod.GET, "/telemetry", anyHttpVersion());
+
+        ExerisRequestHandler handler = request -> {
+            handlerInvocations.incrementAndGet();
+            return ExerisServerResponse.ok().body("ok");
+        };
+
+        ExerisHttpDispatcher dispatcher = new ExerisHttpDispatcher(
+                routeRegistry(handler),
+                new ExerisErrorMapper(),
+                () -> {
+                    throw new IllegalStateException("fallback sink creation failed");
+                });
+
+        dispatcher.handle(exchange.proxy());
+
+        assertThat(handlerInvocations).hasValue(1);
+        assertThat(exchange.response()).isNotNull();
+    }
+
     private static ExerisRouteRegistry routeRegistry(ExerisRequestHandler handler) {
         return ExerisRouteRegistry.builder()
                 .register(HttpMethod.GET, "/telemetry", handler)
@@ -164,6 +187,10 @@ class ExerisHttpDispatcherTest {
 
         HttpExchange proxy() {
             return proxy;
+        }
+
+        HttpResponse response() {
+            return response.get();
         }
 
         private static HttpRequest createHttpRequest(HttpMethod method, String path, HttpVersion version) {

@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import org.springframework.beans.factory.ObjectProvider;
@@ -64,12 +65,19 @@ public class ExerisWebAutoConfiguration {
         return builder.build();
     }
 
+    @Bean(destroyMethod = "close")
+    @ConditionalOnMissingBean
+    @SuppressWarnings("unused")
+    FallbackTelemetrySinksSupplier exerisFallbackTelemetrySinks(ObjectProvider<TelemetryProvider> telemetryProviders) {
+        return buildFallbackSinksSupplier(telemetryProviders);
+    }
+
     @Bean
     @ConditionalOnMissingBean
-    public ExerisHttpDispatcher exerisHttpDispatcher(ExerisRouteRegistry routeRegistry,
-                                                      ExerisErrorMapper errorMapper,
-                                                      ObjectProvider<TelemetryProvider> telemetryProviders) {
-        return new ExerisHttpDispatcher(routeRegistry, errorMapper, buildFallbackSinksSupplier(telemetryProviders));
+    ExerisHttpDispatcher exerisHttpDispatcher(ExerisRouteRegistry routeRegistry,
+                                               ExerisErrorMapper errorMapper,
+                                               FallbackTelemetrySinksSupplier fallbackTelemetrySinks) {
+        return new ExerisHttpDispatcher(routeRegistry, errorMapper, fallbackTelemetrySinks);
     }
 
     /**
@@ -82,9 +90,48 @@ public class ExerisWebAutoConfiguration {
      *
      * <p>Returns an empty list when no {@link TelemetryProvider} beans are present in the context.
      */
-    private static Supplier<List<TelemetrySink>> buildFallbackSinksSupplier(
+    private static FallbackTelemetrySinksSupplier buildFallbackSinksSupplier(
             ObjectProvider<TelemetryProvider> telemetryProviders) {
-        return () -> {
+        return new FallbackTelemetrySinksSupplier(telemetryProviders);
+    }
+
+    static final class FallbackTelemetrySinksSupplier implements Supplier<List<TelemetrySink>>, AutoCloseable {
+
+        private final ObjectProvider<TelemetryProvider> telemetryProviders;
+        private final Object lock = new Object();
+        private final AtomicReference<List<TelemetrySink>> cached = new AtomicReference<>();
+
+        FallbackTelemetrySinksSupplier(ObjectProvider<TelemetryProvider> telemetryProviders) {
+            this.telemetryProviders = telemetryProviders;
+        }
+
+        @Override
+        public List<TelemetrySink> get() {
+            List<TelemetrySink> resolved = cached.get();
+            if (resolved != null) {
+                return resolved;
+            }
+
+            synchronized (lock) {
+                resolved = cached.get();
+                if (resolved == null) {
+                    resolved = resolveSinks();
+                    cached.set(resolved);
+                }
+                return resolved;
+            }
+        }
+
+        @Override
+        public void close() {
+            List<TelemetrySink> sinks = cached.getAndSet(List.of());
+            if (sinks == null || sinks.isEmpty()) {
+                return;
+            }
+            sinks.forEach(FallbackTelemetrySinksSupplier::closeQuietly);
+        }
+
+        private List<TelemetrySink> resolveSinks() {
             if (telemetryProviders == null) {
                 return List.of();
             }
@@ -104,6 +151,14 @@ public class ExerisWebAutoConfiguration {
                     });
 
             return sinks.isEmpty() ? List.of() : List.copyOf(sinks);
-        };
+        }
+
+        private static void closeQuietly(TelemetrySink sink) {
+            try {
+                sink.close();
+            } catch (RuntimeException _) {
+                // Best-effort shutdown only for Spring-managed fallback sinks.
+            }
+        }
     }
 }

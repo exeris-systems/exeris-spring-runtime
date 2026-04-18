@@ -89,7 +89,7 @@ public final class ExerisHttpDispatcher implements HttpHandler {
             return;
         }
 
-        List<TelemetrySink> fallbackSinks = fallbackSinksSupplier.get();
+        List<TelemetrySink> fallbackSinks = resolveFallbackSinks();
         if (fallbackSinks.isEmpty()) {
             dispatch(exchange);
             return;
@@ -97,6 +97,14 @@ public final class ExerisHttpDispatcher implements HttpHandler {
 
         ScopedValue.where(KernelProviders.TELEMETRY_SINKS, fallbackSinks)
                 .run(() -> dispatch(exchange));
+    }
+
+    private List<TelemetrySink> resolveFallbackSinks() {
+        try {
+            return fallbackSinksSupplier.get();
+        } catch (RuntimeException _) {
+            return List.of();
+        }
     }
 
     private void dispatch(HttpExchange exchange) {
