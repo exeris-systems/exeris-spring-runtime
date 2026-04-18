@@ -6,14 +6,15 @@
  */
 package eu.exeris.spring.boot.autoconfigure;
 
-import eu.exeris.kernel.spi.config.ConfigProvider;
-import eu.exeris.kernel.spi.config.KernelProfile;
-import org.springframework.core.env.Environment;
-
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+
+import org.springframework.core.env.Environment;
+
+import eu.exeris.kernel.spi.config.ConfigProvider;
+import eu.exeris.kernel.spi.config.KernelProfile;
 
 /**
  * Bridges the Spring {@link Environment} into the Exeris kernel {@link ConfigProvider} SPI.

@@ -287,12 +287,9 @@ class ExerisBootstrapIntegrationTest {
     private static void awaitLifecycleStartupAttempt(ExerisRuntimeLifecycle lifecycle,
                                                      Future<?> startFuture,
                                                      Duration timeout) throws Exception {
-        Field startingField = ExerisRuntimeLifecycle.class.getDeclaredField("starting");
-        startingField.setAccessible(true);
-
         long deadlineNanos = System.nanoTime() + timeout.toNanos();
         while (System.nanoTime() < deadlineNanos) {
-            if (startingField.getBoolean(lifecycle) || lifecycle.isRunning()) {
+            if (extractBootThread(lifecycle) != null || lifecycle.isRunning()) {
                 return;
             }
             if (startFuture.isDone()) {

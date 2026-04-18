@@ -30,10 +30,10 @@ import eu.exeris.kernel.spi.http.HttpKernelProviders;
  * Spring ApplicationContext.refresh() completes
  *   → SmartLifecycle.start() called (ordered by phase)
  *   → ExerisRuntimeLifecycle.start()
- *       → binds the optional kernel HTTP handler seam when a Spring HttpHandler is present
- *       → KernelBootstrap.bootstrap(configProvider)
- *           → ServiceLoader discovers SubsystemProviders
- *           → subsystems initialise in DAG order (Config → Memory → Transport ...)
+ *       → creates KernelBootstrap and launches the lifecycle boot thread
+ *       → optionally binds the HTTP handler seam via ScopedValue.where(...)
+ *       → KernelBootstrap.boot(...)
+ *           → keeps the boot scope open until stop() releases it
  *           → KERNEL READY
  *       → stores KernelBootstrap for stop() and isRunning()
  * </pre>
@@ -257,10 +257,19 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         if (thread == null || thread == Thread.currentThread() || !properties.shutdown().graceful()) {
             return;
         }
+        long timeoutMillis = Math.max(1L, properties.shutdown().timeoutSeconds()) * 1_000L;
         try {
-            thread.join(Math.max(1L, properties.shutdown().timeoutSeconds()) * 1_000L);
+            thread.join(timeoutMillis);
         } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
+            return;
+        }
+        if (thread.isAlive()) {
+            thread.interrupt();
+            throw new IllegalStateException(
+                    "Exeris runtime shutdown timed out after " + timeoutMillis
+                            + " ms waiting for boot thread '" + thread.getName() + "'"
+            );
         }
     }
 
