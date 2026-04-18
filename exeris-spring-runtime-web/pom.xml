@@ -87,6 +87,20 @@
             </exclusions>
         </dependency>
 
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
+        <!-- Optional — spring-security oauth2 resource server.
+             When present, activates ExerisSecurityContextFilter in compat mode.
+             NOT a required compile dependency. Consumers add their own security dep. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+            <optional>true</optional>
+        </dependency>
+
         <!-- Test scope -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -111,6 +125,16 @@
         <dependency>
             <groupId>eu.exeris</groupId>
             <artifactId>exeris-kernel-community</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-community-testkit</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

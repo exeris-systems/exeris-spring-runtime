@@ -19,6 +19,7 @@ import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Application-facing HTTP response builder for Pure Mode handlers.
@@ -38,14 +39,26 @@ import java.util.List;
  */
 public final class ExerisServerResponse {
 
+    private static final System.Logger LOGGER = System.getLogger(ExerisServerResponse.class.getName());
+    private static final AtomicBoolean FALLBACK_WARNING_LOGGED = new AtomicBoolean(false);
+
     private final HttpStatus status;
     private final String contentType;
     private final byte[] body;
+    private final List<HttpHeader> extraHeaders;
 
     private ExerisServerResponse(HttpStatus status, String contentType, byte[] body) {
         this.status = status;
         this.contentType = contentType;
         this.body = body;
+        this.extraHeaders = List.of();
+    }
+
+    private ExerisServerResponse(HttpStatus status, String contentType, byte[] body, List<HttpHeader> extraHeaders) {
+        this.status = status;
+        this.contentType = contentType;
+        this.body = body;
+        this.extraHeaders = List.copyOf(extraHeaders);
     }
 
     public static ExerisServerResponse ok() {
@@ -57,16 +70,29 @@ public final class ExerisServerResponse {
     }
 
     public ExerisServerResponse contentType(MediaType mediaType) {
-        return new ExerisServerResponse(this.status, mediaType.toString(), this.body);
+        return new ExerisServerResponse(this.status, mediaType.toString(), this.body, this.extraHeaders);
     }
 
     public ExerisServerResponse body(String text) {
         return new ExerisServerResponse(this.status, this.contentType,
-                text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                text.getBytes(java.nio.charset.StandardCharsets.UTF_8), this.extraHeaders);
     }
 
     public ExerisServerResponse body(byte[] bytes) {
-        return new ExerisServerResponse(this.status, this.contentType, Arrays.copyOf(bytes, bytes.length));
+        return new ExerisServerResponse(this.status, this.contentType, Arrays.copyOf(bytes, bytes.length),
+                this.extraHeaders);
+    }
+
+    /**
+     * Returns a new instance carrying all provided extra headers (compat-mode use only).
+     * Pure-mode callers never invoke this method; the default {@code extraHeaders} is an
+     * empty immutable list, which costs no extra allocation on the hot path.
+     */
+    public ExerisServerResponse withHeaders(List<HttpHeader> headers) {
+        if (headers == null || headers.isEmpty()) {
+            return this;
+        }
+        return new ExerisServerResponse(this.status, this.contentType, this.body, headers);
     }
 
     /**
@@ -96,20 +122,34 @@ public final class ExerisServerResponse {
     public HttpResponse toKernelResponse(HttpVersion version) {
         List<HttpHeader> responseHeaders = new ArrayList<>();
         responseHeaders.add(new HttpHeader("Content-Type", contentType));
+        responseHeaders.addAll(extraHeaders);
 
         if (body == null || body.length == 0) {
             responseHeaders.add(new HttpHeader("Content-Length", "0"));
             return HttpResponse.noBody(status, version, List.copyOf(responseHeaders));
         }
 
-        MemoryAllocator allocator = KernelProviders.allocator();
-        LoanedBuffer buffer = allocator.allocateNetwork(body.length);
-        MemorySegment.copy(
-                MemorySegment.ofArray(body), 0L,
-                buffer.segment(), 0L,
-                body.length
-        );
-        buffer.setSize(body.length);
+        LoanedBuffer buffer;
+        if (KernelProviders.MEMORY_ALLOCATOR.isBound()) {
+            MemoryAllocator allocator = KernelProviders.allocator();
+            buffer = allocator.allocateNetwork(body.length);
+            MemorySegment.copy(
+                    MemorySegment.ofArray(body), 0L,
+                    buffer.segment(), 0L,
+                    body.length
+            );
+            buffer.setSize(body.length);
+        } else {
+            // Compatibility fallback for non-kernel-scope contexts (e.g., testkit, unit tests).
+            // In production, MEMORY_ALLOCATOR is always bound by the kernel memory subsystem.
+            if (FALLBACK_WARNING_LOGGED.compareAndSet(false, true)) {
+                LOGGER.log(System.Logger.Level.WARNING,
+                        "ExerisServerResponse compatibility fallback is active: MEMORY_ALLOCATOR is not bound. "
+                                + "Using heap-backed response buffer; this may indicate a production runtime "
+                                + "misconfiguration unless running tests/compatibility tooling.");
+            }
+            buffer = new HeapBodyBuffer(Arrays.copyOf(body, body.length));
+        }
         responseHeaders.add(new HttpHeader("Content-Length", String.valueOf(body.length)));
 
         return new HttpResponse(status, version, List.copyOf(responseHeaders), buffer);
@@ -118,4 +158,118 @@ public final class ExerisServerResponse {
     public HttpStatus status() { return status; }
     public String contentType() { return contentType; }
     public byte[] body() { return Arrays.copyOf(body, body.length); }
+
+    /**
+     * Minimal {@link LoanedBuffer} implementation backed by a heap {@code byte[]}, used as
+     * the compatibility fallback in {@link #toKernelResponse} when
+     * {@code KernelProviders.MEMORY_ALLOCATOR} is not bound (testkit / unit-test contexts).
+     *
+     * <p>Lifecycle operations are reference-counted for API consistency, but underlying
+     * heap memory is never returned to a pool.
+     */
+    private static final class HeapBodyBuffer implements LoanedBuffer {
+
+        private final byte[] bytes;
+        private final List<Runnable> closeActions = new ArrayList<>();
+        private int refCount = 1;
+        private boolean alive = true;
+
+        private HeapBodyBuffer(byte[] bytes) {
+            this.bytes = bytes;
+        }
+
+        @Override
+        public MemorySegment segment() {
+            return MemorySegment.ofArray(bytes);
+        }
+
+        @Override
+        public long size() {
+            return bytes.length;
+        }
+
+        @Override
+        public long capacity() {
+            return bytes.length;
+        }
+
+        @Override
+        public LoanedBuffer slice(long offset, long length) {
+            return new HeapBodyBuffer(Arrays.copyOfRange(bytes, (int) offset, (int) (offset + length)));
+        }
+
+        @Override
+        public LoanedBuffer view() {
+            return this;
+        }
+
+        @Override
+        public LoanedBuffer peek(long offset, long length) {
+            return this;
+        }
+
+        @Override
+        public synchronized void retain() {
+            if (alive) {
+                refCount++;
+            }
+        }
+
+        @Override
+        public void close() {
+            List<Runnable> actionsToRun = null;
+            synchronized (this) {
+                if (!alive) {
+                    return;
+                }
+                if (refCount > 0) {
+                    refCount--;
+                }
+                if (refCount == 0) {
+                    alive = false;
+                    actionsToRun = List.copyOf(closeActions);
+                    closeActions.clear();
+                }
+            }
+
+            if (actionsToRun != null) {
+                for (Runnable action : actionsToRun) {
+                    action.run();
+                }
+            }
+        }
+
+        @Override
+        public synchronized int refCount() {
+            return refCount;
+        }
+
+        @Override
+        public void setSize(long newSize) { /* size is fixed to byte[].length */ }
+
+        @Override
+        public synchronized boolean isAlive() {
+            return alive;
+        }
+
+        @Override
+        public void addCloseAction(Runnable action) {
+            if (action == null) {
+                return;
+            }
+
+            boolean runNow;
+            synchronized (this) {
+                if (alive) {
+                    closeActions.add(action);
+                    return;
+                }
+                runNow = true;
+            }
+
+            if (runNow) {
+                action.run();
+            }
+        }
+    }
 }

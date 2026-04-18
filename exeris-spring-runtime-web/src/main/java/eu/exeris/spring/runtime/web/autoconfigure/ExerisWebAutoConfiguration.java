@@ -6,6 +6,9 @@
  */
 package eu.exeris.spring.runtime.web.autoconfigure;
 
+import eu.exeris.kernel.spi.telemetry.TelemetryConfig;
+import eu.exeris.kernel.spi.telemetry.TelemetryProvider;
+import eu.exeris.kernel.spi.telemetry.TelemetrySink;
 import eu.exeris.spring.runtime.web.ExerisErrorMapper;
 import eu.exeris.spring.runtime.web.ExerisHttpDispatcher;
 import eu.exeris.spring.runtime.web.ExerisRequestHandler;
@@ -18,6 +21,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -59,7 +64,32 @@ public class ExerisWebAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public ExerisHttpDispatcher exerisHttpDispatcher(ExerisRouteRegistry routeRegistry,
-                                                      ExerisErrorMapper errorMapper) {
-        return new ExerisHttpDispatcher(routeRegistry, errorMapper);
+                                                      ExerisErrorMapper errorMapper,
+                                                      ApplicationContext ctx) {
+        List<TelemetrySink> fallbackSinks = buildFallbackSinks(ctx);
+        return new ExerisHttpDispatcher(routeRegistry, errorMapper, fallbackSinks);
+    }
+
+    /**
+     * Discovers Spring-managed {@link TelemetryProvider} beans and creates their sinks.
+     *
+     * <p>Used as the fallback telemetry sink list for {@link ExerisHttpDispatcher} when
+     * {@code KernelProviders.TELEMETRY_SINKS} is not bound (testkit / non-kernel-scope paths).
+     * In production the kernel always binds {@code TELEMETRY_SINKS} before handler invocation,
+     * so this list is never consulted on the production hot path.
+     *
+     * <p>Returns an empty list when no {@link TelemetryProvider} beans are present in the context.
+     */
+    private static List<TelemetrySink> buildFallbackSinks(ApplicationContext ctx) {
+        Map<String, TelemetryProvider> providers = ctx.getBeansOfType(TelemetryProvider.class);
+        if (providers.isEmpty()) {
+            return List.of();
+        }
+        TelemetryConfig config = TelemetryConfig.defaults();
+        List<TelemetrySink> sinks = new ArrayList<>();
+        for (TelemetryProvider provider : providers.values()) {
+            sinks.addAll(provider.createSinks(config));
+        }
+        return List.copyOf(sinks);
     }
 }

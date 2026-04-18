@@ -35,6 +35,15 @@ public final class ExerisServerRequest {
         this.delegate = delegate;
     }
 
+    /**
+     * Creates a view over a kernel {@link HttpRequest}. Intended for use by
+     * compatibility-mode classes in other packages that cannot access the
+     * package-private constructor.
+     */
+    public static ExerisServerRequest wrap(HttpRequest request) {
+        return new ExerisServerRequest(request);
+    }
+
     public HttpMethod method() {
         return delegate.method();
     }
