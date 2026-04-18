@@ -8,6 +8,7 @@ package eu.exeris.spring.boot.autoconfigure;
 
 import java.lang.reflect.InvocationTargetException;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.springframework.context.SmartLifecycle;
@@ -67,9 +68,14 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
     private final ExerisRuntimeProperties properties;
     private final ExerisSpringConfigProvider configProvider;
     private final Optional<HttpHandler> httpHandler;
+    private final Object lifecycleMonitor = new Object();
 
     private volatile boolean running = false;
+    private boolean starting = false;
+    private boolean stopRequested = false;
     private final AtomicReference<KernelBootstrap> bootstrap = new AtomicReference<>();
+    private final AtomicReference<CountDownLatch> heldBootScope = new AtomicReference<>();
+    private final AtomicReference<Thread> bootThread = new AtomicReference<>();
 
     public ExerisRuntimeLifecycle(ExerisRuntimeProperties properties,
                                    ExerisSpringConfigProvider configProvider,
@@ -81,21 +87,49 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
 
     @Override
     public void start() {
-        if (!properties.enabled() || running) {
-            return;
+        synchronized (lifecycleMonitor) {
+            if (!properties.enabled() || running || starting || bootThread.get() != null) {
+                return;
+            }
+            starting = true;
+            stopRequested = false;
         }
+
         KernelBootstrap kernelBootstrap = KernelBootstrap.builder()
                 .classLoader(Thread.currentThread().getContextClassLoader())
                 .build();
-        configProvider.prepareBootstrap();
-        try {
-            bootKernel(kernelBootstrap);
-            this.bootstrap.set(kernelBootstrap);
-            running = true;
-        } catch (KernelBootstrap.BootstrapException | RuntimeException ex) {
-            throw failedStart(kernelBootstrap, ex);
-        } finally {
-            configProvider.clearBootstrap();
+        CountDownLatch bootReady = new CountDownLatch(1);
+        CountDownLatch releaseSignal = new CountDownLatch(1);
+        AtomicReference<Exception> bootFailure = new AtomicReference<>();
+
+        Thread thread = Thread.ofPlatform()
+                .name("exeris-runtime-lifecycle")
+                .daemon(false)
+                .unstarted(() -> runKernelLifetime(kernelBootstrap, bootReady, releaseSignal, bootFailure));
+
+        heldBootScope.set(releaseSignal);
+        bootThread.set(thread);
+        thread.start();
+
+        awaitStartup(bootReady);
+
+        Exception failure = bootFailure.get();
+        boolean shutdownImmediately;
+        synchronized (lifecycleMonitor) {
+            starting = false;
+            shutdownImmediately = stopRequested;
+            if (failure == null && !shutdownImmediately) {
+                this.bootstrap.set(kernelBootstrap);
+                running = true;
+            }
+        }
+
+        if (failure != null) {
+            throw failedStart(kernelBootstrap, failure);
+        }
+        if (shutdownImmediately) {
+            releaseBootScope(releaseSignal);
+            shutdownKernel(kernelBootstrap);
         }
     }
 
@@ -107,14 +141,24 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
 
     @Override
     public void stop() {
-        KernelBootstrap kernelBootstrap = this.bootstrap.getAndSet(null);
-        if (!running && kernelBootstrap == null) {
-            return;
+        KernelBootstrap kernelBootstrap;
+        CountDownLatch releaseSignal;
+        Thread thread;
+        synchronized (lifecycleMonitor) {
+            if (starting) {
+                stopRequested = true;
+            }
+            kernelBootstrap = this.bootstrap.getAndSet(null);
+            releaseSignal = heldBootScope.getAndSet(null);
+            thread = bootThread.get();
+            if (!running && kernelBootstrap == null && releaseSignal == null) {
+                return;
+            }
+            this.running = false;
         }
-
-        this.running = false;
-
+        releaseBootScope(releaseSignal);
         shutdownKernel(kernelBootstrap);
+        awaitShutdown(thread);
     }
 
     @Override
@@ -132,16 +176,47 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         return properties.autoStart();
     }
 
-    private void bootKernel(KernelBootstrap kernelBootstrap) throws KernelBootstrap.BootstrapException {
+    private void runKernelLifetime(KernelBootstrap kernelBootstrap,
+                                   CountDownLatch bootReady,
+                                   CountDownLatch releaseSignal,
+                                   AtomicReference<Exception> bootFailure) {
+        configProvider.prepareBootstrap();
+        try {
+            bootKernel(kernelBootstrap, bootReady, releaseSignal);
+        } catch (KernelBootstrap.BootstrapException | RuntimeException ex) {
+            bootFailure.set(ex);
+        } finally {
+            bootReady.countDown();
+            configProvider.clearBootstrap();
+            heldBootScope.compareAndSet(releaseSignal, null);
+            bootThread.compareAndSet(Thread.currentThread(), null);
+            synchronized (lifecycleMonitor) {
+                if (this.bootstrap.compareAndSet(kernelBootstrap, null)) {
+                    running = false;
+                }
+                starting = false;
+            }
+        }
+    }
+
+    private void bootKernel(KernelBootstrap kernelBootstrap,
+                            CountDownLatch bootReady,
+                            CountDownLatch releaseSignal) throws KernelBootstrap.BootstrapException {
+        Runnable holdKernelScopeOpen = () -> {
+            configProvider.clearBootstrap();
+            bootReady.countDown();
+            awaitStopSignal(releaseSignal);
+        };
+
         if (httpHandler.isEmpty()) {
-            kernelBootstrap.boot(() -> { });
+            kernelBootstrap.boot(holdKernelScopeOpen);
             return;
         }
 
         try {
             ScopedValue.where(HttpKernelProviders.HTTP_SERVER_HANDLER, httpHandler.get())
                     .call(() -> {
-                        kernelBootstrap.boot(() -> { });
+                        kernelBootstrap.boot(holdKernelScopeOpen);
                         return null;
                     });
         } catch (Exception ex) {
@@ -152,6 +227,40 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
                 throw runtimeException;
             }
             throw new IllegalStateException("Exeris runtime startup failed while binding the kernel HTTP handler seam", ex);
+        }
+    }
+
+    private static void awaitStartup(CountDownLatch bootReady) {
+        try {
+            bootReady.await();
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Exeris runtime startup was interrupted", ex);
+        }
+    }
+
+    private static void awaitStopSignal(CountDownLatch releaseSignal) {
+        try {
+            releaseSignal.await();
+        } catch (InterruptedException _) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private static void releaseBootScope(CountDownLatch releaseSignal) {
+        if (releaseSignal != null) {
+            releaseSignal.countDown();
+        }
+    }
+
+    private void awaitShutdown(Thread thread) {
+        if (thread == null || thread == Thread.currentThread() || !properties.shutdown().graceful()) {
+            return;
+        }
+        try {
+            thread.join(Math.max(1L, properties.shutdown().timeoutSeconds()) * 1_000L);
+        } catch (InterruptedException _) {
+            Thread.currentThread().interrupt();
         }
     }
 

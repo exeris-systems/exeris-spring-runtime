@@ -25,7 +25,10 @@ import java.util.function.Supplier;
  * </pre>
  * The kernel's {@code KernelBootstrap} discovers all {@code ConfigProvider} implementations
  * on the classpath and uses the one with the highest {@link #priority()}. This implementation
- * uses priority {@code 150}, which is higher than the community default of {@code 100}.
+ * reports priority {@code 150} when a Spring {@link Environment} is available, and {@code 0}
+ * in fixture-only bootstrap paths where no prepared {@code Environment} is present. That keeps
+ * the Spring-backed provider preferred during normal application startup while deferring to the
+ * kernel/community providers for isolated fixtures.
  *
  * <h2>The Wall</h2>
  * <p>This class is in {@code exeris-spring-runtime}, not in {@code exeris-kernel-spi} or

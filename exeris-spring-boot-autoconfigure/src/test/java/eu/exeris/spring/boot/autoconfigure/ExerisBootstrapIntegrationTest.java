@@ -6,11 +6,13 @@
  */
 package eu.exeris.spring.boot.autoconfigure;
 
+import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -20,12 +22,15 @@ import java.util.concurrent.locks.LockSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.MapPropertySource;
 
+import eu.exeris.kernel.core.bootstrap.KernelBootstrap;
+import eu.exeris.kernel.spi.http.HttpExchange;
 import eu.exeris.kernel.spi.http.HttpHandler;
 
 /**
@@ -87,7 +92,7 @@ class ExerisBootstrapIntegrationTest {
     }
 
     @Test
-    void noServletContainerOnClasspath() {
+    void noServletOrReactiveRuntimeOnClasspath() {
         assertThat(isClassPresent("org.apache.catalina.startup.Tomcat"))
                 .as("Tomcat must not be on the classpath")
                 .isFalse();
@@ -96,6 +101,12 @@ class ExerisBootstrapIntegrationTest {
                 .isFalse();
         assertThat(isClassPresent("org.eclipse.jetty.server.Server"))
                 .as("Jetty must not be on the classpath")
+                .isFalse();
+        assertThat(isClassPresent("reactor.netty.http.server.HttpServer"))
+                .as("Reactor Netty must not be on the classpath")
+                .isFalse();
+        assertThat(isClassPresent("org.springframework.web.reactive.DispatcherHandler"))
+                .as("Spring WebFlux must not be on the classpath")
                 .isFalse();
     }
 
@@ -119,10 +130,110 @@ class ExerisBootstrapIntegrationTest {
 
                 try {
                     awaitLifecycleStart(lifecycle, startFuture, Duration.ofSeconds(10));
+                    assertThatCode(() -> startFuture.get(10, TimeUnit.SECONDS)).doesNotThrowAnyException();
                     assertThat(lifecycle.isRunning()).isTrue();
                 } finally {
                     lifecycle.stop();
                     assertThatCode(() -> startFuture.get(10, TimeUnit.SECONDS)).doesNotThrowAnyException();
+                    executor.shutdownNow();
+                }
+            } catch (Exception ex) {
+                throw new RuntimeException(ex);
+            }
+        });
+    }
+
+    @Test
+    void lifecycleStart_keepsKernelBootScopeActiveUntilStopRequested() throws Exception {
+        int port = reserveLoopbackPort();
+        withKernelHttpSystemProperties(port, () -> {
+            try (var ctx = createContext(
+                    Map.of(
+                            "exeris.runtime.auto-start", "false",
+                            "exeris.runtime.network.port", Integer.toString(port),
+                            "exeris.runtime.persistence.jdbc-url", "jdbc:h2:mem:exeris_bootstrap_scope_test;DB_CLOSE_DELAY=-1",
+                            "exeris.runtime.persistence.username", "sa",
+                            "exeris.runtime.persistence.password", "",
+                            "exeris.runtime.persistence.run-migrations", "false"
+                    ),
+                    LifecycleHandlerConfig.class)) {
+                ExerisRuntimeLifecycle lifecycle = ctx.getBean(ExerisRuntimeLifecycle.class);
+
+                lifecycle.start();
+                assertThat(lifecycle.isRunning()).isTrue();
+
+                KernelBootstrap kernelBootstrap = extractBootstrap(lifecycle);
+                assertThat(kernelBootstrap).isNotNull();
+                assertThatCode(kernelBootstrap::healthMonitor).doesNotThrowAnyException();
+
+                lifecycle.stop();
+                assertThat(lifecycle.isRunning()).isFalse();
+                assertThatThrownBy(kernelBootstrap::healthMonitor)
+                        .isInstanceOf(IllegalStateException.class)
+                        .hasMessageContaining("not active");
+            } catch (Exception ex) {
+                throw new RuntimeException(ex);
+            }
+        });
+    }
+
+    @Test
+    void lifecycleRunning_keepsNonDaemonBootThreadAlive() throws Exception {
+        int port = reserveLoopbackPort();
+        withKernelHttpSystemProperties(port, () -> {
+            try (var ctx = createContext(
+                    Map.of(
+                            "exeris.runtime.auto-start", "false",
+                            "exeris.runtime.network.port", Integer.toString(port),
+                            "exeris.runtime.persistence.jdbc-url", "jdbc:h2:mem:exeris_bootstrap_thread_test;DB_CLOSE_DELAY=-1",
+                            "exeris.runtime.persistence.username", "sa",
+                            "exeris.runtime.persistence.password", "",
+                            "exeris.runtime.persistence.run-migrations", "false"
+                    ),
+                    LifecycleHandlerConfig.class)) {
+                ExerisRuntimeLifecycle lifecycle = ctx.getBean(ExerisRuntimeLifecycle.class);
+
+                lifecycle.start();
+                try {
+                    assertThat(lifecycle.isRunning()).isTrue();
+                    Thread runtimeThread = extractBootThread(lifecycle);
+                    assertThat(runtimeThread).isNotNull();
+                    assertThat(runtimeThread.isAlive()).isTrue();
+                    assertThat(runtimeThread.isDaemon()).isFalse();
+                } finally {
+                    lifecycle.stop();
+                }
+            } catch (Exception ex) {
+                throw new RuntimeException(ex);
+            }
+        });
+    }
+
+    @Test
+    void concurrentStopDuringStartup_leavesLifecycleStopped() throws Exception {
+        int port = reserveLoopbackPort();
+        withKernelHttpSystemProperties(port, () -> {
+            try (var ctx = createContext(
+                    Map.of(
+                            "exeris.runtime.auto-start", "false",
+                            "exeris.runtime.network.port", Integer.toString(port),
+                            "exeris.runtime.persistence.jdbc-url", "jdbc:h2:mem:exeris_bootstrap_race_test;DB_CLOSE_DELAY=-1",
+                            "exeris.runtime.persistence.username", "sa",
+                            "exeris.runtime.persistence.password", "",
+                            "exeris.runtime.persistence.run-migrations", "false"
+                    ),
+                    LifecycleHandlerConfig.class)) {
+                ExerisRuntimeLifecycle lifecycle = ctx.getBean(ExerisRuntimeLifecycle.class);
+                ExecutorService executor = Executors.newSingleThreadExecutor();
+                Future<?> startFuture = executor.submit(lifecycle::start);
+
+                try {
+                    awaitLifecycleStartupAttempt(lifecycle, startFuture, Duration.ofSeconds(10));
+                    lifecycle.stop();
+                    assertThatCode(() -> startFuture.get(10, TimeUnit.SECONDS)).doesNotThrowAnyException();
+                    assertThat(lifecycle.isRunning()).isFalse();
+                } finally {
+                    lifecycle.stop();
                     executor.shutdownNow();
                 }
             } catch (Exception ex) {
@@ -140,6 +251,22 @@ class ExerisBootstrapIntegrationTest {
         }
     }
 
+    private static KernelBootstrap extractBootstrap(ExerisRuntimeLifecycle lifecycle) throws Exception {
+        Field bootstrapField = ExerisRuntimeLifecycle.class.getDeclaredField("bootstrap");
+        bootstrapField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        var bootstrapRef = (java.util.concurrent.atomic.AtomicReference<KernelBootstrap>) bootstrapField.get(lifecycle);
+        return bootstrapRef.get();
+    }
+
+    private static Thread extractBootThread(ExerisRuntimeLifecycle lifecycle) throws Exception {
+        Field bootThreadField = ExerisRuntimeLifecycle.class.getDeclaredField("bootThread");
+        bootThreadField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        var bootThreadRef = (java.util.concurrent.atomic.AtomicReference<Thread>) bootThreadField.get(lifecycle);
+        return bootThreadRef.get();
+    }
+
     private static void awaitLifecycleStart(ExerisRuntimeLifecycle lifecycle,
                                             Future<?> startFuture,
                                             Duration timeout) throws Exception {
@@ -155,6 +282,26 @@ class ExerisBootstrapIntegrationTest {
             LockSupport.parkNanos(Duration.ofMillis(50).toNanos());
         }
         throw new TimeoutException("Exeris lifecycle did not reach running state within " + timeout);
+    }
+
+    private static void awaitLifecycleStartupAttempt(ExerisRuntimeLifecycle lifecycle,
+                                                     Future<?> startFuture,
+                                                     Duration timeout) throws Exception {
+        Field startingField = ExerisRuntimeLifecycle.class.getDeclaredField("starting");
+        startingField.setAccessible(true);
+
+        long deadlineNanos = System.nanoTime() + timeout.toNanos();
+        while (System.nanoTime() < deadlineNanos) {
+            if (startingField.getBoolean(lifecycle) || lifecycle.isRunning()) {
+                return;
+            }
+            if (startFuture.isDone()) {
+                startFuture.get();
+                return;
+            }
+            LockSupport.parkNanos(Duration.ofMillis(10).toNanos());
+        }
+        throw new TimeoutException("Exeris lifecycle did not begin startup within " + timeout);
     }
 
     private static int reserveLoopbackPort() throws Exception {
@@ -211,7 +358,11 @@ class ExerisBootstrapIntegrationTest {
 
         @Bean
         HttpHandler lifecycleTestHandler() {
-            return exchange -> { };
+            return LifecycleHandlerConfig::ignoreExchange;
+        }
+
+        private static void ignoreExchange(HttpExchange exchange) {
+            Objects.requireNonNull(exchange, "exchange");
         }
     }
 }
