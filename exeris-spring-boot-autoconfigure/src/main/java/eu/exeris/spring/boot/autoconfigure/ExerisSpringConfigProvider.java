@@ -6,14 +6,16 @@
  */
 package eu.exeris.spring.boot.autoconfigure;
 
-import eu.exeris.kernel.spi.config.ConfigProvider;
-import eu.exeris.kernel.spi.config.KernelProfile;
-import org.springframework.core.env.Environment;
-
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+
+import org.springframework.core.env.Environment;
+
+import eu.exeris.kernel.spi.config.ConfigProvider;
+import eu.exeris.kernel.spi.config.KernelProfile;
 
 /**
  * Bridges the Spring {@link Environment} into the Exeris kernel {@link ConfigProvider} SPI.
@@ -25,7 +27,10 @@ import java.util.function.Supplier;
  * </pre>
  * The kernel's {@code KernelBootstrap} discovers all {@code ConfigProvider} implementations
  * on the classpath and uses the one with the highest {@link #priority()}. This implementation
- * uses priority {@code 150}, which is higher than the community default of {@code 100}.
+ * reports priority {@code 150} when a Spring {@link Environment} is available, and {@code 0}
+ * in fixture-only bootstrap paths where no prepared {@code Environment} is present. That keeps
+ * the Spring-backed provider preferred during normal application startup while deferring to the
+ * kernel/community providers for isolated fixtures.
  *
  * <h2>The Wall</h2>
  * <p>This class is in {@code exeris-spring-runtime}, not in {@code exeris-kernel-spi} or
@@ -57,6 +62,7 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
      * never used on the hot request path.
      */
     private static final AtomicReference<Environment> BOOTSTRAP_ENVIRONMENT = new AtomicReference<>();
+    private static final AtomicBoolean BOOTSTRAP_PREPARED = new AtomicBoolean(false);
 
     private final Environment environment;
 
@@ -82,9 +88,10 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
      * Must be called immediately before {@code KernelBootstrap.boot()}.
      */
     void prepareBootstrap() {
-        if (!BOOTSTRAP_ENVIRONMENT.compareAndSet(null, this.environment)) {
+        if (!BOOTSTRAP_PREPARED.compareAndSet(false, true)) {
             throw new IllegalStateException("Exeris bootstrap environment already prepared");
         }
+        BOOTSTRAP_ENVIRONMENT.set(this.environment);
     }
 
     /**
@@ -92,12 +99,15 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
      * after {@code KernelBootstrap.boot()} returns or throws.
      */
     void clearBootstrap() {
-        BOOTSTRAP_ENVIRONMENT.compareAndSet(this.environment, null);
+        BOOTSTRAP_ENVIRONMENT.set(null);
+        BOOTSTRAP_PREPARED.set(false);
     }
 
     @Override
     public int priority() {
-        return 150;
+        // Prefer this provider only when a Spring Environment is actually available.
+        // In fixture-only bootstrap paths (no prepared Environment), defer to kernel/community providers.
+        return environment == null ? 0 : 150;
     }
 
     @Override

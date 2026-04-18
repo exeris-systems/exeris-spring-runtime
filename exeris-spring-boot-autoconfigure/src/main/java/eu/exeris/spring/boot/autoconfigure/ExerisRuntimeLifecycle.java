@@ -6,15 +6,19 @@
  */
 package eu.exeris.spring.boot.autoconfigure;
 
-import eu.exeris.kernel.core.bootstrap.KernelBootstrap;
-import eu.exeris.kernel.spi.http.HttpHandler;
-import eu.exeris.kernel.spi.http.HttpKernelProviders;
-import eu.exeris.kernel.spi.http.HttpServerEngine;
+import java.lang.reflect.InvocationTargetException;
+import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+
 import org.springframework.context.SmartLifecycle;
 import org.springframework.lang.NonNull;
 
-import java.lang.reflect.InvocationTargetException;
-import java.util.Optional;
+import eu.exeris.kernel.core.bootstrap.KernelBootstrap;
+import eu.exeris.kernel.spi.http.HttpHandler;
+import eu.exeris.kernel.spi.http.HttpKernelProviders;
 
 /**
  * Spring lifecycle coordinator for the Exeris runtime.
@@ -28,11 +32,12 @@ import java.util.Optional;
  * Spring ApplicationContext.refresh() completes
  *   → SmartLifecycle.start() called (ordered by phase)
  *   → ExerisRuntimeLifecycle.start()
- *       → KernelBootstrap.bootstrap(configProvider)
- *           → ServiceLoader discovers SubsystemProviders
- *           → subsystems initialise in DAG order (Config → Memory → Transport ...)
+ *       → creates KernelBootstrap and launches the lifecycle boot thread
+ *       → optionally binds the HTTP handler seam via ScopedValue.where(...)
+ *       → KernelBootstrap.boot(...)
+ *           → keeps the boot scope open until stop() releases it
  *           → KERNEL READY
- *       → stores KernelHandle for stop() and isRunning()
+ *       → stores KernelBootstrap for stop() and isRunning()
  * </pre>
  *
  * <h2>Stop Sequence</h2>
@@ -65,10 +70,15 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
     private final ExerisRuntimeProperties properties;
     private final ExerisSpringConfigProvider configProvider;
     private final Optional<HttpHandler> httpHandler;
+    private final Object lifecycleMonitor = new Object();
 
     private volatile boolean running = false;
-    private volatile HttpServerEngine serverEngine;
-    private volatile KernelBootstrap bootstrap;
+    private boolean starting = false;
+    private boolean stopRequested = false;
+    private final AtomicBoolean shutdownTriggered = new AtomicBoolean(false);
+    private final AtomicReference<KernelBootstrap> bootstrap = new AtomicReference<>();
+    private final AtomicReference<CountDownLatch> heldBootScope = new AtomicReference<>();
+    private final AtomicReference<Thread> bootThread = new AtomicReference<>();
 
     public ExerisRuntimeLifecycle(ExerisRuntimeProperties properties,
                                    ExerisSpringConfigProvider configProvider,
@@ -80,26 +90,62 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
 
     @Override
     public void start() {
-        if (!properties.enabled() || running) {
-            return;
+        synchronized (lifecycleMonitor) {
+            if (!properties.enabled() || running || starting || bootThread.get() != null) {
+                return;
+            }
+            starting = true;
+            stopRequested = false;
+            shutdownTriggered.set(false);
         }
+
         KernelBootstrap kernelBootstrap = KernelBootstrap.builder()
                 .classLoader(Thread.currentThread().getContextClassLoader())
                 .build();
-        configProvider.prepareBootstrap();
+        CountDownLatch bootReady = new CountDownLatch(1);
+        CountDownLatch releaseSignal = new CountDownLatch(1);
+        AtomicReference<Exception> bootFailure = new AtomicReference<>();
+
+        Thread thread = Thread.ofPlatform()
+                .name("exeris-runtime-lifecycle")
+                .daemon(false)
+                .unstarted(() -> runKernelLifetime(kernelBootstrap, bootReady, releaseSignal, bootFailure));
+
+        this.bootstrap.set(kernelBootstrap);
+        heldBootScope.set(releaseSignal);
+        bootThread.set(thread);
+        thread.start();
+
         try {
-            kernelBootstrap.boot(() -> httpHandler.ifPresent(handler -> {
-                HttpServerEngine engine = HttpKernelProviders.httpServerEngine();
-                this.serverEngine = engine;
-                engine.setHandler(handler);
-                engine.start();
-            }));
-            this.bootstrap = kernelBootstrap;
-            running = true;
-        } catch (KernelBootstrap.BootstrapException | RuntimeException ex) {
-            throw failedStart(kernelBootstrap, ex);
-        } finally {
-            configProvider.clearBootstrap();
+            awaitStartup(bootReady, releaseSignal, kernelBootstrap, thread);
+        } catch (IllegalStateException ex) {
+            synchronized (lifecycleMonitor) {
+                starting = false;
+                stopRequested = true;
+                running = false;
+                lifecycleMonitor.notifyAll();
+            }
+            throw ex;
+        }
+
+        Exception failure = bootFailure.get();
+        boolean shutdownImmediately;
+        synchronized (lifecycleMonitor) {
+            starting = false;
+            shutdownImmediately = stopRequested;
+            if (failure == null && !shutdownImmediately) {
+                this.bootstrap.set(kernelBootstrap);
+                running = true;
+            }
+            lifecycleMonitor.notifyAll();
+        }
+
+        if (failure != null) {
+            throw failedStart(kernelBootstrap, failure);
+        }
+        if (shutdownImmediately) {
+            releaseBootScope(releaseSignal);
+            shutdownKernelOnce(kernelBootstrap);
         }
     }
 
@@ -111,20 +157,26 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
 
     @Override
     public void stop() {
-        HttpServerEngine engine = this.serverEngine;
-        KernelBootstrap kernelBootstrap = this.bootstrap;
-        if (!running && engine == null && kernelBootstrap == null) {
-            return;
+        KernelBootstrap kernelBootstrap;
+        CountDownLatch releaseSignal;
+        Thread thread;
+        boolean startupInProgress;
+        synchronized (lifecycleMonitor) {
+            startupInProgress = starting;
+            if (startupInProgress) {
+                stopRequested = true;
+            }
+            kernelBootstrap = this.bootstrap.getAndSet(null);
+            releaseSignal = heldBootScope.getAndSet(null);
+            thread = bootThread.get();
+            if (!running && !startupInProgress && kernelBootstrap == null && releaseSignal == null && thread == null) {
+                return;
+            }
+            this.running = false;
         }
-
-        this.running = false;
-        this.serverEngine = null;
-        this.bootstrap = null;
-
-        if (engine != null) {
-            engine.stop();
-        }
-        shutdownKernel(kernelBootstrap);
+        releaseBootScope(releaseSignal);
+        shutdownKernelOnce(kernelBootstrap);
+        awaitStopCompletion(thread, startupInProgress);
     }
 
     @Override
@@ -142,6 +194,182 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         return properties.autoStart();
     }
 
+    private void runKernelLifetime(KernelBootstrap kernelBootstrap,
+                                   CountDownLatch bootReady,
+                                   CountDownLatch releaseSignal,
+                                   AtomicReference<Exception> bootFailure) {
+        configProvider.prepareBootstrap();
+        try {
+            bootKernel(kernelBootstrap, bootReady, releaseSignal);
+        } catch (KernelBootstrap.BootstrapException | RuntimeException ex) {
+            bootFailure.set(ex);
+        } finally {
+            bootReady.countDown();
+            configProvider.clearBootstrap();
+            heldBootScope.compareAndSet(releaseSignal, null);
+            bootThread.compareAndSet(Thread.currentThread(), null);
+            synchronized (lifecycleMonitor) {
+                if (this.bootstrap.compareAndSet(kernelBootstrap, null)) {
+                    running = false;
+                }
+                starting = false;
+                lifecycleMonitor.notifyAll();
+            }
+        }
+    }
+
+    private void bootKernel(KernelBootstrap kernelBootstrap,
+                            CountDownLatch bootReady,
+                            CountDownLatch releaseSignal) throws KernelBootstrap.BootstrapException {
+        Runnable holdKernelScopeOpen = () -> {
+            bootReady.countDown();
+            awaitStopSignal(releaseSignal);
+        };
+
+        if (httpHandler.isEmpty()) {
+            kernelBootstrap.boot(holdKernelScopeOpen);
+            return;
+        }
+
+        try {
+            ScopedValue.where(HttpKernelProviders.HTTP_SERVER_HANDLER, httpHandler.get())
+                    .call(() -> {
+                        kernelBootstrap.boot(holdKernelScopeOpen);
+                        return null;
+                    });
+        } catch (Exception ex) {
+            if (ex instanceof KernelBootstrap.BootstrapException bootstrapException) {
+                throw bootstrapException;
+            }
+            if (ex instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new IllegalStateException("Exeris runtime startup failed while binding the kernel HTTP handler seam", ex);
+        }
+    }
+
+    private void awaitStartup(CountDownLatch bootReady,
+                              CountDownLatch releaseSignal,
+                              KernelBootstrap kernelBootstrap,
+                              Thread thread) {
+        long timeoutMillis = startupTimeoutMillis();
+        try {
+            if (bootReady.await(timeoutMillis, TimeUnit.MILLISECONDS)) {
+                return;
+            }
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            IllegalStateException failure =
+                    new IllegalStateException("Exeris runtime startup was interrupted", ex);
+            bestEffortStartupCleanup(releaseSignal, kernelBootstrap, thread, failure);
+            throw failure;
+        }
+
+        IllegalStateException failure = new IllegalStateException(
+                "Exeris runtime startup timed out after " + timeoutMillis
+                        + " ms waiting for kernel bootstrap readiness"
+        );
+        bestEffortStartupCleanup(releaseSignal, kernelBootstrap, thread, failure);
+        throw failure;
+    }
+
+    private long startupTimeoutMillis() {
+        return Math.max(1L, properties.lifecycle().startupTimeoutSeconds()) * 1_000L;
+    }
+
+    private long shutdownTimeoutMillis() {
+        return Math.max(1L, properties.shutdown().timeoutSeconds()) * 1_000L;
+    }
+
+    private void bestEffortStartupCleanup(CountDownLatch releaseSignal,
+                                          KernelBootstrap kernelBootstrap,
+                                          Thread thread,
+                                          RuntimeException failure) {
+        heldBootScope.compareAndSet(releaseSignal, null);
+        releaseBootScope(releaseSignal);
+
+        try {
+            shutdownKernelOnce(kernelBootstrap);
+        } catch (RuntimeException ex) {
+            failure.addSuppressed(ex);
+        }
+
+        if (thread != null && thread.isAlive()) {
+            thread.interrupt();
+        }
+    }
+
+    private static void awaitStopSignal(CountDownLatch releaseSignal) {
+        try {
+            releaseSignal.await();
+        } catch (InterruptedException _) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private static void releaseBootScope(CountDownLatch releaseSignal) {
+        if (releaseSignal != null) {
+            releaseSignal.countDown();
+        }
+    }
+
+    private void awaitStopCompletion(Thread thread, boolean startupInProgress) {
+        if (thread != null) {
+            awaitShutdown(thread);
+            return;
+        }
+        if (!startupInProgress || !properties.shutdown().graceful()) {
+            return;
+        }
+
+        long timeoutMillis = shutdownTimeoutMillis();
+        long deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+        synchronized (lifecycleMonitor) {
+            while (starting || bootThread.get() != null) {
+                long remainingNanos = deadlineNanos - System.nanoTime();
+                if (remainingNanos <= 0L) {
+                    throw new IllegalStateException(
+                            "Exeris runtime shutdown timed out after " + timeoutMillis
+                                    + " ms waiting for startup cancellation"
+                    );
+                }
+                try {
+                    TimeUnit.NANOSECONDS.timedWait(lifecycleMonitor, remainingNanos);
+                } catch (InterruptedException _) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+        }
+    }
+
+    private void awaitShutdown(Thread thread) {
+        if (thread == null || thread == Thread.currentThread() || !properties.shutdown().graceful()) {
+            return;
+        }
+        long timeoutMillis = shutdownTimeoutMillis();
+        try {
+            thread.join(timeoutMillis);
+        } catch (InterruptedException _) {
+            Thread.currentThread().interrupt();
+            return;
+        }
+        if (thread.isAlive()) {
+            thread.interrupt();
+            throw new IllegalStateException(
+                    "Exeris runtime shutdown timed out after " + timeoutMillis
+                            + " ms waiting for boot thread '" + thread.getName() + "'"
+            );
+        }
+    }
+
+    private void shutdownKernelOnce(KernelBootstrap kernelBootstrap) {
+        if (kernelBootstrap == null || !shutdownTriggered.compareAndSet(false, true)) {
+            return;
+        }
+        shutdownKernel(kernelBootstrap);
+    }
+
     private static void shutdownKernel(KernelBootstrap bootstrap) {
         if (bootstrap == null) {
             return;
@@ -153,33 +381,13 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
     }
 
     private IllegalStateException failedStart(KernelBootstrap kernelBootstrap, Exception cause) {
-        RuntimeException cleanupFailure = null;
-        HttpServerEngine engine = this.serverEngine;
-
         this.running = false;
-        this.serverEngine = null;
-        this.bootstrap = null;
-
-        if (engine != null) {
-            try {
-                engine.stop();
-            } catch (RuntimeException ex) {
-                cleanupFailure = ex;
-            }
-        }
+        this.bootstrap.compareAndSet(kernelBootstrap, null);
 
         try {
-            shutdownKernel(kernelBootstrap);
+            shutdownKernelOnce(kernelBootstrap);
         } catch (RuntimeException ex) {
-            if (cleanupFailure != null) {
-                cleanupFailure.addSuppressed(ex);
-            } else {
-                cleanupFailure = ex;
-            }
-        }
-
-        if (cleanupFailure != null) {
-            cause.addSuppressed(cleanupFailure);
+            cause.addSuppressed(ex);
         }
         return new IllegalStateException("Exeris runtime startup failed", cause);
     }
@@ -188,7 +396,7 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         try {
             target.getClass().getMethod(methodName).invoke(target);
             return true;
-        } catch (NoSuchMethodException ex) {
+        } catch (NoSuchMethodException _) {
             return false;
         } catch (InvocationTargetException ex) {
             Throwable cause = ex.getCause();

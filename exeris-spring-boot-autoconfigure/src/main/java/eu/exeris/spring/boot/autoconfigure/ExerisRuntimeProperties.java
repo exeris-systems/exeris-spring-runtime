@@ -43,6 +43,7 @@ public record ExerisRuntimeProperties(
         @DefaultValue("true") boolean enabled,
         @DefaultValue("true") boolean autoStart,
         WebProperties web,
+        LifecycleProperties lifecycle,
         ShutdownProperties shutdown
 
 ) {
@@ -56,6 +57,9 @@ public record ExerisRuntimeProperties(
     public ExerisRuntimeProperties {
             if (web == null) {
                 web = new WebProperties();
+            }
+            if (lifecycle == null) {
+                lifecycle = new LifecycleProperties();
             }
             if (shutdown == null) {
                 shutdown = new ShutdownProperties();
@@ -71,7 +75,7 @@ public record ExerisRuntimeProperties(
      * Correct for tests and environments requiring manual lifecycle control.
      */
     public ExerisRuntimeProperties() {
-        this(true, false, new WebProperties(), new ShutdownProperties());
+        this(true, false, new WebProperties(), new LifecycleProperties(), new ShutdownProperties());
     }
 
     public record WebProperties(@DefaultValue("pure") Mode mode) {
@@ -90,6 +94,17 @@ public record ExerisRuntimeProperties(
 
         public boolean isCompatibility() {
             return mode == Mode.COMPATIBILITY;
+        }
+    }
+
+    public record LifecycleProperties(@DefaultValue("30") int startupTimeoutSeconds) {
+
+        @ConstructorBinding
+        public LifecycleProperties {
+        }
+
+        public LifecycleProperties() {
+            this(30);
         }
     }
 
