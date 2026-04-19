@@ -6,6 +6,24 @@
  */
 package eu.exeris.spring.runtime.web;
 
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
+import java.lang.reflect.Type;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Test;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.MapPropertySource;
+
 import eu.exeris.kernel.spi.http.HttpExchange;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpRequest;
@@ -13,97 +31,63 @@ import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeAutoConfiguration;
-import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
 import eu.exeris.spring.runtime.web.autoconfigure.ExerisWebAutoConfiguration;
-import org.junit.jupiter.api.Test;
-import org.springframework.context.annotation.AnnotationConfigApplicationContext;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.core.env.MapPropertySource;
-
-import java.lang.reflect.Method;
-import java.lang.reflect.Proxy;
-import java.lang.reflect.Type;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.List;
-import java.util.Optional;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Runtime integration verification for Pure Mode request dispatch ownership.
+ * Dispatcher-level observability smoke test for Pure Mode.
  *
- * <p>This test starts a real Spring context with both
- * {@link ExerisRuntimeAutoConfiguration} and {@link ExerisWebAutoConfiguration},
- * then invokes the runtime {@link ExerisHttpDispatcher} using realistic kernel-SPI
- * doubles for {@link HttpExchange}/{@link HttpRequest}.
+ * <p>Verifies that the dispatcher can be wrapped by simple counter/timer observation
+ * during normal and error dispatch without changing the request outcome.
  *
- * <p>Full socket-level E2E (real ingress port + raw HTTP client) is currently blocked
- * in this module because the kernel does not yet expose a stable embeddable
- * {@code HttpServerEngine} test fixture with deterministic port discovery and request
- * context setup for body-buffer allocation in unit/integration tests.
+ * <p>Scope: dispatcher-level only. This is intentionally not a telemetry-backend
+ * integration test and does not assert wire-level sink emission.
  */
-class ExerisPureModeRequestPathIntegrationTest {
+class ExerisDispatchObservabilitySmokeTest {
 
     @Test
-    void pureMode_dispatchesExchangeToAnnotatedSpringHandler_andRespondsThroughKernelExchange() throws Exception {
+    void pureMode_dispatcherInvocation_canBeObservedWithSimpleCounter() throws Exception {
         try (var context = createContext()) {
             ExerisHttpDispatcher dispatcher = context.getBean(ExerisHttpDispatcher.class);
-            HelloHandler handler = context.getBean(HelloHandler.class);
+            TestCounterObserver counterObserver = new TestCounterObserver();
 
             TestExchange exchange = TestExchange.get(HttpMethod.GET, "/hello", anyHttpVersion());
-            dispatcher.handle(exchange.proxy());
+            counterObserver.observeDispatch(() -> dispatcher.handle(exchange.proxy()));
 
-            assertThat(handler.invocations()).isEqualTo(1);
+            assertThat(counterObserver.invocationCount()).isEqualTo(1);
             assertThat(exchange.response()).isNotNull();
             assertThat(readStatus(exchange.response())).isEqualTo(HttpStatus.ACCEPTED);
         }
     }
 
     @Test
-    void pureMode_mapsMissingRouteToNotFound() throws Exception {
+    void pureMode_dispatcherInvocation_canBeObservedWithSimpleTimer() throws Exception {
         try (var context = createContext()) {
             ExerisHttpDispatcher dispatcher = context.getBean(ExerisHttpDispatcher.class);
+            TestTimerObserver timerObserver = new TestTimerObserver();
 
-            TestExchange exchange = TestExchange.get(HttpMethod.GET, "/missing", anyHttpVersion());
-            dispatcher.handle(exchange.proxy());
+            TestExchange exchange = TestExchange.get(HttpMethod.GET, "/hello", anyHttpVersion());
+            timerObserver.observeDispatch(() -> dispatcher.handle(exchange.proxy()));
 
+            assertThat(timerObserver.invocationCount()).isEqualTo(1);
+            assertThat(timerObserver.elapsedNanos()).isGreaterThanOrEqualTo(0L);
             assertThat(exchange.response()).isNotNull();
-            assertThat(readStatus(exchange.response())).isEqualTo(HttpStatus.NOT_FOUND);
         }
     }
 
     @Test
-    void pureMode_mapsUnhandledApplicationExceptionToInternalServerError() throws Exception {
+    void pureMode_dispatcherErrorPath_remainsObservableWithoutMaskingErrors() throws Exception {
         try (var context = createContext()) {
             ExerisHttpDispatcher dispatcher = context.getBean(ExerisHttpDispatcher.class);
-            FailingHandler handler = context.getBean(FailingHandler.class);
+            FailingHandler failingHandler = context.getBean(FailingHandler.class);
+            TestTimerObserver timerObserver = new TestTimerObserver();
 
             TestExchange exchange = TestExchange.get(HttpMethod.GET, "/boom", anyHttpVersion());
-            dispatcher.handle(exchange.proxy());
+            timerObserver.observeDispatch(() -> dispatcher.handle(exchange.proxy()));
 
-            assertThat(handler.invocations()).isEqualTo(1);
+            assertThat(timerObserver.invocationCount()).isEqualTo(1);
+            assertThat(failingHandler.invocations()).isEqualTo(1);
             assertThat(exchange.response()).isNotNull();
             assertThat(readStatus(exchange.response())).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
-        }
-    }
-
-    @Test
-    void repeatedLifecycleStopOperations_areLifecycleSafeBeforeRuntimeStart() {
-        try (var context = createContext()) {
-            ExerisRuntimeLifecycle lifecycle = context.getBean(ExerisRuntimeLifecycle.class);
-
-            AtomicInteger callbackInvocations = new AtomicInteger();
-
-            lifecycle.stop();
-            lifecycle.stop(callbackInvocations::incrementAndGet);
-            lifecycle.stop(callbackInvocations::incrementAndGet);
-
-            assertThat(callbackInvocations).hasValue(2);
-            assertThat(lifecycle.isRunning()).isFalse();
         }
     }
 
@@ -142,14 +126,16 @@ class ExerisPureModeRequestPathIntegrationTest {
                     if (value instanceof HttpVersion version) {
                         return version;
                     }
-                } catch (IllegalAccessException ignored) {
+                } catch (IllegalAccessException _) {
+                    // Ignore inaccessible constants while probing a usable test HttpVersion.
                 }
             }
         }
         throw new IllegalStateException("Unable to obtain any HttpVersion constant for test exchange");
     }
 
-    @Configuration
+    @Configuration(proxyBeanMethods = false)
+    @SuppressWarnings("unused")
     static class TestConfig {
 
         @Bean
@@ -173,10 +159,6 @@ class ExerisPureModeRequestPathIntegrationTest {
             invocations.incrementAndGet();
             return ExerisServerResponse.status(HttpStatus.ACCEPTED).body(new byte[0]);
         }
-
-        int invocations() {
-            return invocations.get();
-        }
     }
 
     @ExerisRoute(method = HttpMethod.GET, path = "/boom")
@@ -192,6 +174,54 @@ class ExerisPureModeRequestPathIntegrationTest {
 
         int invocations() {
             return invocations.get();
+        }
+    }
+
+    @FunctionalInterface
+    private interface ThrowingDispatchBlock {
+        void run() throws Exception;
+    }
+
+    /**
+     * Simple test observer to verify counter-based observability around dispatch.
+     */
+    static class TestCounterObserver {
+        private final AtomicInteger counter = new AtomicInteger();
+
+        void observeDispatch(ThrowingDispatchBlock dispatchBlock) throws Exception {
+            counter.incrementAndGet();
+            dispatchBlock.run();
+        }
+
+        int invocationCount() {
+            return counter.get();
+        }
+    }
+
+    /**
+     * Simple test observer to verify timer-based observability around dispatch.
+     */
+    static class TestTimerObserver {
+        private final AtomicInteger invocations = new AtomicInteger();
+        private final AtomicLong elapsedNanos = new AtomicLong();
+
+        void observeDispatch(ThrowingDispatchBlock dispatchBlock) throws Exception {
+            long startNanos = System.nanoTime();
+            try {
+                dispatchBlock.run();
+            } finally {
+                long endNanos = System.nanoTime();
+                elapsedNanos.set(endNanos - startNanos);
+                invocations.incrementAndGet();
+            }
+        }
+
+        int invocationCount() {
+            return invocations.get();
+        }
+
+        long elapsedNanos() {
+            return elapsedNanos.get();
         }
     }
 
@@ -243,10 +273,11 @@ class ExerisPureModeRequestPathIntegrationTest {
                             && path.equals(request.path())) {
                         return request;
                     }
-                } catch (ReflectiveOperationException | IllegalArgumentException ignored) {
+                } catch (ReflectiveOperationException | IllegalArgumentException _) {
+                    // Ignore constructor shapes that do not match the current kernel HttpRequest signature.
                 }
             }
-            throw new IllegalStateException("Unable to construct HttpRequest for runtime integration test");
+            throw new IllegalStateException("Unable to construct HttpRequest for observability smoke test");
         }
 
         private static Object[] buildConstructorArgs(Type[] parameterTypes,

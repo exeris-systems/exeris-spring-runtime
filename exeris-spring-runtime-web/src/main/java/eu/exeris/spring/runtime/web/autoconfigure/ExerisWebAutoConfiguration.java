@@ -6,11 +6,15 @@
  */
 package eu.exeris.spring.runtime.web.autoconfigure;
 
-import eu.exeris.spring.runtime.web.ExerisErrorMapper;
-import eu.exeris.spring.runtime.web.ExerisHttpDispatcher;
-import eu.exeris.spring.runtime.web.ExerisRequestHandler;
-import eu.exeris.spring.runtime.web.ExerisRoute;
-import eu.exeris.spring.runtime.web.ExerisRouteRegistry;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
+
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -18,8 +22,14 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 
-import java.util.Map;
-import java.util.Objects;
+import eu.exeris.kernel.spi.telemetry.TelemetryConfig;
+import eu.exeris.kernel.spi.telemetry.TelemetryProvider;
+import eu.exeris.kernel.spi.telemetry.TelemetrySink;
+import eu.exeris.spring.runtime.web.ExerisErrorMapper;
+import eu.exeris.spring.runtime.web.ExerisHttpDispatcher;
+import eu.exeris.spring.runtime.web.ExerisRequestHandler;
+import eu.exeris.spring.runtime.web.ExerisRoute;
+import eu.exeris.spring.runtime.web.ExerisRouteRegistry;
 
 /**
  * Auto-configuration for Exeris Pure Mode web routing and dispatcher bridge.
@@ -32,6 +42,9 @@ import java.util.Objects;
         havingValue = "pure",
         matchIfMissing = true)
 public class ExerisWebAutoConfiguration {
+
+    private static final System.Logger LOGGER = System.getLogger(ExerisWebAutoConfiguration.class.getName());
+    private static final String FALLBACK_TELEMETRY_SINKS_BEAN_NAME = "exerisFallbackTelemetrySinks";
 
     @Bean
     @ConditionalOnMissingBean
@@ -56,10 +69,117 @@ public class ExerisWebAutoConfiguration {
         return builder.build();
     }
 
+    @Bean(name = FALLBACK_TELEMETRY_SINKS_BEAN_NAME, destroyMethod = "close")
+    @ConditionalOnMissingBean(name = FALLBACK_TELEMETRY_SINKS_BEAN_NAME)
+    @SuppressWarnings("unused")
+    Supplier<List<TelemetrySink>> exerisFallbackTelemetrySinks(ObjectProvider<TelemetryProvider> telemetryProviders) {
+        return buildFallbackSinksSupplier(telemetryProviders);
+    }
+
     @Bean
     @ConditionalOnMissingBean
-    public ExerisHttpDispatcher exerisHttpDispatcher(ExerisRouteRegistry routeRegistry,
-                                                      ExerisErrorMapper errorMapper) {
-        return new ExerisHttpDispatcher(routeRegistry, errorMapper);
+    @SuppressWarnings("unused")
+    ExerisHttpDispatcher exerisHttpDispatcher(ExerisRouteRegistry routeRegistry,
+                                               ExerisErrorMapper errorMapper,
+                                               @Qualifier(FALLBACK_TELEMETRY_SINKS_BEAN_NAME)
+                                               Supplier<List<TelemetrySink>> fallbackTelemetrySinks) {
+        return new ExerisHttpDispatcher(routeRegistry, errorMapper, fallbackTelemetrySinks);
+    }
+
+    /**
+     * Discovers Spring-managed {@link TelemetryProvider} beans and creates their sinks.
+     *
+     * <p>Used as the fallback telemetry sink list for {@link ExerisHttpDispatcher} when
+     * {@code KernelProviders.TELEMETRY_SINKS} is not bound (testkit / non-kernel-scope paths).
+     * In production the kernel always binds {@code TELEMETRY_SINKS} before handler invocation,
+     * so this list is never consulted on the production hot path.
+     *
+     * <p>Returns an empty list when no {@link TelemetryProvider} beans are present in the context.
+     */
+    private static Supplier<List<TelemetrySink>> buildFallbackSinksSupplier(
+            ObjectProvider<TelemetryProvider> telemetryProviders) {
+        return new FallbackTelemetrySinksSupplier(telemetryProviders);
+    }
+
+    private static final class FallbackTelemetrySinksSupplier implements Supplier<List<TelemetrySink>>, AutoCloseable {
+
+        private final ObjectProvider<TelemetryProvider> telemetryProviders;
+        private final Object lock = new Object();
+        private final AtomicReference<List<TelemetrySink>> cached = new AtomicReference<>();
+
+        FallbackTelemetrySinksSupplier(ObjectProvider<TelemetryProvider> telemetryProviders) {
+            this.telemetryProviders = telemetryProviders;
+        }
+
+        @Override
+        public List<TelemetrySink> get() {
+            List<TelemetrySink> resolved = cached.get();
+            if (resolved != null) {
+                return resolved;
+            }
+
+            synchronized (lock) {
+                resolved = cached.get();
+                if (resolved == null) {
+                    resolved = resolveSinks();
+                    cached.set(resolved);
+                }
+                return resolved;
+            }
+        }
+
+        @Override
+        public void close() {
+            List<TelemetrySink> sinks = cached.getAndSet(List.of());
+            if (sinks == null || sinks.isEmpty()) {
+                return;
+            }
+            sinks.forEach(FallbackTelemetrySinksSupplier::closeQuietly);
+        }
+
+        private List<TelemetrySink> resolveSinks() {
+            if (telemetryProviders == null) {
+                return List.of();
+            }
+
+            TelemetryConfig config = TelemetryConfig.defaults();
+            List<TelemetrySink> sinks = new ArrayList<>();
+            telemetryProviders.orderedStream()
+                    .filter(Objects::nonNull)
+                    .forEach(provider -> {
+                        try {
+                            List<TelemetrySink> providerSinks = provider.createSinks(config);
+                            if (providerSinks == null || providerSinks.isEmpty()) {
+                                return;
+                            }
+                            providerSinks.stream()
+                                    .filter(Objects::nonNull)
+                                    .forEach(sinks::add);
+                        } catch (RuntimeException ex) {
+                            LOGGER.log(System.Logger.Level.WARNING,
+                                    "Skipping fallback telemetry provider '" + safeProviderName(provider)
+                                            + "' after createSinks() failure; continuing with remaining providers.",
+                                    ex);
+                        }
+                    });
+
+            return sinks.isEmpty() ? List.of() : List.copyOf(sinks);
+        }
+
+        private static String safeProviderName(TelemetryProvider provider) {
+            try {
+                return provider.providerName();
+            } catch (RuntimeException _) {
+                return provider.getClass().getName();
+            }
+        }
+
+        private static void closeQuietly(TelemetrySink sink) {
+            try {
+                sink.close();
+            } catch (RuntimeException _) {
+                // Best-effort shutdown only for Spring-managed fallback sinks.
+            }
+        }
     }
 }

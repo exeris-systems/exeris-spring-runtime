@@ -6,8 +6,10 @@
  */
 package eu.exeris.spring.runtime.web;
 
-import eu.exeris.kernel.spi.http.HttpRequest;
+import java.util.Objects;
+
 import eu.exeris.kernel.spi.http.HttpMethod;
+import eu.exeris.kernel.spi.http.HttpRequest;
 
 /**
  * Thin, non-copying view over a kernel {@link HttpRequest}.
@@ -32,7 +34,16 @@ public final class ExerisServerRequest {
     private final HttpRequest delegate;
 
     ExerisServerRequest(HttpRequest delegate) {
-        this.delegate = delegate;
+        this.delegate = Objects.requireNonNull(delegate, "request must not be null");
+    }
+
+    /**
+     * Creates a view over a kernel {@link HttpRequest}. Intended for use by
+     * compatibility-mode classes in other packages that cannot access the
+     * package-private constructor.
+     */
+    public static ExerisServerRequest wrap(HttpRequest request) {
+        return new ExerisServerRequest(Objects.requireNonNull(request, "request must not be null"));
     }
 
     public HttpMethod method() {
