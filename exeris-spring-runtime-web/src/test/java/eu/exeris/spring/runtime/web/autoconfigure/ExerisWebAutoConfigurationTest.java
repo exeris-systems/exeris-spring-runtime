@@ -86,6 +86,25 @@ class ExerisWebAutoConfigurationTest {
     }
 
     @Test
+    void pureMode_isolatesTelemetryProviderFailures_andKeepsHealthyFallbackSinks() throws Exception {
+        try (AnnotationConfigApplicationContext context = createContext(
+                Map.of("exeris.runtime.web.mode", "pure"),
+                TelemetryHandlerConfig.class,
+                PartialFailureTelemetryProviderConfig.class)) {
+            ExerisHttpDispatcher dispatcher = context.getBean(ExerisHttpDispatcher.class);
+            TelemetryAwareHandler handler = context.getBean(TelemetryAwareHandler.class);
+            CountingTelemetryProvider healthyProvider = context.getBean("healthyTelemetryProvider", CountingTelemetryProvider.class);
+            FailingTelemetryProvider failingProvider = context.getBean(FailingTelemetryProvider.class);
+
+            dispatcher.handle(TestExchange.get(HttpMethod.GET, "/telemetry", anyHttpVersion()).proxy());
+
+            assertThat(handler.telemetryBound()).isTrue();
+            assertThat(healthyProvider.createSinksCalls()).isEqualTo(1);
+            assertThat(failingProvider.createSinksCalls()).isEqualTo(1);
+        }
+    }
+
+    @Test
     void pureMode_closesLazilyCreatedFallbackTelemetrySinksOnContextClose() throws Exception {
         try (AnnotationConfigApplicationContext context = createContext(
                 Map.of("exeris.runtime.web.mode", "pure"),
@@ -176,6 +195,22 @@ class ExerisWebAutoConfigurationTest {
     }
 
     @Configuration
+    static class PartialFailureTelemetryProviderConfig {
+
+        @Bean("healthyTelemetryProvider")
+        @SuppressWarnings("unused")
+        CountingTelemetryProvider healthyTelemetryProvider() {
+            return new CountingTelemetryProvider();
+        }
+
+        @Bean
+        @SuppressWarnings("unused")
+        FailingTelemetryProvider failingTelemetryProvider() {
+            return new FailingTelemetryProvider();
+        }
+    }
+
+    @Configuration
     static class FallbackTelemetryOverrideConfig {
 
         @Bean("overrideFallbackSupplierCalls")
@@ -237,6 +272,31 @@ class ExerisWebAutoConfigurationTest {
 
         int closedSinkCount() {
             return closedSinkCount.get();
+        }
+    }
+
+    static final class FailingTelemetryProvider implements TelemetryProvider {
+
+        private final AtomicInteger createSinksCalls = new AtomicInteger();
+
+        @Override
+        public List<TelemetrySink> createSinks(TelemetryConfig config) {
+            createSinksCalls.incrementAndGet();
+            throw new IllegalStateException("expected per-provider fallback failure");
+        }
+
+        @Override
+        public String providerName() {
+            return "failing-test-provider";
+        }
+
+        @Override
+        public int priority() {
+            return 5;
+        }
+
+        int createSinksCalls() {
+            return createSinksCalls.get();
         }
     }
 

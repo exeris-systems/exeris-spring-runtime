@@ -60,6 +60,19 @@ class ExerisServerResponseTest {
     }
 
     @Test
+    void heapFallbackBuffer_setSizeTracksLogicalLengthSeparatelyFromCapacity() {
+        HttpResponse kernelResponse = ExerisServerResponse.ok().body("abcdef").toKernelResponse(anyHttpVersion());
+        LoanedBuffer body = kernelResponse.body();
+
+        body.setSize(3);
+
+        assertThat(body.size()).isEqualTo(3);
+        assertThat(body.capacity()).isEqualTo(6);
+        assertThat(new String(readBytes(body.slice(0, 3)), StandardCharsets.UTF_8)).isEqualTo("abc");
+        assertThatThrownBy(() -> body.slice(0, 4)).isInstanceOf(IndexOutOfBoundsException.class);
+    }
+
+    @Test
     void heapFallbackBuffer_sliceAndPeekHonorOffsetsAndBounds() {
         HttpResponse kernelResponse = ExerisServerResponse.ok().body("abcdef").toKernelResponse(anyHttpVersion());
         LoanedBuffer body = kernelResponse.body();

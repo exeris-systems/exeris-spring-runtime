@@ -6,14 +6,21 @@
  */
 package eu.exeris.spring.runtime.web;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.Type;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import eu.exeris.kernel.spi.context.KernelProviders;
@@ -27,6 +34,13 @@ import eu.exeris.kernel.spi.telemetry.KernelEvent;
 import eu.exeris.kernel.spi.telemetry.TelemetrySink;
 
 class ExerisHttpDispatcherTest {
+
+    @BeforeEach
+    @SuppressWarnings("unused")
+    void resetWarningFlags() throws Exception {
+        resetAtomicBoolean("FALLBACK_WARNING_LOGGED");
+        resetAtomicBoolean("FALLBACK_RESOLUTION_WARNING_LOGGED");
+    }
 
     @Test
     void fallbackTelemetrySinks_bindOnlyWhenKernelScopeIsUnbound() throws Exception {
@@ -104,6 +118,40 @@ class ExerisHttpDispatcherTest {
         dispatcher.handle(TestExchange.get(HttpMethod.GET, "/telemetry", anyHttpVersion()).proxy());
 
         assertThat(telemetryBound.get()).isFalse();
+    }
+
+    @Test
+    void fallbackTelemetryBinding_logsWarningOnlyOnce_whenFallbackSinksAreActuallyUsed() throws Exception {
+        Logger julLogger = Logger.getLogger(ExerisHttpDispatcher.class.getName());
+        Level previousLevel = julLogger.getLevel();
+        julLogger.setLevel(Level.ALL);
+        CapturingLogHandler logHandler = new CapturingLogHandler();
+
+        try (logHandler) {
+            julLogger.addHandler(logHandler);
+
+            ExerisRequestHandler handler = request -> ExerisServerResponse.ok().body("ok");
+            ExerisHttpDispatcher dispatcher = new ExerisHttpDispatcher(
+                    routeRegistry(handler),
+                    new ExerisErrorMapper(),
+                    () -> List.of(new NamedTelemetrySink("fallback")));
+
+            dispatcher.handle(TestExchange.get(HttpMethod.GET, "/telemetry", anyHttpVersion()).proxy());
+            dispatcher.handle(TestExchange.get(HttpMethod.GET, "/telemetry", anyHttpVersion()).proxy());
+
+            List<String> warnings = logHandler.messages().stream()
+                    .filter(message -> message.contains("fallback telemetry sinks") || message.contains("telemetry bootstrap"))
+                    .toList();
+
+            assertThat(warnings).hasSize(1);
+            assertThat(warnings.get(0))
+                    .contains("tests")
+                    .contains("compat")
+                    .contains("telemetry bootstrap");
+        } finally {
+            julLogger.removeHandler(logHandler);
+            julLogger.setLevel(previousLevel);
+        }
     }
 
     @Test
@@ -288,6 +336,38 @@ class ExerisHttpDispatcherTest {
                 return '\0';
             }
             return null;
+        }
+    }
+
+    private static void resetAtomicBoolean(String fieldName) throws Exception {
+        Field field = ExerisHttpDispatcher.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        ((java.util.concurrent.atomic.AtomicBoolean) field.get(null)).set(false);
+    }
+
+    private static final class CapturingLogHandler extends Handler implements AutoCloseable {
+
+        private final List<String> messages = new ArrayList<>();
+
+        @Override
+        public void publish(LogRecord logEntry) {
+            if (logEntry != null && logEntry.getLevel().intValue() >= Level.WARNING.intValue()) {
+                messages.add(logEntry.getMessage());
+            }
+        }
+
+        @Override
+        public void flush() {
+            // No-op for in-memory capture.
+        }
+
+        @Override
+        public void close() {
+            // No-op for in-memory capture.
+        }
+
+        List<String> messages() {
+            return List.copyOf(messages);
         }
     }
 

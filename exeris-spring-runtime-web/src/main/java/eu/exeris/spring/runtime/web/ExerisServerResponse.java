@@ -215,9 +215,11 @@ public final class ExerisServerResponse {
         private final List<Runnable> closeActions = new ArrayList<>();
         private int refCount = 1;
         private boolean alive = true;
+        private volatile int size;
 
         private HeapBodyBuffer(byte[] bytes) {
             this.bytes = bytes == null ? new byte[0] : bytes;
+            this.size = this.bytes.length;
         }
 
         @Override
@@ -227,7 +229,7 @@ public final class ExerisServerResponse {
 
         @Override
         public long size() {
-            return bytes.length;
+            return size;
         }
 
         @Override
@@ -239,7 +241,7 @@ public final class ExerisServerResponse {
         public LoanedBuffer slice(long offset, long length) {
             int start = checkedIndex(offset, "offset");
             int requestedLength = checkedIndex(length, "length");
-            int end = checkedEnd(start, requestedLength, bytes.length);
+            int end = checkedEnd(start, requestedLength, size);
             return new HeapBodyBuffer(Arrays.copyOfRange(bytes, start, end));
         }
 
@@ -252,7 +254,7 @@ public final class ExerisServerResponse {
         public LoanedBuffer peek(long offset, long length) {
             int start = checkedIndex(offset, "offset");
             int requestedLength = checkedIndex(length, "length");
-            int end = checkedEnd(start, requestedLength, bytes.length);
+            int end = checkedEnd(start, requestedLength, size);
             return new HeapBodyBuffer(copyRange(start, end));
         }
 
@@ -294,7 +296,7 @@ public final class ExerisServerResponse {
 
         @Override
         public void setSize(long newSize) {
-            checkedEnd(0, checkedIndex(newSize, "newSize"), bytes.length);
+            size = checkedEnd(0, checkedIndex(newSize, "newSize"), bytes.length);
         }
 
         @Override

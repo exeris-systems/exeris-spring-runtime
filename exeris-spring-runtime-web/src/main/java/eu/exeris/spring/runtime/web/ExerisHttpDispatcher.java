@@ -60,6 +60,7 @@ public final class ExerisHttpDispatcher implements HttpHandler {
 
     private static final System.Logger LOGGER = System.getLogger(ExerisHttpDispatcher.class.getName());
     private static final AtomicBoolean FALLBACK_WARNING_LOGGED = new AtomicBoolean(false);
+    private static final AtomicBoolean FALLBACK_RESOLUTION_WARNING_LOGGED = new AtomicBoolean(false);
 
     private final ExerisRouteRegistry routeRegistry;
     private final ExerisErrorMapper errorMapper;
@@ -99,12 +100,22 @@ public final class ExerisHttpDispatcher implements HttpHandler {
             return;
         }
 
+        logFallbackBindingWarningOnce();
         ScopedValue.where(KernelProviders.TELEMETRY_SINKS, fallbackSinks)
                 .run(() -> dispatch(exchange));
     }
 
     private List<TelemetrySink> resolveFallbackSinks() {
         return fallbackSinksSupplier.get();
+    }
+
+    private static void logFallbackBindingWarningOnce() {
+        if (FALLBACK_WARNING_LOGGED.compareAndSet(false, true)) {
+            LOGGER.log(System.Logger.Level.WARNING,
+                    "ExerisHttpDispatcher is binding fallback telemetry sinks because TELEMETRY_SINKS is unbound. "
+                            + "This is expected only in tests, compatibility tooling, or when telemetry bootstrap "
+                            + "is missing.");
+        }
     }
 
     private void dispatch(HttpExchange exchange) {
@@ -161,7 +172,7 @@ public final class ExerisHttpDispatcher implements HttpHandler {
             try {
                 return sanitizeFallbackSinks(source == null ? null : source.get());
             } catch (RuntimeException ex) {
-                if (FALLBACK_WARNING_LOGGED.compareAndSet(false, true)) {
+                if (FALLBACK_RESOLUTION_WARNING_LOGGED.compareAndSet(false, true)) {
                     LOGGER.log(System.Logger.Level.WARNING,
                             "ExerisHttpDispatcher telemetry fallback sink resolution failed; continuing without "
                                     + "fallback telemetry sinks. This should only occur in tests, compatibility "

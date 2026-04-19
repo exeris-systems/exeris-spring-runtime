@@ -43,6 +43,7 @@ import eu.exeris.spring.runtime.web.ExerisRouteRegistry;
         matchIfMissing = true)
 public class ExerisWebAutoConfiguration {
 
+    private static final System.Logger LOGGER = System.getLogger(ExerisWebAutoConfiguration.class.getName());
     private static final String FALLBACK_TELEMETRY_SINKS_BEAN_NAME = "exerisFallbackTelemetrySinks";
 
     @Bean
@@ -146,16 +147,31 @@ public class ExerisWebAutoConfiguration {
             telemetryProviders.orderedStream()
                     .filter(Objects::nonNull)
                     .forEach(provider -> {
-                        List<TelemetrySink> providerSinks = provider.createSinks(config);
-                        if (providerSinks == null || providerSinks.isEmpty()) {
-                            return;
+                        try {
+                            List<TelemetrySink> providerSinks = provider.createSinks(config);
+                            if (providerSinks == null || providerSinks.isEmpty()) {
+                                return;
+                            }
+                            providerSinks.stream()
+                                    .filter(Objects::nonNull)
+                                    .forEach(sinks::add);
+                        } catch (RuntimeException ex) {
+                            LOGGER.log(System.Logger.Level.WARNING,
+                                    "Skipping fallback telemetry provider '" + safeProviderName(provider)
+                                            + "' after createSinks() failure; continuing with remaining providers.",
+                                    ex);
                         }
-                        providerSinks.stream()
-                                .filter(Objects::nonNull)
-                                .forEach(sinks::add);
                     });
 
             return sinks.isEmpty() ? List.of() : List.copyOf(sinks);
+        }
+
+        private static String safeProviderName(TelemetryProvider provider) {
+            try {
+                return provider.providerName();
+            } catch (RuntimeException _) {
+                return provider.getClass().getName();
+            }
         }
 
         private static void closeQuietly(TelemetrySink sink) {
