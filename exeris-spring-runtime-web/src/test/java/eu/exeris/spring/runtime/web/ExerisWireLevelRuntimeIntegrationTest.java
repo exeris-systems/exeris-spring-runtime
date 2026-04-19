@@ -13,8 +13,11 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
+import java.util.ServiceLoader;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -31,9 +34,13 @@ import org.springframework.core.env.MapPropertySource;
 import eu.exeris.kernel.community.testkit.http.EmbeddedHttpEngineFixture;
 import eu.exeris.kernel.community.testkit.http.EmbeddedHttpEngineFixtures;
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.telemetry.KernelEvent;
+import eu.exeris.kernel.spi.telemetry.TelemetryConfig;
+import eu.exeris.kernel.spi.telemetry.TelemetryProvider;
+import eu.exeris.kernel.spi.telemetry.TelemetrySink;
 import eu.exeris.spring.runtime.web.autoconfigure.ExerisWebAutoConfiguration;
 import eu.exeris.spring.runtime.web.test.RecordingTelemetryProvider;
 
@@ -168,6 +175,22 @@ class ExerisWireLevelRuntimeIntegrationTest {
         } finally {
             context.close();
         }
+    }
+
+    private static HttpHandler kernelTelemetryScoped(ExerisHttpDispatcher dispatcher) {
+        RecordingTelemetryProvider provider = ServiceLoader.load(TelemetryProvider.class).stream()
+                .map(ServiceLoader.Provider::get)
+                .filter(RecordingTelemetryProvider.class::isInstance)
+                .map(RecordingTelemetryProvider.class::cast)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "RecordingTelemetryProvider was not discovered via ServiceLoader"
+                ));
+
+        List<TelemetrySink> sinks = List.copyOf(provider.createSinks(TelemetryConfig.defaults()));
+        return exchange -> ScopedValue.where(KernelProviders.TELEMETRY_PROVIDER, provider)
+                .where(KernelProviders.TELEMETRY_SINKS, sinks)
+                .run(() -> dispatcher.handle(exchange));
     }
 
     @Test
@@ -321,7 +344,7 @@ class ExerisWireLevelRuntimeIntegrationTest {
 
             RecordingTelemetryProvider.clearEvents();
 
-            fixture.start(dispatcher);
+            fixture.start(kernelTelemetryScoped(dispatcher));
             int port = fixture.boundPort();
 
             HttpResponse<String> response = awaitSuccessfulGet(client, port, "/wire-telemetry", Duration.ofSeconds(8));
@@ -332,8 +355,8 @@ class ExerisWireLevelRuntimeIntegrationTest {
             assertThat(handler.missingScopeFailure()).isNull();
             assertThat(RecordingTelemetryProvider.recordedEvents())
                     .anyMatch(event -> "EX-SPRING-WIRE-001".equals(event.code()));
-            assertThat(handler.telemetryProviderBoundObserved()).isNotNull();
-            assertThat(handler.telemetrySinksBoundObserved()).isNotNull();
+            assertThat(handler.telemetryProviderBoundObserved()).isTrue();
+            assertThat(handler.telemetrySinksBoundObserved()).isTrue();
             assertThat(handler.telemetryProbeMode()).isEqualTo("direct-kernel-providers");
         } finally {
             closeFixtureAndContext(fixture, context);
@@ -379,9 +402,9 @@ class ExerisWireLevelRuntimeIntegrationTest {
     @Configuration
     static class WireTelemetryEvidenceTestConfig {
 
-        @Bean
-        RecordingTelemetryProvider recordingTelemetryProvider() {
-            return new RecordingTelemetryProvider();
+        @Bean(name = "exerisFallbackTelemetrySinks")
+        Supplier<List<TelemetrySink>> exerisFallbackTelemetrySinks() {
+            return List::of;
         }
 
         @Bean
