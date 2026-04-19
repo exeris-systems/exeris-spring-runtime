@@ -8,6 +8,7 @@ package eu.exeris.spring.runtime.web;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
@@ -56,6 +57,9 @@ import eu.exeris.kernel.spi.telemetry.TelemetrySink;
  * @since 0.1.0
  */
 public final class ExerisHttpDispatcher implements HttpHandler {
+
+    private static final System.Logger LOGGER = System.getLogger(ExerisHttpDispatcher.class.getName());
+    private static final AtomicBoolean FALLBACK_WARNING_LOGGED = new AtomicBoolean(false);
 
     private final ExerisRouteRegistry routeRegistry;
     private final ExerisErrorMapper errorMapper;
@@ -156,7 +160,14 @@ public final class ExerisHttpDispatcher implements HttpHandler {
         private static List<TelemetrySink> resolveSafely(Supplier<List<TelemetrySink>> source) {
             try {
                 return sanitizeFallbackSinks(source == null ? null : source.get());
-            } catch (RuntimeException _) {
+            } catch (RuntimeException ex) {
+                if (FALLBACK_WARNING_LOGGED.compareAndSet(false, true)) {
+                    LOGGER.log(System.Logger.Level.WARNING,
+                            "ExerisHttpDispatcher telemetry fallback sink resolution failed; continuing without "
+                                    + "fallback telemetry sinks. This should only occur in tests, compatibility "
+                                    + "tooling, or when telemetry bootstrap is missing.",
+                            ex);
+                }
                 return List.of();
             }
         }
