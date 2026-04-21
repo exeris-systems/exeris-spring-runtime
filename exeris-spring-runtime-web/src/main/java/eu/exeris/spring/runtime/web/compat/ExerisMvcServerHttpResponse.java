@@ -98,6 +98,8 @@ public final class ExerisMvcServerHttpResponse implements ServerHttpResponse {
     }
 
     private static HttpStatus toKernelStatus(int code) {
-        return new HttpStatus(code, "Compatibility Scaffold");
+        org.springframework.http.HttpStatus springStatus = org.springframework.http.HttpStatus.resolve(code);
+        String reasonPhrase = springStatus != null ? springStatus.getReasonPhrase() : "HTTP " + code;
+        return new HttpStatus(code, reasonPhrase);
     }
 }

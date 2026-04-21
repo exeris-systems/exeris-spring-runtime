@@ -153,15 +153,51 @@ public final class ExerisHandlerMethodRegistry implements ApplicationContextAwar
 
         PathContainer pc = PathContainer.parsePath(path, PathContainer.Options.HTTP_PATH);
 
+        record MatchCandidate(RouteEntry entry, PathPattern.PathMatchInfo info, int methodRank) {}
+
+        List<MatchCandidate> matches = new ArrayList<>();
         for (RouteEntry entry : routes) {
-            if (!entry.methods().isEmpty() && !entry.methods().contains(method)) {
+            int methodRank = methodMatchRank(method, entry.methods());
+            if (methodRank < 0) {
                 continue;
             }
             PathPattern.PathMatchInfo info = entry.pattern().matchAndExtract(pc);
             if (info != null) {
-                return Optional.of(new ResolvedHandler(entry.handlerMethod(), info.getUriVariables()));
+                matches.add(new MatchCandidate(entry, info, methodRank));
             }
         }
-        return Optional.empty();
+
+        if (matches.isEmpty()) {
+            return Optional.empty();
+        }
+
+        matches.sort((left, right) -> {
+            int byPattern = PathPattern.SPECIFICITY_COMPARATOR.compare(left.entry().pattern(), right.entry().pattern());
+            if (byPattern != 0) {
+                return byPattern;
+            }
+            int byMethodRank = Integer.compare(left.methodRank(), right.methodRank());
+            if (byMethodRank != 0) {
+                return byMethodRank;
+            }
+            return left.entry().handlerMethod().getMethod().toGenericString()
+                    .compareTo(right.entry().handlerMethod().getMethod().toGenericString());
+        });
+
+        MatchCandidate best = matches.get(0);
+        return Optional.of(new ResolvedHandler(best.entry().handlerMethod(), best.info().getUriVariables()));
+    }
+
+    private static int methodMatchRank(HttpMethod requestMethod, Set<HttpMethod> mappedMethods) {
+        if (mappedMethods.isEmpty()) {
+            return 2;
+        }
+        if (mappedMethods.contains(requestMethod)) {
+            return 0;
+        }
+        if (requestMethod == HttpMethod.HEAD && mappedMethods.contains(HttpMethod.GET)) {
+            return 1;
+        }
+        return -1;
     }
 }

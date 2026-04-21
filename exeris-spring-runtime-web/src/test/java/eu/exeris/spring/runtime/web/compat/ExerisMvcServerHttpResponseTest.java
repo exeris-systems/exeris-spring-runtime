@@ -44,6 +44,7 @@ class ExerisMvcServerHttpResponseTest {
             ExerisServerResponse exerisResponse = response.toExerisServerResponse();
 
             assertThat(exerisResponse.status().code()).isEqualTo(202);
+            assertThat(exerisResponse.status().reasonPhrase()).isEqualTo("Accepted");
             assertThat(exerisResponse.contentType()).isEqualTo(MediaType.TEXT_PLAIN_VALUE);
             assertThat(new String(exerisResponse.body(), StandardCharsets.UTF_8)).isEqualTo("compat");
         }

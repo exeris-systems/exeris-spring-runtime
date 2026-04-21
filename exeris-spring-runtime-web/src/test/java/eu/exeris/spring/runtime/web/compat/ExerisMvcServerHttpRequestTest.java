@@ -34,7 +34,7 @@ class ExerisMvcServerHttpRequestTest {
                 List.of(new HttpHeader(HttpHeaders.ACCEPT, "application/json"))
         );
 
-        ExerisMvcServerHttpRequest request = new ExerisMvcServerHttpRequest(asExerisRequest(kernelRequest));
+        ExerisMvcServerHttpRequest request = new ExerisMvcServerHttpRequest(ExerisServerRequest.wrap(kernelRequest));
 
         assertThat(request.getMethod().name()).isEqualTo("POST");
         assertThat(request.getURI().getPath()).isEqualTo("/compat/path");
@@ -53,19 +53,9 @@ class ExerisMvcServerHttpRequestTest {
                 new TestLoanedBuffer(payload)
         );
 
-        ExerisMvcServerHttpRequest request = new ExerisMvcServerHttpRequest(asExerisRequest(kernelRequest));
+        ExerisMvcServerHttpRequest request = new ExerisMvcServerHttpRequest(ExerisServerRequest.wrap(kernelRequest));
 
         assertThat(request.getBody().readAllBytes()).isEqualTo(payload);
-    }
-
-    private static ExerisServerRequest asExerisRequest(HttpRequest request) {
-        try {
-            var constructor = ExerisServerRequest.class.getDeclaredConstructor(HttpRequest.class);
-            constructor.setAccessible(true);
-            return constructor.newInstance(request);
-        } catch (ReflectiveOperationException ex) {
-            throw new AssertionError("Unable to create ExerisServerRequest for test", ex);
-        }
     }
 
     private static final class TestLoanedBuffer implements LoanedBuffer {

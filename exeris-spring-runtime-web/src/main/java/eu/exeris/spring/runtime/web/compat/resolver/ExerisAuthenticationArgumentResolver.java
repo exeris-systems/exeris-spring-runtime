@@ -2,7 +2,7 @@
  * Copyright (C) 2026 Exeris Systems.
  *
  * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * Commercial resale of this software as a compatible product is prohibited.
+ * Commercial resale of this software as a competing product is prohibited.
  */
 package eu.exeris.spring.runtime.web.compat.resolver;
 

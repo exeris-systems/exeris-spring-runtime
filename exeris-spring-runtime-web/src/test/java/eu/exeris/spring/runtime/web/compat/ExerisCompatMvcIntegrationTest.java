@@ -6,13 +6,16 @@
  */
 package eu.exeris.spring.runtime.web.compat;
 
-import eu.exeris.kernel.spi.http.HttpExchange;
-import eu.exeris.kernel.spi.http.HttpMethod;
-import eu.exeris.kernel.spi.http.HttpRequest;
-import eu.exeris.kernel.spi.http.HttpResponse;
-import eu.exeris.kernel.spi.http.HttpStatus;
-import eu.exeris.kernel.spi.http.HttpVersion;
-import eu.exeris.spring.runtime.web.autoconfigure.ExerisCompatAutoConfiguration;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
+import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,16 +36,15 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.lang.reflect.Method;
-import java.lang.reflect.Proxy;
-import java.lang.reflect.Type;
-import java.nio.charset.StandardCharsets;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.atomic.AtomicReference;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import eu.exeris.kernel.spi.http.HttpExchange;
+import eu.exeris.kernel.spi.http.HttpMethod;
+import eu.exeris.kernel.spi.http.HttpRequest;
+import eu.exeris.kernel.spi.http.HttpResponse;
+import eu.exeris.kernel.spi.http.HttpStatus;
+import eu.exeris.kernel.spi.http.HttpVersion;
+import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
+import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeProperties;
+import eu.exeris.spring.runtime.web.autoconfigure.ExerisCompatAutoConfiguration;
 
 /**
  * Module-level integration test for the Phase 2 Compatibility Mode bridge.
@@ -184,6 +186,38 @@ class ExerisCompatMvcIntegrationTest {
         assertThat(bodyOf(exchange.response())).contains("550e8400-e29b-41d4-a716-446655440000");
     }
 
+    @Test
+    void compatMode_actuatorHealthPath_returnsHealthyJson() throws Exception {
+        TestExchange exchange = TestExchange.get(HttpMethod.GET, "/actuator/health", anyHttpVersion());
+        dispatcher.handle(exchange.proxy());
+        assertThat(statusOf(exchange.response())).isEqualTo(200);
+        assertThat(bodyOf(exchange.response())).contains("\"status\":\"UP\"")
+                .contains("\"runtime\":\"exeris\"");
+    }
+
+    @Test
+    void compatMode_actuatorHealthPath_headRequest_returns200() throws Exception {
+        TestExchange exchange = TestExchange.get(HttpMethod.HEAD, "/actuator/health", anyHttpVersion());
+        dispatcher.handle(exchange.proxy());
+        assertThat(statusOf(exchange.response())).isEqualTo(200);
+    }
+
+    @Test
+    void compatMode_rootHealthAlias_returnsHealthyJson() throws Exception {
+        TestExchange exchange = TestExchange.get(HttpMethod.GET, "/health", anyHttpVersion());
+        dispatcher.handle(exchange.proxy());
+        assertThat(statusOf(exchange.response())).isEqualTo(200);
+        assertThat(bodyOf(exchange.response())).contains("\"status\":\"UP\"")
+                .contains("\"runtime\":\"exeris\"");
+    }
+
+    @Test
+    void compatMode_rootHealthAlias_headRequest_returns200() throws Exception {
+        TestExchange exchange = TestExchange.get(HttpMethod.HEAD, "/health", anyHttpVersion());
+        dispatcher.handle(exchange.proxy());
+        assertThat(statusOf(exchange.response())).isEqualTo(200);
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // Helpers
     // ─────────────────────────────────────────────────────────────────────
@@ -236,6 +270,19 @@ class ExerisCompatMvcIntegrationTest {
     @Configuration
     static class TestControllersConfig {
         @Bean
+        ExerisRuntimeLifecycle exerisRuntimeLifecycle() {
+            ExerisRuntimeProperties properties = new ExerisRuntimeProperties(
+                    true,
+                    false,
+                    new ExerisRuntimeProperties.WebProperties(ExerisRuntimeProperties.Mode.COMPATIBILITY),
+                    new ExerisRuntimeProperties.LifecycleProperties(),
+                    new ExerisRuntimeProperties.ShutdownProperties());
+            ExerisRuntimeLifecycle lifecycle = new ExerisRuntimeLifecycle(properties, null, Optional.empty());
+            forceRunning(lifecycle);
+            return lifecycle;
+        }
+
+        @Bean
         CompatTestController compatTestController() {
             return new CompatTestController();
         }
@@ -248,6 +295,16 @@ class ExerisCompatMvcIntegrationTest {
         @Bean
         CompatPrefixTestController compatPrefixTestController() {
             return new CompatPrefixTestController();
+        }
+
+        private static void forceRunning(ExerisRuntimeLifecycle lifecycle) {
+            try {
+                var running = ExerisRuntimeLifecycle.class.getDeclaredField("running");
+                running.setAccessible(true);
+                running.setBoolean(lifecycle, true);
+            } catch (ReflectiveOperationException ex) {
+                throw new IllegalStateException("Unable to mark ExerisRuntimeLifecycle as running for test setup", ex);
+            }
         }
     }
 

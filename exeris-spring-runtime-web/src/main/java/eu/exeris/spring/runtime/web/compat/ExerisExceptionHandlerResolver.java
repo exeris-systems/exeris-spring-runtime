@@ -9,7 +9,9 @@ package eu.exeris.spring.runtime.web.compat;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
+import org.springframework.core.ExceptionDepthComparator;
 import org.springframework.core.MethodIntrospector;
+import org.springframework.core.Ordered;
 import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageConverter;
@@ -24,7 +26,8 @@ import org.springframework.web.method.support.ModelAndViewContainer;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -35,11 +38,16 @@ import java.util.Map;
  */
 public final class ExerisExceptionHandlerResolver implements ApplicationContextAware, InitializingBean {
 
-    private record ControllerAdviceEntry(Object bean, Method method) {}
+    private record ExceptionHandlerMethod(Object bean,
+                                          Class<?> beanType,
+                                          Method method,
+                                          List<Class<? extends Throwable>> handledTypes,
+                                          int order) {
+    }
 
-    private final Map<Class<? extends Throwable>, List<ControllerAdviceEntry>> adviceHandlers = new HashMap<>();
     private final HandlerMethodArgumentResolverComposite argumentResolvers;
     private final List<HttpMessageConverter<?>> converters;
+    private List<ExceptionHandlerMethod> adviceHandlers = List.of();
     private ApplicationContext applicationContext;
 
     public ExerisExceptionHandlerResolver(HandlerMethodArgumentResolverComposite argumentResolvers,
@@ -54,19 +62,27 @@ public final class ExerisExceptionHandlerResolver implements ApplicationContextA
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public void afterPropertiesSet() {
-        Map<String, Object> adviceBeans = applicationContext.getBeansWithAnnotation(ControllerAdvice.class);
-        for (Object bean : adviceBeans.values()) {
-            Map<Method, ExceptionHandler> methods = MethodIntrospector.selectMethods(bean.getClass(),
-                    (Method m) -> AnnotatedElementUtils.findMergedAnnotation(m, ExceptionHandler.class));
-            for (Map.Entry<Method, ExceptionHandler> entry : methods.entrySet()) {
-                for (Class<? extends Throwable> exType : entry.getValue().value()) {
-                    adviceHandlers.computeIfAbsent(exType, k -> new ArrayList<>())
-                            .add(new ControllerAdviceEntry(bean, entry.getKey()));
-                }
-            }
+        if (applicationContext == null) {
+            this.adviceHandlers = List.of();
+            return;
         }
+
+        List<ExceptionHandlerMethod> discovered = new ArrayList<>();
+        Map<String, Object> adviceBeans = applicationContext.getBeansWithAnnotation(ControllerAdvice.class);
+        for (Map.Entry<String, Object> adviceEntry : adviceBeans.entrySet()) {
+            Object bean = adviceEntry.getValue();
+            Class<?> beanType = applicationContext.getType(adviceEntry.getKey());
+            if (beanType == null) {
+                beanType = bean.getClass();
+            }
+            discovered.addAll(discoverExceptionHandlers(bean, beanType, resolveOrder(bean, beanType)));
+        }
+
+        discovered.sort(Comparator.comparingInt(ExceptionHandlerMethod::order)
+                .thenComparing(handler -> handler.beanType().getName())
+                .thenComparing(handler -> handler.method().toGenericString()));
+        this.adviceHandlers = List.copyOf(discovered);
     }
 
     /**
@@ -77,44 +93,110 @@ public final class ExerisExceptionHandlerResolver implements ApplicationContextA
      * </ol>
      * If nothing matches, rethrows as {@link RuntimeException}.
      */
-    @SuppressWarnings("unchecked")
     public void resolve(Exception ex,
                         HandlerMethod originalHandler,
                         NativeWebRequest webRequest,
                         ExerisMvcServerHttpResponse springResponse) throws Exception {
 
-        // 1. Controller-local @ExceptionHandler
-        Map<Method, ExceptionHandler> localMethods = MethodIntrospector.selectMethods(
-                originalHandler.getBeanType(),
-                (Method m) -> AnnotatedElementUtils.findMergedAnnotation(m, ExceptionHandler.class));
-        for (Map.Entry<Method, ExceptionHandler> entry : localMethods.entrySet()) {
-            for (Class<? extends Throwable> exType : entry.getValue().value()) {
-                if (exType.isAssignableFrom(ex.getClass())) {
-                    invoke(originalHandler.getBean(), entry.getKey(), ex, webRequest, springResponse);
-                    return;
-                }
-            }
-        }
-
-        // 2. @ControllerAdvice handlers — find most specific exception type match
-        Class<? extends Throwable> bestMatch = null;
-        ControllerAdviceEntry bestEntry = null;
-        for (Map.Entry<Class<? extends Throwable>, List<ControllerAdviceEntry>> entry : adviceHandlers.entrySet()) {
-            if (entry.getKey().isAssignableFrom(ex.getClass())) {
-                if (bestMatch == null || bestMatch.isAssignableFrom(entry.getKey())) {
-                    bestMatch = entry.getKey();
-                    bestEntry = entry.getValue().get(0);
-                }
-            }
-        }
-        if (bestEntry != null) {
-            invoke(bestEntry.bean(), bestEntry.method(), ex, webRequest, springResponse);
+        ExceptionHandlerMethod localHandler = findBestMatch(
+                ex,
+                discoverExceptionHandlers(originalHandler.getBean(), originalHandler.getBeanType(), Ordered.HIGHEST_PRECEDENCE),
+                false);
+        if (localHandler != null) {
+            invoke(localHandler.bean(), localHandler.method(), ex, webRequest, springResponse);
             return;
         }
 
-        // 3. Nothing matched
-        if (ex instanceof RuntimeException re) throw re;
+        ExceptionHandlerMethod adviceHandler = findBestMatch(ex, adviceHandlers, true);
+        if (adviceHandler != null) {
+            invoke(adviceHandler.bean(), adviceHandler.method(), ex, webRequest, springResponse);
+            return;
+        }
+
+        if (ex instanceof RuntimeException re) {
+            throw re;
+        }
         throw new RuntimeException(ex);
+    }
+
+    private List<ExceptionHandlerMethod> discoverExceptionHandlers(Object bean, Class<?> beanType, int order) {
+        Map<Method, ExceptionHandler> methods = MethodIntrospector.selectMethods(
+                beanType,
+                (Method method) -> AnnotatedElementUtils.findMergedAnnotation(method, ExceptionHandler.class));
+
+        List<ExceptionHandlerMethod> handlers = new ArrayList<>();
+        for (Map.Entry<Method, ExceptionHandler> entry : methods.entrySet()) {
+            List<Class<? extends Throwable>> handledTypes = resolveHandledTypes(entry.getKey(), entry.getValue());
+            if (!handledTypes.isEmpty()) {
+                handlers.add(new ExceptionHandlerMethod(bean, beanType, entry.getKey(), handledTypes, order));
+            }
+        }
+        return handlers;
+    }
+
+    private static int resolveOrder(Object bean, Class<?> beanType) {
+        if (bean instanceof Ordered ordered) {
+            return ordered.getOrder();
+        }
+        org.springframework.core.annotation.Order order =
+                AnnotatedElementUtils.findMergedAnnotation(beanType, org.springframework.core.annotation.Order.class);
+        return order != null ? order.value() : Ordered.LOWEST_PRECEDENCE;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Class<? extends Throwable>> resolveHandledTypes(Method method, ExceptionHandler annotation) {
+        LinkedHashSet<Class<? extends Throwable>> handledTypes = new LinkedHashSet<>();
+        for (Class<? extends Throwable> declaredType : annotation.value()) {
+            handledTypes.add(declaredType);
+        }
+        if (handledTypes.isEmpty()) {
+            for (Class<?> parameterType : method.getParameterTypes()) {
+                if (Throwable.class.isAssignableFrom(parameterType)) {
+                    handledTypes.add((Class<? extends Throwable>) parameterType);
+                }
+            }
+        }
+        return List.copyOf(handledTypes);
+    }
+
+    private static ExceptionHandlerMethod findBestMatch(Exception ex,
+                                                        List<ExceptionHandlerMethod> candidates,
+                                                        boolean respectOrder) {
+        ExceptionDepthComparator depthComparator = new ExceptionDepthComparator(ex);
+
+        return candidates.stream()
+                .filter(candidate -> closestHandledType(candidate, ex, depthComparator) != null)
+                .min((left, right) -> {
+                    if (respectOrder) {
+                        int byOrder = Integer.compare(left.order(), right.order());
+                        if (byOrder != 0) {
+                            return byOrder;
+                        }
+                    }
+
+                    Class<? extends Throwable> leftType = closestHandledType(left, ex, depthComparator);
+                    Class<? extends Throwable> rightType = closestHandledType(right, ex, depthComparator);
+                    int bySpecificity = depthComparator.compare(leftType, rightType);
+                    if (bySpecificity != 0) {
+                        return bySpecificity;
+                    }
+
+                    int byBeanType = left.beanType().getName().compareTo(right.beanType().getName());
+                    if (byBeanType != 0) {
+                        return byBeanType;
+                    }
+                    return left.method().toGenericString().compareTo(right.method().toGenericString());
+                })
+                .orElse(null);
+    }
+
+    private static Class<? extends Throwable> closestHandledType(ExceptionHandlerMethod candidate,
+                                                                 Exception ex,
+                                                                 ExceptionDepthComparator depthComparator) {
+        return candidate.handledTypes().stream()
+                .filter(type -> type.isAssignableFrom(ex.getClass()))
+                .min(depthComparator)
+                .orElse(null);
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

@@ -27,7 +27,9 @@ public final class ExerisRequestParamArgumentResolver implements HandlerMethodAr
             return false;
         }
         Class<?> type = parameter.getParameterType();
-        return ClassUtils.isPrimitiveOrWrapper(type)
+        return (ClassUtils.isPrimitiveOrWrapper(type)
+                && !Void.TYPE.equals(type)
+                && !Void.class.equals(type))
                 || String.class.equals(type)
                 || java.util.UUID.class.equals(type)
                 || java.time.LocalDate.class.equals(type)
@@ -71,21 +73,39 @@ public final class ExerisRequestParamArgumentResolver implements HandlerMethodAr
     }
 
     static Object convert(String raw, Class<?> type) {
-        if (String.class.equals(type)) return raw;
+        if (String.class.equals(type)) {
+            return raw;
+        }
         try {
             if (Integer.class.equals(type) || int.class.equals(type)) return Integer.parseInt(raw);
             if (Long.class.equals(type) || long.class.equals(type)) return Long.parseLong(raw);
-            if (Boolean.class.equals(type) || boolean.class.equals(type)) return Boolean.parseBoolean(raw);
+            if (Short.class.equals(type) || short.class.equals(type)) return Short.parseShort(raw);
+            if (Byte.class.equals(type) || byte.class.equals(type)) return Byte.parseByte(raw);
+            if (Float.class.equals(type) || float.class.equals(type)) return Float.parseFloat(raw);
             if (Double.class.equals(type) || double.class.equals(type)) return Double.parseDouble(raw);
+            if (Boolean.class.equals(type) || boolean.class.equals(type)) return Boolean.parseBoolean(raw);
+            if (Character.class.equals(type) || char.class.equals(type)) {
+                if (raw.length() != 1) {
+                    throw new IllegalArgumentException("Cannot convert '" + raw + "' to " + type.getSimpleName());
+                }
+                return raw.charAt(0);
+            }
         } catch (NumberFormatException ex) {
             throw new IllegalArgumentException("Cannot convert '" + raw + "' to " + type.getSimpleName(), ex);
         }
         if (java.util.UUID.class.equals(type)) {
-            try { return java.util.UUID.fromString(raw); }
-            catch (IllegalArgumentException ex) { throw new IllegalArgumentException("Invalid UUID: " + raw, ex); }
+            try {
+                return java.util.UUID.fromString(raw);
+            } catch (IllegalArgumentException ex) {
+                throw new IllegalArgumentException("Invalid UUID: " + raw, ex);
+            }
         }
-        if (java.time.LocalDateTime.class.equals(type)) return java.time.LocalDateTime.parse(raw, java.time.format.DateTimeFormatter.ISO_DATE_TIME);
-        if (java.time.LocalDate.class.equals(type)) return java.time.LocalDate.parse(raw, java.time.format.DateTimeFormatter.ISO_DATE);
+        if (java.time.LocalDateTime.class.equals(type)) {
+            return java.time.LocalDateTime.parse(raw, java.time.format.DateTimeFormatter.ISO_DATE_TIME);
+        }
+        if (java.time.LocalDate.class.equals(type)) {
+            return java.time.LocalDate.parse(raw, java.time.format.DateTimeFormatter.ISO_DATE);
+        }
         throw new IllegalArgumentException("Unsupported parameter type: " + type.getName());
     }
 }
