@@ -59,6 +59,15 @@
             <artifactId>exeris-spring-boot-autoconfigure</artifactId>
         </dependency>
 
+        <!-- Compatibility-scoped operational visibility.
+             This keeps health/info endpoint ownership inside the actuator module,
+             while making those beans transitively available to Exeris web consumers
+             such as PBM that already depend on the web/runtime bridge. -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-spring-runtime-actuator</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-autoconfigure</artifactId>
@@ -85,6 +94,20 @@
                     <artifactId>jakarta.servlet-api</artifactId>
                 </exclusion>
             </exclusions>
+        </dependency>
+
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
+        <!-- Optional — spring-security oauth2 resource server.
+             When present, activates ExerisSecurityContextFilter in compat mode.
+             NOT a required compile dependency. Consumers add their own security dep. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+            <optional>true</optional>
         </dependency>
 
         <!-- Test scope -->
