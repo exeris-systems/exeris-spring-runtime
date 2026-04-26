@@ -76,6 +76,42 @@ Conflict handling:
 - **Phase 2** adds explicitly scoped, opt-in Spring compatibility.
 - **Phase 3** expands into high-risk tx/context/persistence concerns.
 
+## GitHub Packages
+
+Until artifacts are published to Maven Central, snapshot usage (for example in benchmark projects) should resolve from GitHub Packages.
+
+This repository also ships a workflow-friendly template at `.github/maven-settings.xml`.
+
+Add server credentials to your Maven `settings.xml`:
+
+```xml
+<servers>
+	<server>
+		<id>github-exeris-kernel</id>
+		<username>exeris-systems</username>
+		<password>${env.GITHUB_TOKEN}</password>
+	</server>
+	<server>
+		<id>github-exeris-runtime-releases</id>
+		<username>exeris-systems</username>
+		<password>${env.GITHUB_TOKEN}</password>
+	</server>
+	<server>
+		<id>github-exeris-runtime-snapshots</id>
+		<username>exeris-systems</username>
+		<password>${env.GITHUB_TOKEN}</password>
+	</server>
+</servers>
+```
+
+Deploy example:
+
+```bash
+mvn -s .github/maven-settings.xml clean deploy
+```
+
+Consumers should either include the required GitHub Packages repository URLs in their project configuration or import this parent POM where repositories are already defined.
+
 ## Contributing
 
 Please use `CONTRIBUTING.md` for contribution rules, architecture guardrails, testing scope, and docs/ADR update requirements.
