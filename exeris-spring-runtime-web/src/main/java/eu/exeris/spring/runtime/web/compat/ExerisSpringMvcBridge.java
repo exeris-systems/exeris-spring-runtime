@@ -6,10 +6,7 @@
  */
 package eu.exeris.spring.runtime.web.compat;
 
-import eu.exeris.kernel.spi.http.HttpExchange;
-import eu.exeris.spring.runtime.web.ExerisServerRequest;
-import eu.exeris.spring.runtime.web.ExerisServerResponse;
-import eu.exeris.spring.runtime.web.compat.context.ExerisThreadLocalBridge;
+import java.util.Optional;
 
 import org.springframework.web.context.request.NativeWebRequest;
 import org.springframework.web.context.request.RequestAttributes;
@@ -19,7 +16,10 @@ import org.springframework.web.method.support.HandlerMethodReturnValueHandlerCom
 import org.springframework.web.method.support.InvocableHandlerMethod;
 import org.springframework.web.method.support.ModelAndViewContainer;
 
-import java.util.Optional;
+import eu.exeris.kernel.spi.http.HttpExchange;
+import eu.exeris.spring.runtime.web.ExerisServerRequest;
+import eu.exeris.spring.runtime.web.ExerisServerResponse;
+import eu.exeris.spring.runtime.web.compat.context.ExerisThreadLocalBridge;
 
 /**
  * Compatibility-mode dispatch bridge between the Exeris request model and the Spring
@@ -81,7 +81,10 @@ public final class ExerisSpringMvcBridge {
         ExerisHandlerMethodRegistry.ResolvedHandler resolvedHandler = resolved.get();
         nativeRequest.setAttribute(ExerisHandlerMethodRegistry.PATH_VARIABLES_ATTRIBUTE,
                 resolvedHandler.pathVariables(), RequestAttributes.SCOPE_REQUEST);
-        nativeRequest.setAttribute("__exerisSpringResponse", springResponse, RequestAttributes.SCOPE_REQUEST);
+        nativeRequest.setAttribute(
+            ExerisCompatAttributes.SPRING_RESPONSE_ATTRIBUTE,
+            springResponse,
+            RequestAttributes.SCOPE_REQUEST);
 
         threadLocalBridge.bind(springRequest);
         try {

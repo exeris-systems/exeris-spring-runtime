@@ -101,10 +101,15 @@ class ExerisRequestParamArgumentResolverTest {
                            @RequestParam("uuid") UUID uuid,
                            @RequestParam("date") LocalDate date,
                            @RequestParam("dateTime") LocalDateTime dateTime) {
+            consume(f, s, b, c, uuid, date, dateTime);
         }
 
         @SuppressWarnings("unused")
         void unsupportedType(@RequestParam("value") List<String> values) {
+            consume(values);
+        }
+
+        private static void consume(Object... ignored) {
         }
     }
 }

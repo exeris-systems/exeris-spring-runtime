@@ -16,7 +16,9 @@ import org.springframework.web.method.support.ModelAndViewContainer;
 
 /**
  * Resolves {@code @RequestParam} annotated parameters from the request query string.
- * Supports {@link String} and boxed / primitive numeric/boolean types.
+ * Supports {@link String}, primitive/boxed scalar types (including {@code char}),
+ * {@link java.util.UUID}, {@link java.time.LocalDate}, and {@link java.time.LocalDateTime}.
+ * Excludes {@code void}/{@link Void}.
  * No servlet types.
  */
 public final class ExerisRequestParamArgumentResolver implements HandlerMethodArgumentResolver {

@@ -207,7 +207,10 @@ public final class ExerisExceptionHandlerResolver implements ApplicationContextA
         ihm.setHandlerMethodArgumentResolvers(argumentResolvers);
 
         ModelAndViewContainer mavContainer = new ModelAndViewContainer();
-        webRequest.setAttribute("__exerisSpringResponse", springResponse, NativeWebRequest.SCOPE_REQUEST);
+        webRequest.setAttribute(
+            ExerisCompatAttributes.SPRING_RESPONSE_ATTRIBUTE,
+            springResponse,
+            NativeWebRequest.SCOPE_REQUEST);
 
         Object returnValue = ihm.invokeForRequest(webRequest, mavContainer, ex);
 

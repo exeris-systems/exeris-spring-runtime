@@ -101,6 +101,11 @@ Add server credentials to your Maven `settings.xml`:
 		<username>exeris-systems</username>
 		<password>${env.GITHUB_TOKEN}</password>
 	</server>
+	<server>
+		<id>github-exeris-spring-runtime</id>
+		<username>exeris-systems</username>
+		<password>${env.GITHUB_TOKEN}</password>
+	</server>
 </servers>
 ```
 
