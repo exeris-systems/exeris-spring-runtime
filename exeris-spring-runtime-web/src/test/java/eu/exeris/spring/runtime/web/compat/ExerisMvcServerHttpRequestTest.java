@@ -6,15 +6,6 @@
  */
 package eu.exeris.spring.runtime.web.compat;
 
-import eu.exeris.kernel.spi.http.HttpHeader;
-import eu.exeris.kernel.spi.http.HttpMethod;
-import eu.exeris.kernel.spi.http.HttpRequest;
-import eu.exeris.kernel.spi.http.HttpVersion;
-import eu.exeris.kernel.spi.memory.LoanedBuffer;
-import eu.exeris.spring.runtime.web.ExerisServerRequest;
-import org.junit.jupiter.api.Test;
-import org.springframework.http.HttpHeaders;
-
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.nio.charset.StandardCharsets;
@@ -22,6 +13,15 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
+
+import eu.exeris.kernel.spi.http.HttpHeader;
+import eu.exeris.kernel.spi.http.HttpMethod;
+import eu.exeris.kernel.spi.http.HttpRequest;
+import eu.exeris.kernel.spi.http.HttpVersion;
+import eu.exeris.kernel.spi.memory.LoanedBuffer;
+import eu.exeris.spring.runtime.web.ExerisServerRequest;
 
 class ExerisMvcServerHttpRequestTest {
 

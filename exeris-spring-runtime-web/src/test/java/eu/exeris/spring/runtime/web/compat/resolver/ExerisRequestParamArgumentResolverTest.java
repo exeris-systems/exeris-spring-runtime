@@ -6,17 +6,6 @@
  */
 package eu.exeris.spring.runtime.web.compat.resolver;
 
-import eu.exeris.kernel.spi.http.HttpMethod;
-import eu.exeris.kernel.spi.http.HttpRequest;
-import eu.exeris.kernel.spi.http.HttpVersion;
-import eu.exeris.spring.runtime.web.ExerisServerRequest;
-import eu.exeris.spring.runtime.web.compat.ExerisMvcServerHttpRequest;
-import eu.exeris.spring.runtime.web.compat.ExerisNativeWebRequest;
-import org.junit.jupiter.api.Test;
-import org.springframework.core.MethodParameter;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.method.support.ModelAndViewContainer;
-
 import java.lang.reflect.Method;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -24,6 +13,17 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Test;
+import org.springframework.core.MethodParameter;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.method.support.ModelAndViewContainer;
+
+import eu.exeris.kernel.spi.http.HttpMethod;
+import eu.exeris.kernel.spi.http.HttpRequest;
+import eu.exeris.kernel.spi.http.HttpVersion;
+import eu.exeris.spring.runtime.web.ExerisServerRequest;
+import eu.exeris.spring.runtime.web.compat.ExerisMvcServerHttpRequest;
+import eu.exeris.spring.runtime.web.compat.ExerisNativeWebRequest;
 
 class ExerisRequestParamArgumentResolverTest {
 
@@ -93,6 +93,7 @@ class ExerisRequestParamArgumentResolverTest {
     @SuppressWarnings("unused")
     static final class TestController {
 
+        @SuppressWarnings("unused")
         void extendedTypes(@RequestParam("f") float f,
                            @RequestParam("s") short s,
                            @RequestParam("b") byte b,
@@ -102,6 +103,7 @@ class ExerisRequestParamArgumentResolverTest {
                            @RequestParam("dateTime") LocalDateTime dateTime) {
         }
 
+        @SuppressWarnings("unused")
         void unsupportedType(@RequestParam("value") List<String> values) {
         }
     }

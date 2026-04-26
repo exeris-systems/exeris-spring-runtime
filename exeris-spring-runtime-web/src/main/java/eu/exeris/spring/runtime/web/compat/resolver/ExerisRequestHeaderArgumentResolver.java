@@ -36,6 +36,15 @@ public final class ExerisRequestHeaderArgumentResolver implements HandlerMethodA
         }
 
         String name = annotation.name().isEmpty() ? annotation.value() : annotation.name();
+        if (name.isEmpty()) {
+            name = parameter.getParameterName();
+        }
+        if (name == null || name.isEmpty()) {
+            throw new IllegalStateException(
+                    "@RequestHeader on parameter index " + parameter.getParameterIndex()
+                    + " of " + parameter.getMethod()
+                    + " has no name: compile with -parameters or use @RequestHeader(\"name\")");
+        }
 
         String value = webRequest.getHeader(name);
         if (value == null) {

@@ -22,6 +22,7 @@ import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.http.server.PathContainer;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Controller;
+import org.springframework.util.ClassUtils;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.method.HandlerMethod;
@@ -67,16 +68,15 @@ public final class ExerisHandlerMethodRegistry implements ApplicationContextAwar
     public void afterPropertiesSet() {
         PathPatternParser parser = PathPatternParser.defaultInstance;
         for (String name : applicationContext.getBeanDefinitionNames()) {
-            Object bean;
-            try {
-                bean = applicationContext.getBean(name);
-            } catch (Exception ignored) {
+            Class<?> rawType = applicationContext.getType(name, false);
+            if (rawType == null) {
                 continue;
             }
-            Class<?> beanType = bean.getClass();
+            Class<?> beanType = ClassUtils.getUserClass(rawType);
             if (AnnotatedElementUtils.findMergedAnnotation(beanType, Controller.class) == null) {
                 continue;
             }
+            Object bean = applicationContext.getBean(name);
 
             RequestMapping classMapping = AnnotatedElementUtils.findMergedAnnotation(beanType, RequestMapping.class);
             String[] classPrefixes;

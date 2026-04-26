@@ -59,10 +59,16 @@ public final class ExerisPathVariableArgumentResolver implements HandlerMethodAr
 
         Map<String, String> pathVars = (Map<String, String>) vars;
         String raw = pathVars.get(name);
-        if (raw == null && annotation.required()) {
-            throw new IllegalArgumentException("Missing path variable: " + name);
+        if (raw == null) {
+            if (annotation.required()) {
+                throw new IllegalArgumentException("Missing path variable: " + name);
+            }
+            if (parameter.getParameterType().isPrimitive()) {
+                throw new IllegalArgumentException("Missing optional path variable '" + name
+                        + "' for primitive parameter type " + parameter.getParameterType().getName());
+            }
+            return null;
         }
-
-        return raw != null ? ExerisRequestParamArgumentResolver.convert(raw, parameter.getParameterType()) : null;
+        return ExerisRequestParamArgumentResolver.convert(raw, parameter.getParameterType());
     }
 }

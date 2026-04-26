@@ -6,21 +6,22 @@
  */
 package eu.exeris.spring.runtime.web.compat;
 
-import eu.exeris.kernel.spi.http.HttpHeader;
-import eu.exeris.kernel.spi.http.HttpStatus;
-import eu.exeris.spring.runtime.web.ExerisServerResponse;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatusCode;
-import org.springframework.http.MediaType;
-import org.springframework.http.server.ServerHttpResponse;
-import org.springframework.lang.NonNull;
-
 import java.io.ByteArrayOutputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
+import org.springframework.http.server.ServerHttpResponse;
+import org.springframework.lang.NonNull;
+
+import eu.exeris.kernel.spi.http.HttpHeader;
+import eu.exeris.kernel.spi.http.HttpStatus;
+import eu.exeris.spring.runtime.web.ExerisServerResponse;
 
 /**
  * Minimal compatibility response collector for Spring server abstractions.

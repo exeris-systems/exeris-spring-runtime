@@ -29,9 +29,10 @@ import java.util.Optional;
  * </ul>
  *
  * <h2>Mode</h2>
- * <p>Pure Mode context accessor. Used by compatibility bridges and Phase 3
- * transaction infrastructure to safely resolve kernel provider references
- * from Spring-managed beans.
+ * <p>Compatibility Mode accessor for compat-package bridges that need safe,
+ * optional reads of kernel-bound provider references from Spring-facing code.
+ * This type is not a shared Pure Mode API and should remain confined to the
+ * compatibility layer.
  *
  * @since 0.1.0
  */

@@ -32,6 +32,7 @@ public final class ExerisNativeWebRequest implements NativeWebRequest {
 
     private final ExerisMvcServerHttpRequest springRequest;
     private final Map<String, Object> attributes = new HashMap<>();
+    private Map<String, String[]> cachedQueryParams;
 
     public ExerisNativeWebRequest(ExerisMvcServerHttpRequest springRequest) {
         this.springRequest = springRequest;
@@ -89,34 +90,36 @@ public final class ExerisNativeWebRequest implements NativeWebRequest {
 
     @Override
     public String getParameter(String paramName) {
-        String rawQuery = springRequest.getURI().getRawQuery();
-        Map<String, List<String>> params = parseQueryParams(rawQuery);
-        List<String> values = params.get(paramName);
-        return values != null && !values.isEmpty() ? values.get(0) : null;
+        String[] vals = queryParams().get(paramName);
+        return vals != null && vals.length > 0 ? vals[0] : null;
     }
 
     @Override
     public String[] getParameterValues(String paramName) {
-        String rawQuery = springRequest.getURI().getRawQuery();
-        Map<String, List<String>> params = parseQueryParams(rawQuery);
-        List<String> values = params.get(paramName);
-        return values != null ? values.toArray(new String[0]) : null;
+        return queryParams().get(paramName);
     }
 
     @Override
     public Map<String, String[]> getParameterMap() {
-        String rawQuery = springRequest.getURI().getRawQuery();
-        Map<String, List<String>> parsed = parseQueryParams(rawQuery);
-        Map<String, String[]> result = new LinkedHashMap<>(parsed.size());
-        for (Map.Entry<String, List<String>> entry : parsed.entrySet()) {
-            result.put(entry.getKey(), entry.getValue().toArray(new String[0]));
-        }
-        return Collections.unmodifiableMap(result);
+        return queryParams();
     }
 
     @Override
     public Iterator<String> getParameterNames() {
         return getParameterMap().keySet().iterator();
+    }
+
+    private Map<String, String[]> queryParams() {
+        if (cachedQueryParams == null) {
+            String rawQuery = springRequest.getURI().getRawQuery();
+            Map<String, List<String>> parsed = parseQueryParams(rawQuery);
+            Map<String, String[]> result = LinkedHashMap.newLinkedHashMap(parsed.size());
+            for (Map.Entry<String, List<String>> entry : parsed.entrySet()) {
+                result.put(entry.getKey(), entry.getValue().toArray(String[]::new));
+            }
+            cachedQueryParams = Collections.unmodifiableMap(result);
+        }
+        return cachedQueryParams;
     }
 
     // -------------------------------------------------------------------------

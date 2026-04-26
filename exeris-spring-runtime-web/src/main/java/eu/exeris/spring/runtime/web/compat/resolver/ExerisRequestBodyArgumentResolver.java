@@ -33,8 +33,10 @@ public final class ExerisRequestBodyArgumentResolver implements HandlerMethodArg
 
     @Override
     public boolean supportsParameter(MethodParameter parameter) {
+        Class<?> parameterType = parameter.getParameterType();
         return parameter.hasParameterAnnotation(RequestBody.class)
-                && !parameter.getParameterType().isAssignableFrom(void.class);
+                && parameterType != void.class
+                && parameterType != Void.class;
     }
 
     @Override

@@ -6,16 +6,16 @@
  */
 package eu.exeris.spring.runtime.web.compat;
 
-import eu.exeris.spring.runtime.web.ExerisServerResponse;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import eu.exeris.spring.runtime.web.ExerisServerResponse;
 
 class ExerisMvcServerHttpResponseTest {
 

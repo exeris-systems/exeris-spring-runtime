@@ -66,6 +66,9 @@ public final class ExerisRequestParamArgumentResolver implements HandlerMethodAr
             if (!annotation.defaultValue().equals(ValueConstants.DEFAULT_NONE)) {
                 return convert(annotation.defaultValue(), parameter.getParameterType());
             }
+            if (parameter.getParameterType().isPrimitive()) {
+                return primitiveDefault(parameter.getParameterType());
+            }
             return null;
         }
 
@@ -101,11 +104,31 @@ public final class ExerisRequestParamArgumentResolver implements HandlerMethodAr
             }
         }
         if (java.time.LocalDateTime.class.equals(type)) {
-            return java.time.LocalDateTime.parse(raw, java.time.format.DateTimeFormatter.ISO_DATE_TIME);
+            try {
+                return java.time.LocalDateTime.parse(raw, java.time.format.DateTimeFormatter.ISO_DATE_TIME);
+            } catch (java.time.format.DateTimeParseException ex) {
+                throw new IllegalArgumentException("Cannot convert '" + raw + "' to " + type.getSimpleName(), ex);
+            }
         }
         if (java.time.LocalDate.class.equals(type)) {
-            return java.time.LocalDate.parse(raw, java.time.format.DateTimeFormatter.ISO_DATE);
+            try {
+                return java.time.LocalDate.parse(raw, java.time.format.DateTimeFormatter.ISO_DATE);
+            } catch (java.time.format.DateTimeParseException ex) {
+                throw new IllegalArgumentException("Cannot convert '" + raw + "' to " + type.getSimpleName(), ex);
+            }
         }
         throw new IllegalArgumentException("Unsupported parameter type: " + type.getName());
+    }
+
+    private static Object primitiveDefault(Class<?> type) {
+        if (boolean.class.equals(type)) return false;
+        if (char.class.equals(type)) return '\0';
+        if (byte.class.equals(type)) return (byte) 0;
+        if (short.class.equals(type)) return (short) 0;
+        if (int.class.equals(type)) return 0;
+        if (long.class.equals(type)) return 0L;
+        if (float.class.equals(type)) return 0.0f;
+        if (double.class.equals(type)) return 0.0d;
+        throw new IllegalArgumentException("Not a primitive type: " + type);
     }
 }
