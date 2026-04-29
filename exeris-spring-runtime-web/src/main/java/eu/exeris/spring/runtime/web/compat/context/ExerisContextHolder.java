@@ -6,12 +6,12 @@
  */
 package eu.exeris.spring.runtime.web.compat.context;
 
+import java.util.Optional;
+
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import eu.exeris.kernel.spi.security.PrincipalContext;
 import eu.exeris.kernel.spi.security.StorageContext;
-
-import java.util.Optional;
 
 /**
  * Safe accessor facade for {@link KernelProviders} ScopedValue slots.

@@ -6,8 +6,6 @@
  */
 package eu.exeris.spring.runtime.web.compat;
 
-import org.springframework.web.context.request.NativeWebRequest;
-
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.security.Principal;
@@ -19,6 +17,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+
+import org.springframework.web.context.request.NativeWebRequest;
 
 /**
  * Compatibility-mode implementation of {@link NativeWebRequest} backed by

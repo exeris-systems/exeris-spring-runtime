@@ -96,11 +96,6 @@
             </exclusions>
         </dependency>
 
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
-        </dependency>
-
         <!-- Optional — spring-security oauth2 resource server.
              When present, activates ExerisSecurityContextFilter in compat mode.
              NOT a required compile dependency. Consumers add their own security dep. -->

@@ -109,7 +109,9 @@ class ExerisRequestParamArgumentResolverTest {
             consume(values);
         }
 
+        @SuppressWarnings("unused")
         private static void consume(Object... ignored) {
+            // Intentional no-op: used to suppress unused parameter warnings in test method bodies
         }
     }
 }

@@ -6,7 +6,9 @@
  */
 package eu.exeris.spring.runtime.web.compat.resolver;
 
-import eu.exeris.spring.runtime.web.compat.ExerisMvcServerHttpRequest;
+import java.util.ArrayList;
+import java.util.List;
+
 import org.springframework.core.MethodParameter;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageConverter;
@@ -15,8 +17,7 @@ import org.springframework.web.context.request.NativeWebRequest;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.method.support.ModelAndViewContainer;
 
-import java.util.ArrayList;
-import java.util.List;
+import eu.exeris.spring.runtime.web.compat.ExerisMvcServerHttpRequest;
 
 /**
  * Resolves {@code @RequestBody} parameters by reading the request body via a registered
