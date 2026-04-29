@@ -186,37 +186,6 @@ class ExerisCompatMvcIntegrationTest {
         assertThat(bodyOf(exchange.response())).contains("550e8400-e29b-41d4-a716-446655440000");
     }
 
-    @Test
-    void compatMode_actuatorHealthPath_returnsHealthyJson() throws Exception {
-        TestExchange exchange = TestExchange.get(HttpMethod.GET, "/actuator/health", anyHttpVersion());
-        dispatcher.handle(exchange.proxy());
-        assertThat(statusOf(exchange.response())).isEqualTo(200);
-        assertThat(bodyOf(exchange.response())).contains("\"status\":\"UP\"")
-                .contains("\"runtime\":\"exeris\"");
-    }
-
-    @Test
-    void compatMode_actuatorHealthPath_headRequest_returns200() throws Exception {
-        TestExchange exchange = TestExchange.get(HttpMethod.HEAD, "/actuator/health", anyHttpVersion());
-        dispatcher.handle(exchange.proxy());
-        assertThat(statusOf(exchange.response())).isEqualTo(200);
-    }
-
-    @Test
-    void compatMode_rootHealthAlias_returnsHealthyJson() throws Exception {
-        TestExchange exchange = TestExchange.get(HttpMethod.GET, "/health", anyHttpVersion());
-        dispatcher.handle(exchange.proxy());
-        assertThat(statusOf(exchange.response())).isEqualTo(200);
-        assertThat(bodyOf(exchange.response())).contains("\"status\":\"UP\"")
-                .contains("\"runtime\":\"exeris\"");
-    }
-
-    @Test
-    void compatMode_rootHealthAlias_headRequest_returns200() throws Exception {
-        TestExchange exchange = TestExchange.get(HttpMethod.HEAD, "/health", anyHttpVersion());
-        dispatcher.handle(exchange.proxy());
-        assertThat(statusOf(exchange.response())).isEqualTo(200);
-    }
 
     // ─────────────────────────────────────────────────────────────────────
     // Helpers

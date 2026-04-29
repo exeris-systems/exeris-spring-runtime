@@ -88,7 +88,15 @@ public final class ExerisRequestParamArgumentResolver implements HandlerMethodAr
             if (Byte.class.equals(type) || byte.class.equals(type)) return Byte.parseByte(raw);
             if (Float.class.equals(type) || float.class.equals(type)) return Float.parseFloat(raw);
             if (Double.class.equals(type) || double.class.equals(type)) return Double.parseDouble(raw);
-            if (Boolean.class.equals(type) || boolean.class.equals(type)) return Boolean.parseBoolean(raw);
+            if (Boolean.class.equals(type) || boolean.class.equals(type)) {
+                if ("true".equalsIgnoreCase(raw)) {
+                    return true;
+                }
+                if ("false".equalsIgnoreCase(raw)) {
+                    return false;
+                }
+                throw new IllegalArgumentException("Cannot convert '" + raw + "' to " + type.getSimpleName());
+            }
             if (Character.class.equals(type) || char.class.equals(type)) {
                 if (raw.length() != 1) {
                     throw new IllegalArgumentException("Cannot convert '" + raw + "' to " + type.getSimpleName());

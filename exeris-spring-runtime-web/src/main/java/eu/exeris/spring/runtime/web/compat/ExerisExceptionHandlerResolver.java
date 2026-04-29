@@ -21,6 +21,7 @@ import org.springframework.core.MethodIntrospector;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.lang.NonNull;
 import org.springframework.web.bind.annotation.ControllerAdvice;
@@ -223,16 +224,47 @@ public final class ExerisExceptionHandlerResolver implements ApplicationContextA
 
         // Write return value if not already handled by a return value handler
         if (!mavContainer.isRequestHandled() && returnValue != null) {
-            Class<?> valueType = returnValue.getClass();
-            MediaType contentType = springResponse.getHeaders().getContentType();
-            if (contentType == null) contentType = MediaType.APPLICATION_JSON;
-
-            for (HttpMessageConverter converter : converters) {
-                if (converter.canWrite(valueType, contentType)) {
-                    converter.write(returnValue, contentType, springResponse);
-                    return;
+            // Handle ResponseEntity specially: extract status, headers, and body
+            if (returnValue instanceof ResponseEntity<?> entity) {
+                if (entity.getStatusCode() != null) {
+                    springResponse.setStatusCode(entity.getStatusCode());
                 }
+                if (entity.getHeaders() != null) {
+                    entity.getHeaders().forEach((name, values) -> {
+                        for (String value : values) {
+                            springResponse.getHeaders().add(name, value);
+                        }
+                    });
+                }
+                Object body = entity.getBody();
+                if (body != null) {
+                    writeBody(body, springResponse);
+                }
+            } else {
+                // For non-ResponseEntity return values, write directly
+                writeBody(returnValue, springResponse);
             }
         }
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private void writeBody(Object body, ExerisMvcServerHttpResponse springResponse) {
+        Class<?> valueType = body.getClass();
+        MediaType contentType = springResponse.getHeaders().getContentType();
+        if (contentType == null) {
+            contentType = MediaType.APPLICATION_JSON;
+        }
+
+        for (HttpMessageConverter converter : converters) {
+            if (converter.canWrite(valueType, contentType)) {
+                try {
+                    converter.write(body, contentType, springResponse);
+                } catch (Exception ex) {
+                    throw new IllegalStateException("Failed to write exception handler response body", ex);
+                }
+                return;
+            }
+        }
+        throw new IllegalStateException("No HttpMessageConverter found to write " + valueType.getName());
     }
 }

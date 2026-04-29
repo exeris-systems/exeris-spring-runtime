@@ -126,28 +126,40 @@ public final class ExerisNativeWebRequest implements NativeWebRequest {
     // WebRequest — attributes
     // -------------------------------------------------------------------------
 
+    private static void requireRequestScope(int scope) {
+        if (scope != SCOPE_REQUEST) {
+            throw new UnsupportedOperationException(
+                    "Exeris compat mode supports request scope only; unsupported scope: " + scope);
+        }
+    }
+
     @Override
     public Object getAttribute(String name, int scope) {
+        requireRequestScope(scope);
         return attributes.get(name);
     }
 
     @Override
     public void setAttribute(String name, Object value, int scope) {
+        requireRequestScope(scope);
         attributes.put(name, value);
     }
 
     @Override
     public void removeAttribute(String name, int scope) {
+        requireRequestScope(scope);
         attributes.remove(name);
     }
 
     @Override
     public String[] getAttributeNames(int scope) {
+        requireRequestScope(scope);
         return attributes.keySet().toArray(new String[0]);
     }
 
     @Override
     public void registerDestructionCallback(String name, Runnable callback, int scope) {
+        requireRequestScope(scope);
         // no-op: Exeris compat mode does not support attribute lifecycle callbacks
     }
 

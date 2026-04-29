@@ -11,7 +11,6 @@ import java.util.List;
 import org.springframework.beans.factory.FactoryBean;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -27,7 +26,6 @@ import org.springframework.http.converter.json.MappingJackson2HttpMessageConvert
 import org.springframework.web.method.support.HandlerMethodArgumentResolverComposite;
 import org.springframework.web.method.support.HandlerMethodReturnValueHandlerComposite;
 
-import eu.exeris.spring.runtime.actuator.ExerisActuatorAutoConfiguration;
 import eu.exeris.spring.runtime.web.ExerisErrorMapper;
 import eu.exeris.spring.runtime.web.compat.ExerisCompatDispatcher;
 import eu.exeris.spring.runtime.web.compat.ExerisExceptionHandlerResolver;
@@ -51,7 +49,6 @@ import eu.exeris.spring.runtime.web.compat.resolver.ExerisRequestParamArgumentRe
  * {@code RequestMappingHandlerAdapter} — those are from spring-webmvc and are banned.
  */
 @AutoConfiguration
-@ImportAutoConfiguration(ExerisActuatorAutoConfiguration.class)
 @ConditionalOnClass(ExerisCompatDispatcher.class)
 @ConditionalOnProperty(prefix = "exeris.runtime.web", name = "mode", havingValue = "compatibility")
 public class ExerisCompatAutoConfiguration {

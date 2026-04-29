@@ -59,13 +59,15 @@
             <artifactId>exeris-spring-boot-autoconfigure</artifactId>
         </dependency>
 
-        <!-- Compatibility-scoped operational visibility.
-             This keeps health/info endpoint ownership inside the actuator module,
-             while making those beans transitively available to Exeris web consumers
-             such as PBM that already depend on the web/runtime bridge. -->
+        <!-- Actuator remains a separate operational-visibility module and must not
+             become a hard transitive dependency of the web/runtime bridge.
+             Consumers that need compat actuator integration should include this
+             module explicitly; any related wiring must activate only when actuator
+             is present on the classpath (via Spring Boot auto-discovery). -->
         <dependency>
             <groupId>eu.exeris</groupId>
             <artifactId>exeris-spring-runtime-actuator</artifactId>
+            <optional>true</optional>
         </dependency>
 
         <dependency>

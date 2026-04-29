@@ -54,7 +54,9 @@ public final class ExerisRequestBodyArgumentResolver implements HandlerMethodArg
 
         MediaType contentType = springRequest.getHeaders().getContentType();
         if (contentType == null) {
-            contentType = MediaType.APPLICATION_JSON;
+            // Don't assume JSON for missing Content-Type.
+            // Try all converters; only use JSON if no other converter matches.
+            contentType = MediaType.APPLICATION_OCTET_STREAM;
         }
 
         Class<?> targetType = parameter.getParameterType();

@@ -70,6 +70,10 @@ public final class ExerisSecurityContextFilter {
      * @param request the kernel HTTP request (never null)
      */
     public void populateContext(HttpRequest request) {
+        // Clear any pre-existing context before processing this request.
+        // Essential for VT reuse: prevents inherited authentication from prior requests.
+        SecurityContextHolder.clearContext();
+        
         String token = extractBearerToken(request);
         if (token == null) {
             return;
