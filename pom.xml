@@ -147,6 +147,40 @@
         </dependencies>
     </dependencyManagement>
 
+    <repositories>
+        <repository>
+            <id>github-exeris-kernel</id>
+            <url>https://maven.pkg.github.com/exeris-systems/exeris-kernel</url>
+            <releases>
+                <enabled>false</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </repository>
+        <repository>
+            <id>github-exeris-spring-runtime</id>
+            <url>https://maven.pkg.github.com/exeris-systems/exeris-spring-runtime</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
+
+    <distributionManagement>
+        <repository>
+            <id>github-exeris-runtime-releases</id>
+            <url>https://maven.pkg.github.com/exeris-systems/exeris-spring-runtime</url>
+        </repository>
+        <snapshotRepository>
+            <id>github-exeris-runtime-snapshots</id>
+            <url>https://maven.pkg.github.com/exeris-systems/exeris-spring-runtime</url>
+        </snapshotRepository>
+    </distributionManagement>
+
     <build>
         <pluginManagement>
             <plugins>
