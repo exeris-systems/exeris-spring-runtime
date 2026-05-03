@@ -43,6 +43,78 @@ class ExerisMvcServerHttpRequestTest {
     }
 
     @Test
+    void localAddressIsNull_kernelDoesNotExposeBoundSocket() {
+        ExerisMvcServerHttpRequest request = newRequest(List.of());
+        assertThat(request.getLocalAddress()).isNull();
+    }
+
+    @Test
+    void remoteAddressNullWhenNoForwardingHeaders() {
+        ExerisMvcServerHttpRequest request = newRequest(List.of());
+        assertThat(request.getRemoteAddress()).isNull();
+    }
+
+    @Test
+    void remoteAddressFromXForwardedFor_takesFirstHop() {
+        ExerisMvcServerHttpRequest request = newRequest(List.of(
+                new HttpHeader("X-Forwarded-For", "203.0.113.7, 198.51.100.1, 10.0.0.1")));
+        java.net.InetSocketAddress addr = request.getRemoteAddress();
+        assertThat(addr).isNotNull();
+        assertThat(addr.getHostString()).isEqualTo("203.0.113.7");
+        assertThat(addr.getPort()).isEqualTo(0);
+    }
+
+    @Test
+    void remoteAddressFromXRealIp_whenForwardedAbsent() {
+        ExerisMvcServerHttpRequest request = newRequest(List.of(
+                new HttpHeader("X-Real-IP", "203.0.113.42")));
+        java.net.InetSocketAddress addr = request.getRemoteAddress();
+        assertThat(addr).isNotNull();
+        assertThat(addr.getHostString()).isEqualTo("203.0.113.42");
+    }
+
+    @Test
+    void remoteAddressFromForwardedHeader_parsesIpv4WithPort() {
+        ExerisMvcServerHttpRequest request = newRequest(List.of(
+                new HttpHeader("Forwarded", "for=192.0.2.43:4711;proto=https;by=10.0.0.1")));
+        java.net.InetSocketAddress addr = request.getRemoteAddress();
+        assertThat(addr).isNotNull();
+        assertThat(addr.getHostString()).isEqualTo("192.0.2.43");
+        assertThat(addr.getPort()).isEqualTo(4711);
+    }
+
+    @Test
+    void remoteAddressFromForwardedHeader_parsesQuotedIpv6() {
+        ExerisMvcServerHttpRequest request = newRequest(List.of(
+                new HttpHeader("Forwarded", "for=\"[2001:db8::1]:8080\"")));
+        java.net.InetSocketAddress addr = request.getRemoteAddress();
+        assertThat(addr).isNotNull();
+        assertThat(addr.getHostString()).isEqualTo("2001:db8::1");
+        assertThat(addr.getPort()).isEqualTo(8080);
+    }
+
+    @Test
+    void remoteAddressForwardedHeader_takesFirstEntry() {
+        ExerisMvcServerHttpRequest request = newRequest(List.of(
+                new HttpHeader("Forwarded", "for=203.0.113.7, for=198.51.100.1")));
+        java.net.InetSocketAddress addr = request.getRemoteAddress();
+        assertThat(addr).isNotNull();
+        assertThat(addr.getHostString()).isEqualTo("203.0.113.7");
+    }
+
+    @Test
+    void remoteAddressForwardedHeader_returnsNullWhenForIsUnknown() {
+        ExerisMvcServerHttpRequest request = newRequest(List.of(
+                new HttpHeader("Forwarded", "for=unknown")));
+        assertThat(request.getRemoteAddress()).isNull();
+    }
+
+    private static ExerisMvcServerHttpRequest newRequest(List<HttpHeader> headers) {
+        return new ExerisMvcServerHttpRequest(ExerisServerRequest.wrap(
+                HttpRequest.noBody(HttpMethod.GET, "/compat", HttpVersion.HTTP_1_1, headers)));
+    }
+
+    @Test
     void exposesBodyAsDeterministicInputStream() throws IOException {
         byte[] payload = "compat-body".getBytes(StandardCharsets.UTF_8);
         HttpRequest kernelRequest = new HttpRequest(

@@ -33,9 +33,7 @@ import org.springframework.web.method.support.HandlerMethodReturnValueHandlerCom
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
-import java.lang.reflect.Type;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -72,7 +70,7 @@ class ExerisCompatDispatcherTest {
         ExerisSpringMvcBridge bridge = new ExerisSpringMvcBridge(
                 registry, argResolvers, returnHandlers, exceptionResolver, new ExerisThreadLocalBridge());
 
-        dispatcher = new ExerisCompatDispatcher(bridge, new ExerisErrorMapper());
+        dispatcher = new ExerisCompatDispatcher(bridge, new ExerisErrorMapper(), null);
     }
 
     @Test
@@ -122,24 +120,7 @@ class ExerisCompatDispatcherTest {
     }
 
     private static HttpVersion anyHttpVersion() {
-        Object[] enumConstants = HttpVersion.class.getEnumConstants();
-        if (enumConstants != null && enumConstants.length > 0) {
-            return (HttpVersion) enumConstants[0];
-        }
-
-        for (var field : HttpVersion.class.getDeclaredFields()) {
-            if (field.getType() == HttpVersion.class && java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
-                try {
-                    field.setAccessible(true);
-                    Object value = field.get(null);
-                    if (value instanceof HttpVersion version) {
-                        return version;
-                    }
-                } catch (IllegalAccessException ignored) {
-                }
-            }
-        }
-        throw new IllegalStateException("Unable to obtain any HttpVersion constant for test exchange");
+        return HttpVersion.HTTP_1_1;
     }
 
     @Configuration
@@ -195,8 +176,7 @@ class ExerisCompatDispatcherTest {
         }
 
         static TestExchange get(HttpMethod method, String path, HttpVersion version) {
-            HttpRequest request = createHttpRequest(method, path, version);
-            return new TestExchange(request);
+            return new TestExchange(HttpRequest.noBody(method, path, version, List.of()));
         }
 
         HttpExchange proxy() {
@@ -205,65 +185,6 @@ class ExerisCompatDispatcherTest {
 
         HttpResponse response() {
             return response.get();
-        }
-
-        private static HttpRequest createHttpRequest(HttpMethod method, String path, HttpVersion version) {
-            var constructors = HttpRequest.class.getDeclaredConstructors();
-            for (var constructor : constructors) {
-                try {
-                    constructor.setAccessible(true);
-                    Object[] args = buildConstructorArgs(constructor.getGenericParameterTypes(), method, path, version);
-                    Object candidate = constructor.newInstance(args);
-                    if (candidate instanceof HttpRequest request
-                            && method.equals(request.method())
-                            && path.equals(request.path())) {
-                        return request;
-                    }
-                } catch (ReflectiveOperationException | IllegalArgumentException ignored) {
-                }
-            }
-            throw new IllegalStateException("Unable to construct HttpRequest for compatibility dispatcher test");
-        }
-
-        private static Object[] buildConstructorArgs(Type[] parameterTypes,
-                                                     HttpMethod method,
-                                                     String path,
-                                                     HttpVersion version) {
-            Object[] args = new Object[parameterTypes.length];
-            boolean pathAssigned = false;
-            for (int i = 0; i < parameterTypes.length; i++) {
-                Class<?> raw = rawClass(parameterTypes[i]);
-                if (raw == HttpMethod.class) {
-                    args[i] = method;
-                } else if (raw == HttpVersion.class) {
-                    args[i] = version;
-                } else if (raw == String.class) {
-                    if (!pathAssigned) {
-                        args[i] = path;
-                        pathAssigned = true;
-                    } else {
-                        args[i] = "";
-                    }
-                } else if (raw == Optional.class) {
-                    args[i] = Optional.empty();
-                } else if (raw == List.class) {
-                    args[i] = List.of();
-                } else {
-                    args[i] = defaultValue(raw);
-                }
-            }
-            return args;
-        }
-
-        private static Class<?> rawClass(Type type) {
-            if (type instanceof Class<?> cls) {
-                return cls;
-            }
-            if (type instanceof java.lang.reflect.ParameterizedType parameterizedType
-                    && parameterizedType.getRawType() instanceof Class<?> raw) {
-                return raw;
-            }
-            throw new IllegalArgumentException("Unsupported constructor parameter type: " + type);
         }
 
         private static Object defaultValue(Class<?> returnType) {

@@ -32,11 +32,6 @@ public final class ExerisCompatDispatcher implements HttpHandler {
     private final ExerisSecurityContextFilter securityFilter;
 
     public ExerisCompatDispatcher(ExerisSpringMvcBridge mvcBridge,
-                                  ExerisErrorMapper errorMapper) {
-        this(mvcBridge, errorMapper, null);
-    }
-
-    public ExerisCompatDispatcher(ExerisSpringMvcBridge mvcBridge,
                                   ExerisErrorMapper errorMapper,
                                   @Nullable ExerisSecurityContextFilter securityFilter) {
         this.mvcBridge = mvcBridge;

@@ -117,7 +117,10 @@ public final class ExerisExceptionHandlerResolver implements ApplicationContextA
         if (ex instanceof RuntimeException re) {
             throw re;
         }
-        throw new RuntimeException(ex);
+        // Preserve the original checked exception's type so downstream
+        // ExerisErrorMapper.mapUnhandled can still inspect/branch on it.
+        // Plain RuntimeException(ex) would erase that signal.
+        throw new java.lang.reflect.UndeclaredThrowableException(ex);
     }
 
     private List<ExceptionHandlerMethod> discoverExceptionHandlers(Object bean, Class<?> beanType, int order) {

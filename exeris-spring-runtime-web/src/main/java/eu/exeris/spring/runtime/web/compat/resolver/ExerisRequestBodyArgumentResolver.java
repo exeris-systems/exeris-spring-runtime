@@ -52,25 +52,36 @@ public final class ExerisRequestBodyArgumentResolver implements HandlerMethodArg
             throw new IllegalStateException("Expected ExerisMvcServerHttpRequest in NativeWebRequest for @RequestBody");
         }
 
-        MediaType contentType = springRequest.getHeaders().getContentType();
-        if (contentType == null) {
-            // Don't assume JSON for missing Content-Type.
-            // Try all converters; only use JSON if no other converter matches.
-            contentType = MediaType.APPLICATION_OCTET_STREAM;
-        }
-
+        MediaType declaredContentType = springRequest.getHeaders().getContentType();
         Class<?> targetType = parameter.getParameterType();
+
+        // When Content-Type is absent, first try OCTET_STREAM-aware converters
+        // (e.g. byte[]/InputStream readers). Only if none match do we fall back
+        // to APPLICATION_JSON — this preserves the documented "don't assume JSON
+        // by default" semantics while still letting JSON-accepting handlers read
+        // bodies that were posted without a Content-Type header.
+        MediaType primaryContentType = declaredContentType != null
+                ? declaredContentType
+                : MediaType.APPLICATION_OCTET_STREAM;
 
         List<MediaType> supportedTypes = new ArrayList<>();
         for (HttpMessageConverter<?> converter : converters) {
-            if (converter.canRead(targetType, contentType)) {
+            if (converter.canRead(targetType, primaryContentType)) {
                 return ((HttpMessageConverter) converter).read(targetType, springRequest);
             }
             supportedTypes.addAll(converter.getSupportedMediaTypes(targetType));
         }
 
+        if (declaredContentType == null) {
+            for (HttpMessageConverter<?> converter : converters) {
+                if (converter.canRead(targetType, MediaType.APPLICATION_JSON)) {
+                    return ((HttpMessageConverter) converter).read(targetType, springRequest);
+                }
+            }
+        }
+
         throw new IllegalArgumentException(
-                "No HttpMessageConverter found for content type '" + contentType
+                "No HttpMessageConverter found for content type '" + primaryContentType
                 + "'. Supported: " + supportedTypes);
     }
 }

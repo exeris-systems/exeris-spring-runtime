@@ -75,6 +75,10 @@ public final class ExerisMvcServerHttpResponse implements ServerHttpResponse {
      */
     public ExerisServerResponse toExerisServerResponse() {
         ExerisServerResponse exeris = ExerisServerResponse.status(toKernelStatus(statusCode.value()));
+        // HttpHeaders#getContentType collapses to a single MediaType (the first parsable
+        // value). If a handler set multiple Content-Type values — unusual but legal —
+        // only the first survives. The Content-Type header is intentionally excluded
+        // from the extras loop below to avoid double-emitting it.
         MediaType contentType = headers.getContentType();
         if (contentType != null) {
             exeris = exeris.contentType(contentType);

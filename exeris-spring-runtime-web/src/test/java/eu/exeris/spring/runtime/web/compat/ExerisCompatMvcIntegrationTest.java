@@ -8,7 +8,6 @@ package eu.exeris.spring.runtime.web.compat;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
-import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -216,20 +215,7 @@ class ExerisCompatMvcIntegrationTest {
     }
 
     private static HttpVersion anyHttpVersion() {
-        for (var field : HttpVersion.class.getDeclaredFields()) {
-            if (field.getType() == HttpVersion.class
-                    && java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
-                try {
-                    field.setAccessible(true);
-                    Object value = field.get(null);
-                    if (value instanceof HttpVersion version) {
-                        return version;
-                    }
-                } catch (IllegalAccessException ignored) {
-                }
-            }
-        }
-        throw new IllegalStateException("Unable to obtain any HttpVersion constant");
+        return HttpVersion.HTTP_1_1;
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -378,22 +364,22 @@ class ExerisCompatMvcIntegrationTest {
         }
 
         static TestExchange get(HttpMethod method, String path, HttpVersion version) {
-            return new TestExchange(buildRequest(method, path, version, List.of()));
+            return new TestExchange(HttpRequest.noBody(method, path, version, List.of()));
         }
 
         static TestExchange getWithHeader(HttpMethod method, String path,
                                           String headerName, String headerValue,
                                           HttpVersion version) {
-            eu.exeris.kernel.spi.http.HttpHeader header = buildHeader(headerName, headerValue);
-            return new TestExchange(buildRequest(method, path, version, List.of(header)));
+            return new TestExchange(HttpRequest.noBody(method, path, version,
+                    List.of(new eu.exeris.kernel.spi.http.HttpHeader(headerName, headerValue))));
         }
 
         static TestExchange post(HttpMethod method, String path, byte[] bodyBytes, HttpVersion version) {
             List<eu.exeris.kernel.spi.http.HttpHeader> headers = List.of(
-                    buildHeader("Content-Type", "application/json"),
-                    buildHeader("Content-Length", String.valueOf(bodyBytes.length))
+                    new eu.exeris.kernel.spi.http.HttpHeader("Content-Type", "application/json"),
+                    new eu.exeris.kernel.spi.http.HttpHeader("Content-Length", String.valueOf(bodyBytes.length))
             );
-            return new TestExchange(buildRequestWithBody(method, path, version, headers, bodyBytes));
+            return new TestExchange(new HttpRequest(method, path, version, headers, new HeapTestBuffer(bodyBytes)));
         }
 
         HttpExchange proxy() {
@@ -402,143 +388,6 @@ class ExerisCompatMvcIntegrationTest {
 
         HttpResponse response() {
             return response.get();
-        }
-
-        private static eu.exeris.kernel.spi.http.HttpHeader buildHeader(String name, String value) {
-            try {
-                var constructors = eu.exeris.kernel.spi.http.HttpHeader.class.getDeclaredConstructors();
-                for (var c : constructors) {
-                    c.setAccessible(true);
-                    if (c.getParameterCount() == 2) {
-                        Object candidate = c.newInstance(name, value);
-                        if (candidate instanceof eu.exeris.kernel.spi.http.HttpHeader h) {
-                            return h;
-                        }
-                    }
-                }
-            } catch (ReflectiveOperationException ex) {
-                throw new IllegalStateException("Cannot build HttpHeader", ex);
-            }
-            throw new IllegalStateException("No 2-arg HttpHeader constructor found");
-        }
-
-        private static HttpRequest buildRequest(HttpMethod method, String path,
-                                                HttpVersion version,
-                                                List<eu.exeris.kernel.spi.http.HttpHeader> headers) {
-            var constructors = HttpRequest.class.getDeclaredConstructors();
-            for (var constructor : constructors) {
-                try {
-                    constructor.setAccessible(true);
-                    Object[] args = buildArgs(constructor.getGenericParameterTypes(),
-                            method, path, version, headers);
-                    Object candidate = constructor.newInstance(args);
-                    if (candidate instanceof HttpRequest req
-                            && method.equals(req.method())
-                            && (path.equals(req.path()) || path.startsWith(req.path()))) {
-                        return req;
-                    }
-                } catch (ReflectiveOperationException | IllegalArgumentException ignored) {
-                }
-            }
-            // path may contain query string — retry with just the path portion
-            String basePath = path.contains("?") ? path.substring(0, path.indexOf('?')) : path;
-            for (var constructor : constructors) {
-                try {
-                    constructor.setAccessible(true);
-                    Object[] args = buildArgs(constructor.getGenericParameterTypes(),
-                            method, basePath, version, headers);
-                    Object candidate = constructor.newInstance(args);
-                    if (candidate instanceof HttpRequest req
-                            && method.equals(req.method())) {
-                        return req;
-                    }
-                } catch (ReflectiveOperationException | IllegalArgumentException ignored) {
-                }
-            }
-            throw new IllegalStateException("Unable to construct HttpRequest for path=" + path);
-        }
-
-        private static HttpRequest buildRequestWithBody(HttpMethod method, String path,
-                                                        HttpVersion version,
-                                                        List<eu.exeris.kernel.spi.http.HttpHeader> headers,
-                                                        byte[] bodyBytes) {
-            eu.exeris.kernel.spi.memory.LoanedBuffer body = new HeapTestBuffer(bodyBytes);
-            var constructors = HttpRequest.class.getDeclaredConstructors();
-            for (var constructor : constructors) {
-                try {
-                    constructor.setAccessible(true);
-                    Type[] types = constructor.getGenericParameterTypes();
-                    Object[] args = new Object[types.length];
-                    boolean pathAssigned = false;
-                    for (int i = 0; i < types.length; i++) {
-                        Class<?> raw = rawClass(types[i]);
-                        if (raw == HttpMethod.class) {
-                            args[i] = method;
-                        } else if (raw == HttpVersion.class) {
-                            args[i] = version;
-                        } else if (raw == String.class) {
-                            if (!pathAssigned) { args[i] = path; pathAssigned = true; }
-                            else args[i] = "";
-                        } else if (raw == List.class) {
-                            args[i] = headers;
-                        } else if (eu.exeris.kernel.spi.memory.LoanedBuffer.class.isAssignableFrom(raw)) {
-                            args[i] = body;
-                        } else if (raw == Optional.class) {
-                            args[i] = Optional.empty();
-                        } else {
-                            args[i] = defaultValue(raw);
-                        }
-                    }
-                    Object candidate = constructor.newInstance(args);
-                    if (candidate instanceof HttpRequest req && method.equals(req.method())) {
-                        return req;
-                    }
-                } catch (ReflectiveOperationException | IllegalArgumentException ignored) {
-                }
-            }
-            throw new IllegalStateException("Unable to construct HttpRequest with body for path=" + path);
-        }
-
-        private static Object[] buildArgs(Type[] parameterTypes,
-                                          HttpMethod method,
-                                          String path,
-                                          HttpVersion version,
-                                          List<eu.exeris.kernel.spi.http.HttpHeader> headers) {
-            Object[] args = new Object[parameterTypes.length];
-            boolean pathAssigned = false;
-            for (int i = 0; i < parameterTypes.length; i++) {
-                Class<?> raw = rawClass(parameterTypes[i]);
-                if (raw == HttpMethod.class) {
-                    args[i] = method;
-                } else if (raw == HttpVersion.class) {
-                    args[i] = version;
-                } else if (raw == String.class) {
-                    if (!pathAssigned) {
-                        args[i] = path;
-                        pathAssigned = true;
-                    } else {
-                        args[i] = "";
-                    }
-                } else if (raw == Optional.class) {
-                    args[i] = Optional.empty();
-                } else if (raw == List.class) {
-                    args[i] = headers.isEmpty() ? List.of() : headers;
-                } else {
-                    args[i] = defaultValue(raw);
-                }
-            }
-            return args;
-        }
-
-        private static Class<?> rawClass(Type type) {
-            if (type instanceof Class<?> cls) {
-                return cls;
-            }
-            if (type instanceof java.lang.reflect.ParameterizedType pt
-                    && pt.getRawType() instanceof Class<?> raw) {
-                return raw;
-            }
-            throw new IllegalArgumentException("Unsupported type: " + type);
         }
 
         private static Object defaultValue(Class<?> type) {
