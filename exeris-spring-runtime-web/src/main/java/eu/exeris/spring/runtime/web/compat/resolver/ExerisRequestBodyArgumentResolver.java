@@ -6,12 +6,20 @@
  */
 package eu.exeris.spring.runtime.web.compat.resolver;
 
+import java.lang.annotation.Annotation;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.springframework.core.Conventions;
 import org.springframework.core.MethodParameter;
+import org.springframework.core.annotation.AnnotationUtils;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageConverter;
+import org.springframework.lang.Nullable;
+import org.springframework.validation.BeanPropertyBindingResult;
+import org.springframework.validation.SmartValidator;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.context.request.NativeWebRequest;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
@@ -23,13 +31,29 @@ import eu.exeris.spring.runtime.web.compat.ExerisMvcServerHttpRequest;
  * Resolves {@code @RequestBody} parameters by reading the request body via a registered
  * {@link HttpMessageConverter}. Backed by {@link ExerisMvcServerHttpRequest}.
  * No servlet types.
+ *
+ * <p>If a {@link SmartValidator} is wired and the parameter is annotated with
+ * {@code @Valid} (any annotation whose simple name starts with {@code "Valid"}) or
+ * {@link Validated}, the deserialised body is validated and a
+ * {@link MethodArgumentNotValidException} is thrown on constraint violations — the
+ * same surface Spring MVC presents, so existing
+ * {@code @ExceptionHandler(MethodArgumentNotValidException.class)} advice keeps
+ * working unchanged.
  */
 public final class ExerisRequestBodyArgumentResolver implements HandlerMethodArgumentResolver {
 
     private final List<HttpMessageConverter<?>> converters;
+    @Nullable
+    private final SmartValidator validator;
 
     public ExerisRequestBodyArgumentResolver(List<HttpMessageConverter<?>> converters) {
+        this(converters, null);
+    }
+
+    public ExerisRequestBodyArgumentResolver(List<HttpMessageConverter<?>> converters,
+                                              @Nullable SmartValidator validator) {
         this.converters = List.copyOf(converters);
+        this.validator = validator;
     }
 
     @Override
@@ -41,7 +65,6 @@ public final class ExerisRequestBodyArgumentResolver implements HandlerMethodArg
     }
 
     @Override
-    @SuppressWarnings({"unchecked", "rawtypes"})
     public Object resolveArgument(MethodParameter parameter,
                                   ModelAndViewContainer mavContainer,
                                   NativeWebRequest webRequest,
@@ -64,6 +87,17 @@ public final class ExerisRequestBodyArgumentResolver implements HandlerMethodArg
                 ? declaredContentType
                 : MediaType.APPLICATION_OCTET_STREAM;
 
+        Object body = readBody(springRequest, parameter, targetType, primaryContentType, declaredContentType);
+        validateIfApplicable(body, parameter);
+        return body;
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private Object readBody(ExerisMvcServerHttpRequest springRequest,
+                             MethodParameter parameter,
+                             Class<?> targetType,
+                             MediaType primaryContentType,
+                             @Nullable MediaType declaredContentType) throws Exception {
         List<MediaType> supportedTypes = new ArrayList<>();
         for (HttpMessageConverter<?> converter : converters) {
             if (converter.canRead(targetType, primaryContentType)) {
@@ -83,5 +117,38 @@ public final class ExerisRequestBodyArgumentResolver implements HandlerMethodArg
         throw new IllegalArgumentException(
                 "No HttpMessageConverter found for content type '" + primaryContentType
                 + "'. Supported: " + supportedTypes);
+    }
+
+    private void validateIfApplicable(@Nullable Object body, MethodParameter parameter)
+            throws MethodArgumentNotValidException {
+        SmartValidator activeValidator = this.validator;
+        if (body == null || activeValidator == null) {
+            return;
+        }
+        Object[] hints = resolveValidationHints(parameter);
+        if (hints == null) {
+            return;
+        }
+        String name = Conventions.getVariableNameForParameter(parameter);
+        BeanPropertyBindingResult bindingResult = new BeanPropertyBindingResult(body, name);
+        activeValidator.validate(body, bindingResult, hints);
+        if (bindingResult.hasErrors()) {
+            throw new MethodArgumentNotValidException(parameter, bindingResult);
+        }
+    }
+
+    @Nullable
+    private static Object[] resolveValidationHints(MethodParameter parameter) {
+        for (Annotation ann : parameter.getParameterAnnotations()) {
+            Validated validated = AnnotationUtils.getAnnotation(ann, Validated.class);
+            if (validated != null) {
+                return validated.value();
+            }
+            if (ann.annotationType().getSimpleName().startsWith("Valid")) {
+                Object value = AnnotationUtils.getValue(ann);
+                return (value instanceof Class<?>[] groups) ? groups : new Object[0];
+            }
+        }
+        return null;
     }
 }
