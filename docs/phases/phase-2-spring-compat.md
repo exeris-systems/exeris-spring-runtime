@@ -36,6 +36,8 @@ Compatibility mode is:
 | `@ControllerAdvice` | Partial | Only `@ExceptionHandler` methods |
 | `@RequestHeader` | Yes | |
 | `HttpServletRequest` / `HttpServletResponse` | No | Banned in all modes |
+| `ServerHttpRequest#getRemoteAddress` | Partial | Resolved from RFC 7239 `Forwarded` and the de-facto `X-Forwarded-For` / `X-Real-IP` headers (the same surface real reverse proxies set). Returns `null` when none of those headers is present, since kernel `HttpRequest` does not expose raw socket peer. |
+| `ServerHttpRequest#getLocalAddress` | No | Kernel `HttpRequest` does not expose the bound local socket; returns `null`. Read `getHeaders().getHost()` explicitly if the requested authority is what you need. |
 | `MultipartFile` | No | Deferred, possible Phase 3+ |
 | `ResponseEntity<T>` | Yes | |
 | `Model` / `ModelAndView` | No | View resolution not supported |
