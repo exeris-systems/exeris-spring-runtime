@@ -13,10 +13,13 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.MethodParameter;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.method.support.ModelAndViewContainer;
 
@@ -28,6 +31,8 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.spring.runtime.web.ExerisServerRequest;
 import eu.exeris.spring.runtime.web.compat.ExerisMvcServerHttpRequest;
 import eu.exeris.spring.runtime.web.compat.ExerisNativeWebRequest;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 
 class ExerisRequestBodyArgumentResolverTest {
 
@@ -58,10 +63,72 @@ class ExerisRequestBodyArgumentResolverTest {
         assertThat(result).isEqualTo("world");
     }
 
+    @Test
+    void validBody_passesValidation() throws Exception {
+        ExerisRequestBodyArgumentResolver validating =
+                new ExerisRequestBodyArgumentResolver(converters, newValidator());
+        ExerisNativeWebRequest webRequest = webRequest(
+                "{\"name\":\"ok\"}".getBytes(StandardCharsets.UTF_8),
+                List.of(new HttpHeader("Content-Type", "application/json")));
+
+        Object result = validating.resolveArgument(payloadParameter(),
+                new ModelAndViewContainer(), webRequest, null);
+
+        assertThat(result).isInstanceOf(Payload.class);
+        assertThat(((Payload) result).name()).isEqualTo("ok");
+    }
+
+    @Test
+    void invalidBody_withValidator_throwsMethodArgumentNotValidException() throws Exception {
+        ExerisRequestBodyArgumentResolver validating =
+                new ExerisRequestBodyArgumentResolver(converters, newValidator());
+        ExerisNativeWebRequest webRequest = webRequest(
+                "{\"name\":\"\"}".getBytes(StandardCharsets.UTF_8),
+                List.of(new HttpHeader("Content-Type", "application/json")));
+
+        assertThatThrownBy(() -> validating.resolveArgument(payloadParameter(),
+                new ModelAndViewContainer(), webRequest, null))
+                .isInstanceOf(MethodArgumentNotValidException.class)
+                .satisfies(ex -> {
+                    var bindingResult = ((MethodArgumentNotValidException) ex).getBindingResult();
+                    assertThat(bindingResult.hasFieldErrors("name")).isTrue();
+                });
+    }
+
+    @Test
+    void invalidBody_withoutValidator_returnsBodyUnvalidated() throws Exception {
+        // Resolver constructed without a validator must not pretend validation
+        // happened — the silent-skip behaviour mirrors Spring's binder when no
+        // validator is wired. This guards against accidental fail-open by the
+        // resolver if a future change made the validator field non-optional.
+        ExerisNativeWebRequest webRequest = webRequest(
+                "{\"name\":\"\"}".getBytes(StandardCharsets.UTF_8),
+                List.of(new HttpHeader("Content-Type", "application/json")));
+
+        Object result = resolver.resolveArgument(payloadParameter(),
+                new ModelAndViewContainer(), webRequest, null);
+
+        assertThat(result).isInstanceOf(Payload.class);
+        assertThat(((Payload) result).name()).isEmpty();
+    }
+
     private static MethodParameter parameter(String methodName, int index) throws NoSuchMethodException {
         Method method = TestController.class.getDeclaredMethod(methodName, String.class);
         return new MethodParameter(method, index);
     }
+
+    private static MethodParameter payloadParameter() throws NoSuchMethodException {
+        Method method = TestController.class.getDeclaredMethod("acceptValidatedPayload", Payload.class);
+        return new MethodParameter(method, 0);
+    }
+
+    private static LocalValidatorFactoryBean newValidator() {
+        LocalValidatorFactoryBean validator = new LocalValidatorFactoryBean();
+        validator.afterPropertiesSet();
+        return validator;
+    }
+
+    public record Payload(@NotBlank String name) {}
 
     private static ExerisNativeWebRequest webRequest(byte[] bodyBytes, List<HttpHeader> headers) {
         HttpRequest request = new HttpRequest(HttpMethod.POST, "/echo", HttpVersion.HTTP_1_1,
@@ -74,6 +141,11 @@ class ExerisRequestBodyArgumentResolverTest {
         @SuppressWarnings("unused")
         void acceptString(@RequestBody String message) {
             consume(message);
+        }
+
+        @SuppressWarnings("unused")
+        void acceptValidatedPayload(@Valid @RequestBody Payload payload) {
+            consume(payload);
         }
 
         private static void consume(Object ignored) {

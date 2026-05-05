@@ -23,6 +23,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.type.AnnotatedTypeMetadata;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.validation.SmartValidator;
 import org.springframework.web.method.support.HandlerMethodArgumentResolverComposite;
 import org.springframework.web.method.support.HandlerMethodReturnValueHandlerComposite;
 
@@ -71,8 +72,9 @@ public class ExerisCompatAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public ExerisRequestBodyArgumentResolver exerisRequestBodyArgumentResolver(
-            List<HttpMessageConverter<?>> converters) {
-        return new ExerisRequestBodyArgumentResolver(converters);
+            List<HttpMessageConverter<?>> converters,
+            @Autowired(required = false) SmartValidator validator) {
+        return new ExerisRequestBodyArgumentResolver(converters, validator);
     }
 
     @Bean

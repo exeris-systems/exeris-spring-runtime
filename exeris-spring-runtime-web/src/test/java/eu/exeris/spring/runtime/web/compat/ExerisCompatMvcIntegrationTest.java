@@ -23,6 +23,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.MapPropertySource;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,6 +36,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 
 import eu.exeris.kernel.spi.http.HttpExchange;
 import eu.exeris.kernel.spi.http.HttpMethod;
@@ -185,6 +189,28 @@ class ExerisCompatMvcIntegrationTest {
         assertThat(bodyOf(exchange.response())).contains("550e8400-e29b-41d4-a716-446655440000");
     }
 
+    // ── Scenario 12: @Valid on @RequestBody — invalid payload → 400 via advice ──
+
+    @Test
+    void compatMode_invalidValidatedBody_triggersAdviceAndReturns400() throws Exception {
+        byte[] bodyBytes = "{\"name\":\"\"}".getBytes(StandardCharsets.UTF_8);
+        TestExchange exchange = TestExchange.post(HttpMethod.POST, "/compat-validate", bodyBytes, anyHttpVersion());
+        dispatcher.handle(exchange.proxy());
+        assertThat(statusOf(exchange.response())).isEqualTo(400);
+        assertThat(bodyOf(exchange.response())).contains("name");
+    }
+
+    // ── Scenario 13: @Valid on @RequestBody — valid payload → 200 ──────────
+
+    @Test
+    void compatMode_validValidatedBody_passesThrough() throws Exception {
+        byte[] bodyBytes = "{\"name\":\"ok\"}".getBytes(StandardCharsets.UTF_8);
+        TestExchange exchange = TestExchange.post(HttpMethod.POST, "/compat-validate", bodyBytes, anyHttpVersion());
+        dispatcher.handle(exchange.proxy());
+        assertThat(statusOf(exchange.response())).isEqualTo(200);
+        assertThat(bodyOf(exchange.response())).contains("ok");
+    }
+
 
     // ─────────────────────────────────────────────────────────────────────
     // Helpers
@@ -252,6 +278,11 @@ class ExerisCompatMvcIntegrationTest {
             return new CompatPrefixTestController();
         }
 
+        @Bean
+        LocalValidatorFactoryBean compatLocalValidatorFactoryBean() {
+            return new LocalValidatorFactoryBean();
+        }
+
         private static void forceRunning(ExerisRuntimeLifecycle lifecycle) {
             try {
                 var running = ExerisRuntimeLifecycle.class.getDeclaredField("running");
@@ -306,6 +337,11 @@ class ExerisCompatMvcIntegrationTest {
             return message;
         }
 
+        @PostMapping("/compat-validate")
+        String validate(@Valid @RequestBody ValidatedPayload payload) {
+            return "ok:" + payload.name();
+        }
+
         @ExceptionHandler(IllegalArgumentException.class)
         @ResponseStatus(org.springframework.http.HttpStatus.BAD_REQUEST)
         String handleLocalException(IllegalArgumentException ex) {
@@ -320,7 +356,19 @@ class ExerisCompatMvcIntegrationTest {
         String handleGlobalException(UnsupportedOperationException ex) {
             return "unprocessable: " + ex.getMessage();
         }
+
+        @ExceptionHandler(MethodArgumentNotValidException.class)
+        @ResponseStatus(org.springframework.http.HttpStatus.BAD_REQUEST)
+        String handleValidationException(MethodArgumentNotValidException ex) {
+            String fields = ex.getBindingResult().getFieldErrors().stream()
+                    .map(err -> err.getField() + ":" + err.getDefaultMessage())
+                    .reduce((a, b) -> a + "," + b)
+                    .orElse("");
+            return "validation-failed: " + fields;
+        }
     }
+
+    public record ValidatedPayload(@NotBlank String name) {}
 
     @RestController
     @RequestMapping("/compat-prefix")
