@@ -13,8 +13,11 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.MethodParameter;
+import org.springframework.core.convert.converter.Converter;
+import org.springframework.format.support.DefaultFormattingConversionService;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.method.support.ModelAndViewContainer;
 
@@ -56,6 +59,44 @@ class ExerisRequestParamArgumentResolverTest {
         assertThat(resolver.supportsParameter(parameter("unsupportedType", 0))).isFalse();
     }
 
+    @Test
+    void enumValueIsResolvedViaConversionService() throws Exception {
+        // Spring's DefaultConversionService (and ApplicationConversionService) registers
+        // StringToEnumConverterFactory by default, so enum @RequestParam coercion works
+        // out of the box once the resolver delegates to ConversionService.
+        ExerisNativeWebRequest webRequest = webRequest("/orders?status=PENDING");
+
+        assertThat(resolver.supportsParameter(parameter("acceptStatus", 0))).isTrue();
+        assertThat(resolve("acceptStatus", 0, webRequest)).isEqualTo(OrderStatus.PENDING);
+    }
+
+    @Test
+    void invalidEnumValueProducesIllegalArgumentException() throws Exception {
+        // Bad enum literals must surface as IllegalArgumentException, matching the
+        // surface the compat error mapper translates to HTTP 400.
+        ExerisNativeWebRequest webRequest = webRequest("/orders?status=NOT_A_STATUS");
+
+        assertThatThrownBy(() -> resolve("acceptStatus", 0, webRequest))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void userRegisteredConverterIsHonoured() throws Exception {
+        // Wire a custom Converter<String, Money> through a fresh ConversionService —
+        // proves user-supplied converters flow through automatically without any
+        // hard-coded type list inside the resolver.
+        DefaultFormattingConversionService conversionService = new DefaultFormattingConversionService();
+        conversionService.addConverter(new StringToMoneyConverter());
+        ExerisRequestParamArgumentResolver custom = new ExerisRequestParamArgumentResolver(conversionService);
+
+        ExerisNativeWebRequest webRequest = webRequest("/payments?price=EUR:42");
+
+        assertThat(custom.supportsParameter(parameter("acceptMoney", 0))).isTrue();
+        assertThat(custom.resolveArgument(parameter("acceptMoney", 0),
+                new ModelAndViewContainer(), webRequest, null))
+                .isEqualTo(new Money("EUR", 42));
+    }
+
     private Object resolve(String methodName, int parameterIndex, ExerisNativeWebRequest webRequest) throws Exception {
         return resolver.resolveArgument(
                 parameter(methodName, parameterIndex),
@@ -81,6 +122,8 @@ class ExerisRequestParamArgumentResolverTest {
                     LocalDateTime.class
             };
             case "unsupportedType" -> new Class<?>[]{List.class};
+            case "acceptStatus" -> new Class<?>[]{OrderStatus.class};
+            case "acceptMoney" -> new Class<?>[]{Money.class};
             default -> throw new IllegalArgumentException("Unknown method: " + methodName);
         };
     }
@@ -110,8 +153,33 @@ class ExerisRequestParamArgumentResolverTest {
         }
 
         @SuppressWarnings("unused")
+        void acceptStatus(@RequestParam("status") OrderStatus status) {
+            consume(status);
+        }
+
+        @SuppressWarnings("unused")
+        void acceptMoney(@RequestParam("price") Money price) {
+            consume(price);
+        }
+
+        @SuppressWarnings("unused")
         private static void consume(Object... ignored) {
             // Intentional no-op: used to suppress unused parameter warnings in test method bodies
+        }
+    }
+
+    enum OrderStatus { PENDING, CONFIRMED, CANCELLED }
+
+    record Money(String currency, long amount) {}
+
+    static final class StringToMoneyConverter implements Converter<String, Money> {
+        @Override
+        public Money convert(String source) {
+            String[] parts = source.split(":", 2);
+            if (parts.length != 2) {
+                throw new IllegalArgumentException("Bad money literal: " + source);
+            }
+            return new Money(parts[0], Long.parseLong(parts[1]));
         }
     }
 }

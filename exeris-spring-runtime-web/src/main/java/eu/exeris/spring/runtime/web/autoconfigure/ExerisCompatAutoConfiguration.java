@@ -9,17 +9,20 @@ package eu.exeris.spring.runtime.web.autoconfigure;
 import java.util.List;
 
 import org.springframework.beans.factory.FactoryBean;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.convert.ApplicationConversionService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Condition;
 import org.springframework.context.annotation.ConditionContext;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.convert.ConversionService;
 import org.springframework.core.type.AnnotatedTypeMetadata;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
@@ -79,20 +82,35 @@ public class ExerisCompatAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public ExerisRequestParamArgumentResolver exerisRequestParamArgumentResolver() {
-        return new ExerisRequestParamArgumentResolver();
+    public ExerisRequestParamArgumentResolver exerisRequestParamArgumentResolver(
+            ObjectProvider<ConversionService> conversionServiceProvider) {
+        return new ExerisRequestParamArgumentResolver(resolveConversionService(conversionServiceProvider));
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public ExerisPathVariableArgumentResolver exerisPathVariableArgumentResolver() {
-        return new ExerisPathVariableArgumentResolver();
+    public ExerisPathVariableArgumentResolver exerisPathVariableArgumentResolver(
+            ObjectProvider<ConversionService> conversionServiceProvider) {
+        return new ExerisPathVariableArgumentResolver(resolveConversionService(conversionServiceProvider));
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public ExerisRequestHeaderArgumentResolver exerisRequestHeaderArgumentResolver() {
-        return new ExerisRequestHeaderArgumentResolver();
+    public ExerisRequestHeaderArgumentResolver exerisRequestHeaderArgumentResolver(
+            ObjectProvider<ConversionService> conversionServiceProvider) {
+        return new ExerisRequestHeaderArgumentResolver(resolveConversionService(conversionServiceProvider));
+    }
+
+    /**
+     * Reuses the application's primary {@link ConversionService} bean if present so that
+     * user-registered {@code Converter<String, T>} beans are honoured. Falls back to
+     * {@link ApplicationConversionService#getSharedInstance()} — the same service
+     * Spring Boot uses for property binding — to keep enum / date-time / UUID parity
+     * with Spring MVC even in stripped-down compatibility deployments.
+     */
+    private static ConversionService resolveConversionService(ObjectProvider<ConversionService> provider) {
+        ConversionService unique = provider.getIfUnique();
+        return unique != null ? unique : ApplicationConversionService.getSharedInstance();
     }
 
     // 7. Composite argument resolver
