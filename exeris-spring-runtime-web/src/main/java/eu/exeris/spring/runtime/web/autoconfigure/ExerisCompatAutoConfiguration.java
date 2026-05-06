@@ -107,6 +107,12 @@ public class ExerisCompatAutoConfiguration {
      * {@link ApplicationConversionService#getSharedInstance()} — the same service
      * Spring Boot uses for property binding — to keep enum / date-time / UUID parity
      * with Spring MVC even in stripped-down compatibility deployments.
+     *
+     * <p><b>Caveat:</b> the shared instance is a process-wide mutable singleton —
+     * any library that calls {@code addConverter(...)} on it will be observable from
+     * every compat resolver using this fallback. Applications that need isolation
+     * should declare their own {@link ConversionService} bean; the {@code getIfUnique}
+     * branch picks it up in preference to the shared instance.
      */
     private static ConversionService resolveConversionService(ObjectProvider<ConversionService> provider) {
         ConversionService unique = provider.getIfUnique();

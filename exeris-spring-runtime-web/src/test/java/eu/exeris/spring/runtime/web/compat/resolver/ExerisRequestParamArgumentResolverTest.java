@@ -176,10 +176,14 @@ class ExerisRequestParamArgumentResolverTest {
         @Override
         public Money convert(String source) {
             String[] parts = source.split(":", 2);
-            if (parts.length != 2) {
+            if (parts.length != 2 || parts[0].isEmpty() || parts[1].isEmpty()) {
                 throw new IllegalArgumentException("Bad money literal: " + source);
             }
-            return new Money(parts[0], Long.parseLong(parts[1]));
+            try {
+                return new Money(parts[0], Long.parseLong(parts[1]));
+            } catch (NumberFormatException ex) {
+                throw new IllegalArgumentException("Invalid money amount: " + parts[1], ex);
+            }
         }
     }
 }

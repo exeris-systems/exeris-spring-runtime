@@ -54,6 +54,17 @@ class ExerisRequestHeaderArgumentResolverTest {
         assertThat(resolver.supportsParameter(parameter("unsupportedType", 0))).isFalse();
     }
 
+    @Test
+    void enumHeaderResolvedViaConversionService() throws Exception {
+        // Locks in the shared ExerisCompatTypeConverter delegation so a future
+        // refactor can't silently regress the header resolver to a hand-rolled
+        // type table that loses enum coercion.
+        ExerisNativeWebRequest webRequest = webRequest(List.of(new HttpHeader("X-Status", "CONFIRMED")));
+
+        assertThat(resolver.supportsParameter(parameter("enumHeader", 0))).isTrue();
+        assertThat(resolve("enumHeader", 0, webRequest)).isEqualTo(Status.CONFIRMED);
+    }
+
     private Object resolve(String methodName, int parameterIndex, ExerisNativeWebRequest webRequest) throws Exception {
         return resolver.resolveArgument(
                 parameter(methodName, parameterIndex),
@@ -71,6 +82,7 @@ class ExerisRequestHeaderArgumentResolverTest {
         return switch (methodName) {
             case "typedHeaders" -> new Class<?>[]{String.class, int.class, long.class, UUID.class};
             case "unsupportedType" -> new Class<?>[]{List.class};
+            case "enumHeader" -> new Class<?>[]{Status.class};
             default -> throw new IllegalArgumentException("Unknown method: " + methodName);
         };
     }
@@ -95,8 +107,15 @@ class ExerisRequestHeaderArgumentResolverTest {
             consume(values);
         }
 
+        @SuppressWarnings("unused")
+        void enumHeader(@RequestHeader("X-Status") Status status) {
+            consume(status);
+        }
+
         private static void consume(Object... ignored) {
             // no-op
         }
     }
+
+    enum Status { PENDING, CONFIRMED, CANCELLED }
 }

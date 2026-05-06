@@ -38,10 +38,6 @@ public final class ExerisRequestParamArgumentResolver implements HandlerMethodAr
         this.typeConverter = new ExerisCompatTypeConverter(conversionService);
     }
 
-    ExerisCompatTypeConverter typeConverter() {
-        return typeConverter;
-    }
-
     @Override
     public boolean supportsParameter(MethodParameter parameter) {
         if (!parameter.hasParameterAnnotation(RequestParam.class)) {
