@@ -1,4 +1,4 @@
-# ADR-012: JDBC Compatibility Scope for ExerisDataSource
+# ADR-017: JDBC Compatibility Scope for ExerisDataSource
 
 | Attribute    | Value                                                                                                |
 |:-------------|:-----------------------------------------------------------------------------------------------------|
@@ -416,7 +416,7 @@ noClasses()
     .or().implement(PreparedStatement.class)
     .or().implement(ResultSet.class)
     .should().resideOutsideOfPackage("eu.exeris.spring.runtime.data.compat..")
-    .because("JDBC compatibility adapters must be isolated in *.data.compat.* (ADR-012)");
+    .because("JDBC compatibility adapters must be isolated in *.data.compat.* (ADR-017)");
 ```
 
 ### Rule 2 — No HikariCP Dependency
@@ -477,7 +477,7 @@ change that touches `rawJdbcConnection()` must be reviewed to confirm the annota
 
 ```java
 // rawJdbcConnection() approved caller: integration bridge that maintains connection lifecycle externally.
-// Approved caller category added to JdbcPersistenceConnection Javadoc. See ADR-012 §6.4.
+// Approved caller category added to JdbcPersistenceConnection Javadoc. See ADR-017 §6.4.
 Connection raw = jdbcConn.rawJdbcConnection(); // <-- every call site must carry this comment
 ```
 

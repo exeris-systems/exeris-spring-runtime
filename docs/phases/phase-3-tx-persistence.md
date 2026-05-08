@@ -74,7 +74,7 @@ alongside Exeris-owned connection.
 
 | Risk | Mitigation |
 |:-----|:-----------|
-| `Kernel PersistenceEngine` not yet public API in 0.5.0-SNAPSHOT | Track kernel ADR-010 progress; create forward-looking adapter layer |
+| `Kernel PersistenceEngine` not yet public API in 0.5.0-SNAPSHOT | Track kernel Persistence SPI Refactor progress (`exeris-kernel-enterprise/docs/refactor-notes/2026-02-23 Persistence SPI Refactor.md`); create forward-looking adapter layer |
 | Nested transaction semantics mismatch | Support only REQUIRED and REQUIRES_NEW initially; document others as unsupported |
 | VT `ThreadLocal` interaction with Spring AOP proxy creation | Test thoroughly with `@Transactional` on proxied beans; AOP proxy creation is off-VT anyway |
 | Suspension/resume in Exeris kernel not implemented | Treat as PROPAGATION_REQUIRED-only in Phase 3; document REQUIRES_NEW limitations |
@@ -186,7 +186,7 @@ a sub-ADR (ADR-002 or equivalent) must be accepted that:
 - states whether Level 1 or Level 2 is the approach for that class
 - documents the performance trade-off
 - names the alternative designs considered
-- references the kernel `ADR-010` persistence refactor for alignment
+- references the kernel Persistence SPI Refactor for alignment (`exeris-kernel-enterprise/docs/refactor-notes/2026-02-23 Persistence SPI Refactor.md`)
 
 ---
 
