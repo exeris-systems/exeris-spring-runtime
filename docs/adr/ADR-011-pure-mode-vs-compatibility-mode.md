@@ -1,10 +1,10 @@
 # ADR-011: Pure Mode vs Compatibility Mode
 
-| Atrybut         | Wartość                                                                                                          |
+| Attribute       | Value                                                                                                            |
 |:----------------|:-----------------------------------------------------------------------------------------------------------------|
-| **Status**      | **PROPOSED** (drafted 2026-05-08; decision date 2026-03-22)                                                      |
+| **Status**      | **PROPOSED** (drafted 2026-05-08)                                                                                |
 | **Deciders**    | Arkadiusz Przychocki                                                                                             |
-| **Date**        | 2026-03-22                                                                                                       |
+| **Date**        | 2026-05-08                                                                                                       |
 | **Scope**       | spring (binds every `exeris-spring-runtime-*` module)                                                            |
 | **Owning Repo** | `exeris-spring-runtime`                                                                                          |
 | **Driven By**   | ADR-006 (Spring-Free Kernel Boundary), ADR-010 (Host Runtime Model), Phase 0–1 spring-runtime delivery scope     |

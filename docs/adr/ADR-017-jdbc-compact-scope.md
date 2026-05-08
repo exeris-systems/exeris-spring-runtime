@@ -111,11 +111,11 @@ treat Option A as the default and avoid JPA entirely.
 `ExerisPlatformTransactionManager`'s active transaction state:
 
 - If a transaction managed by `ExerisPlatformTransactionManager` is active: the
-  `PersistenceConnection`-backed `Connection` adapter already bound via
+  `PersistenceConnection`-backed `Connection` proxy already bound via
   `TransactionSynchronizationManager.getResource(ExerisDataSource.class)` is returned
   (connection reuse — not a second open).
 - If no transaction is active: a new connection is opened via
-  `PersistenceEngine.openConnection()` and a `ExerisConnectionAdapter` wrapping that
+  `PersistenceEngine.openConnection()` and a `ExerisConnectionProxy` wrapping that
   connection is returned. The caller is responsible for closing it (resource-per-call
   semantics, no pooling at the `DataSource` layer).
 
@@ -237,10 +237,10 @@ prescribed by this integration layer.
 
 ### 4.4 Transaction Integration
 
-`ExerisConnectionAdapter` must not call `PersistenceConnection.commit()`,
+`ExerisConnectionProxy` must not call `PersistenceConnection.commit()`,
 `PersistenceConnection.rollback()`, or `PersistenceConnection.close()` when a managed
 transaction is active. Transaction lifecycle is owned by `ExerisPlatformTransactionManager`
-in `exeris-spring-runtime-tx`. The connection adapter must be passive with respect to
+in `exeris-spring-runtime-tx`. The connection proxy must be passive with respect to
 transaction boundaries.
 
 ---
@@ -257,22 +257,22 @@ Spring's `DataSourceUtils.getConnection()` binding pattern.
 @Transactional is entered
     → ExerisPlatformTransactionManager.getTransaction(definition)
     → PersistenceEngine.openConnection()
-    → ExerisConnectionAdapter created and wrapped
-    → TransactionSynchronizationManager.bindResource(ExerisDataSource.class, adapter)
+    → ExerisConnectionProxy created and wrapped
+    → TransactionSynchronizationManager.bindResource(ExerisDataSource.class, proxy)
     → ExerisTransactionSynchronizationBridge registered for cleanup
 
 @Transactional body executes
     → JPA/Hibernate calls DataSource.getConnection()
     → ExerisDataSource.getConnection()
-    → TransactionSynchronizationManager.getResource(ExerisDataSource.class) → returns existing adapter
-    → same ExerisConnectionAdapter returned (no second open)
+    → TransactionSynchronizationManager.getResource(ExerisDataSource.class) → returns existing proxy
+    → same ExerisConnectionProxy returned (no second open)
 
 @Transactional exits (commit or rollback)
     → ExerisPlatformTransactionManager.commit() / rollback()
     → PersistenceConnection.commit() / rollback()
     → ExerisTransactionSynchronizationBridge.afterCompletion()
     → TransactionSynchronizationManager.unbindResource(ExerisDataSource.class)
-    → ExerisConnectionAdapter released
+    → ExerisConnectionProxy released
 ```
 
 There is exactly **one** `PersistenceConnection` per transaction, regardless of how many
@@ -284,9 +284,9 @@ times `DataSource.getConnection()` is called within that transaction scope.
 Code calls DataSource.getConnection() without @Transactional
     → TransactionSynchronizationManager.getResource(ExerisDataSource.class) → null
     → PersistenceEngine.openConnection()
-    → new ExerisConnectionAdapter returned
-    → caller must close() the adapter when done
-    → ExerisConnectionAdapter.close() → PersistenceConnection.close()
+    → new ExerisConnectionProxy returned
+    → caller must close() the proxy when done
+    → ExerisConnectionProxy.close() → PersistenceConnection.close()
 ```
 
 This is **not pooled** at the `DataSource` level. Every non-transactional
@@ -305,18 +305,17 @@ over the real JDBC connection obtained from `JdbcPersistenceConnection.rawJdbcCo
 
 ### 6.1 What ExerisConnectionProxy handles directly
 
-| Concern                    | Handling                                                          |
-|:---------------------------|:------------------------------------------------------------------|
-| `close()` in tx scope      | No-op — lifecycle owned by `ExerisPlatformTransactionManager`    |
-| `commit()` in tx scope     | No-op — commit owned by `ExerisPlatformTransactionManager`       |
-| `rollback()` in tx scope   | No-op — rollback owned by `ExerisPlatformTransactionManager`     |
-| `close()` outside tx       | Delegates to `PersistenceConnection.close()`                     |
-| `isClosed()`               | Reflects true connection state from `PersistenceConnection.isOpen()` |
-| `setAutoCommit(false)` | Pass-through to raw connection — aligns with `JdbcPersistenceConnection` baseline behaviour; benign | Pass-through |
-| `setAutoCommit(true)` | Throws `SQLException` — calling `setAutoCommit(true)` triggers an implicit PostgreSQL COMMIT that would corrupt `JdbcPersistenceConnection.inTransaction` state | Pass-through to raw connection |
-| `setTransactionIsolation()` | Throws `SQLException` — isolation level cannot be changed after a transaction has started without corrupting baseline restore in `JdbcPersistenceConnection` | Pass-through to raw connection |
-| `unwrap(Connection.class)` | Throws `SQLException` — the raw JDBC connection must not be exposed through the proxy; the proxy is the boundary | Throws `SQLException` — same reason; raw connection must never be accessible to callers |
-| All other methods | Pass-through to real `java.sql.Connection` from `rawJdbcConnection()` | Pass-through |
+| Method                        | In managed tx scope                                                                                                          | Outside tx scope                                                              |
+|:------------------------------|:-----------------------------------------------------------------------------------------------------------------------------|:------------------------------------------------------------------------------|
+| `close()`                     | No-op — lifecycle owned by `ExerisPlatformTransactionManager`                                                                | Delegates to `PersistenceConnection.close()`                                  |
+| `commit()`                    | No-op — commit owned by `ExerisPlatformTransactionManager`                                                                   | Delegates to real connection `commit()`                                       |
+| `rollback()`                  | No-op — rollback owned by `ExerisPlatformTransactionManager`                                                                 | Delegates to real connection `rollback()`                                     |
+| `isClosed()`                  | Reflects true connection state from `PersistenceConnection.isOpen()`                                                         | Same                                                                          |
+| `setAutoCommit(false)`        | Pass-through to raw connection — aligns with `JdbcPersistenceConnection` baseline behaviour; benign                          | Pass-through                                                                  |
+| `setAutoCommit(true)`         | Throws `SQLException` — implicit PostgreSQL COMMIT would corrupt `JdbcPersistenceConnection.inTransaction` state             | Pass-through to raw connection                                                |
+| `setTransactionIsolation(…)`  | Throws `SQLException` — isolation level cannot be changed mid-transaction without corrupting baseline restore                | Pass-through to raw connection                                                |
+| `unwrap(Connection.class)`    | Throws `SQLException` — raw JDBC connection must not be exposed through the proxy; the proxy is the boundary                 | Throws `SQLException` — same reason; raw connection must never be accessible |
+| All other methods             | Pass-through to real `java.sql.Connection` from `rawJdbcConnection()`                                                        | Pass-through                                                                  |
 
 ### 6.2 What the real JDBC driver handles (no Exeris involvement)
 
@@ -453,19 +452,19 @@ noClasses()
     .because("data module must not import web or actuator concerns (module-boundaries.md)");
 ```
 
-### Rule 4 — Connection Adapter Must Not Self-Manage Transaction Lifecycle
+### Rule 4 — Connection Proxy Must Not Self-Manage Transaction Lifecycle
 
 ```java
-// ExerisConnectionAdapter must not call commit/rollback/close directly
+// ExerisConnectionProxy must not call commit/rollback/close directly
 // (enforced by ensuring no direct import of PersistenceConnection lifecycle methods)
-// This rule is documentation-level; verify in code review that adapter methods
+// This rule is documentation-level; verify in code review that proxy methods
 // for commit/rollback/close are no-ops in transaction scope and delegate only
 // when no transaction is active.
 ```
 
 Rule 4 is a code-review gate, not an ArchUnit rule, because ArchUnit cannot easily
 distinguish method-body behavior. It is documented here so that reviewers treating
-`ExerisConnectionAdapter` changes must confirm no-op semantics for managed scope.
+`ExerisConnectionProxy` changes must confirm no-op semantics for managed scope.
 
 ### Rule 5 — `rawJdbcConnection()` Usage Audit
 
@@ -555,6 +554,6 @@ This prevents silent runtime failures at deep Hibernate call sites.
 | `PersistenceEngine` SPI not yet stable in 0.5.0-SNAPSHOT                   | High     | Adapter isolated behind an internal interface; swap kernel dependency without touching adapters  |
 | JPA/Hibernate discovers unsupported methods and fails at startup            | Medium   | Document exactly which Hibernate bootstrapping calls are expected; add smoke test with Hibernate |
 | Teams treat Option B as the default instead of Level 1 native repositories | High     | Autoconfiguration property stays `default=false`; documentation leads with Level 1              |
-| `ExerisConnectionAdapter.close()` called in non-transactional scope leaks  | Medium   | Explicit try-with-resources guidance in Javadoc; close delegates to `PersistenceConnection.close()` |
+| `ExerisConnectionProxy.close()` called in non-transactional scope leaks  | Medium   | Explicit try-with-resources guidance in Javadoc; close delegates to `PersistenceConnection.close()` |
 | Future JPA feature request creep (savepoints, stored procs, scrollable RS) | Medium   | Explicit "out of scope" list in §6.4; scope expansion requires new ADR                          |
 | `ThreadLocal` interaction between `TransactionSynchronizationManager` and VTs | Low    | Documented in Phase 3 plan as VT-safe with explicit cleanup; `ExerisTransactionSynchronizationBridge` scopes binding |
