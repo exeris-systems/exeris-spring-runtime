@@ -19,6 +19,7 @@ import org.springframework.lang.NonNull;
 import eu.exeris.kernel.core.bootstrap.KernelBootstrap;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.events.EventEngine;
+import eu.exeris.kernel.spi.flow.FlowEngine;
 import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpKernelProviders;
 
@@ -88,6 +89,15 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
      * activated without an {@code EventProvider} on the classpath.
      */
     private final AtomicReference<EventEngine> capturedEventEngine = new AtomicReference<>();
+
+    /**
+     * Captured kernel-side {@link FlowEngine} reference, populated from the boot thread
+     * (where {@link KernelProviders#FLOW_ENGINE} is bound) so Spring beans running outside
+     * the kernel {@code ScopedValue} scope can still register flow definitions and start
+     * flow instances. Empty if the kernel activated without a {@code FlowProvider} on the
+     * classpath.
+     */
+    private final AtomicReference<FlowEngine> capturedFlowEngine = new AtomicReference<>();
 
     public ExerisRuntimeLifecycle(ExerisRuntimeProperties properties,
                                    ExerisSpringConfigProvider configProvider,
@@ -207,14 +217,29 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         return Optional.ofNullable(capturedEventEngine.get());
     }
 
-    private void captureEventEngine() {
+    /**
+     * Returns the kernel {@link FlowEngine} reference captured during bootstrap, if a
+     * {@code FlowProvider} was active in the running kernel. Empty before {@link #start()}
+     * completes, after {@link #stop()}, or when the kernel activated without a flow
+     * subsystem.
+     *
+     * <p>Spring beans (flow definition registrars, flow templates) consume this accessor
+     * to obtain a long-lived engine reference, since {@link KernelProviders#FLOW_ENGINE}
+     * is a {@code ScopedValue} only bound on kernel-owned virtual threads.
+     */
+    public Optional<FlowEngine> getFlowEngine() {
+        return Optional.ofNullable(capturedFlowEngine.get());
+    }
+
+    private void captureKernelEngines() {
         // Runs on the boot thread inside the kernel's ScopedValue scope where the
-        // KernelProviders slots are bound. The events subsystem is optional, so
-        // capture is guarded by isBound() and stored only when present. Phase 4B
-        // will extend this with FLOW_ENGINE; at that point this method should be
-        // renamed back to captureKernelEngines() (plural) to match the new scope.
+        // KernelProviders slots are bound. Each subsystem is optional, so each capture
+        // is guarded by isBound() and stored only when the subsystem is present.
         if (KernelProviders.EVENT_ENGINE.isBound()) {
             capturedEventEngine.set(KernelProviders.EVENT_ENGINE.get());
+        }
+        if (KernelProviders.FLOW_ENGINE.isBound()) {
+            capturedFlowEngine.set(KernelProviders.FLOW_ENGINE.get());
         }
     }
 
@@ -241,6 +266,7 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
             bootReady.countDown();
             configProvider.clearBootstrap();
             capturedEventEngine.set(null);
+            capturedFlowEngine.set(null);
             heldBootScope.compareAndSet(releaseSignal, null);
             bootThread.compareAndSet(Thread.currentThread(), null);
             synchronized (lifecycleMonitor) {
@@ -257,7 +283,7 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
                             CountDownLatch bootReady,
                             CountDownLatch releaseSignal) throws KernelBootstrap.BootstrapException {
         Runnable holdKernelScopeOpen = () -> {
-            captureEventEngine();
+            captureKernelEngines();
             bootReady.countDown();
             awaitStopSignal(releaseSignal);
         };
