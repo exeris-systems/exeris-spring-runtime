@@ -78,17 +78,33 @@ public final class ExerisEventTypeRegistry {
         Objects.requireNonNull(typeName, "typeName");
         Objects.requireNonNull(streamId, "streamId");
         EventTypeSpec spec = specFor(typeName);
-        long eventIdHigh = ThreadLocalRandom.current().nextLong();
-        long eventIdLow = ThreadLocalRandom.current().nextLong();
         return EventDescriptor.of(
-                eventIdHigh,
-                eventIdLow,
+                nextEventIdComponent(),
+                nextEventIdComponent(),
                 streamId.getMostSignificantBits(),
                 streamId.getLeastSignificantBits(),
                 spec.ordinal(),
                 spec.toDescriptorFlags(),
                 System.currentTimeMillis()
         );
+    }
+
+    /**
+     * Returns one 64-bit component of an event UUID. The two components are concatenated
+     * by {@link #descriptorFor} into a 128-bit identifier that flows through the kernel
+     * EventBus.
+     *
+     * <p>Security posture: event UUID generation is <strong>not</strong> a security
+     * boundary. The requirement on this random source is uniqueness across published
+     * events on a single JVM, not unpredictability against an adversary. Switching to
+     * {@link java.security.SecureRandom} would pay an entropy cost without buying any
+     * defence (event IDs are visible in logs, telemetry, and downstream subscribers
+     * by design); switching to {@link java.util.Random} would lower entropy without any
+     * benefit. {@link ThreadLocalRandom} is the right primitive here.
+     */
+    @SuppressWarnings("java:S2245") // event UUID generation is not a security boundary
+    private static long nextEventIdComponent() {
+        return ThreadLocalRandom.current().nextLong();
     }
 
     private EventRegistry registry() {
