@@ -10,9 +10,12 @@ import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.lang.ArchRule;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+
+import eu.exeris.kernel.spi.flow.model.FlowStepAction;
 
 /**
  * Architecture guards for {@code exeris-spring-runtime-flow}.
@@ -103,6 +106,43 @@ class FlowModuleBoundaryTest {
                 .resideInAnyPackage(
                         "org.springframework.scheduling..",
                         "org.springframework.core.task..")
+                .allowEmptyShould(true);
+        rule.check(flowModuleClasses);
+    }
+
+    /**
+     * Step 2 closure-boundary guard: any class implementing
+     * {@link ExerisFlowDefinition} (or the lower-level kernel
+     * {@link FlowStepAction}) within this module's reach must not couple to HTTP /
+     * web / transaction / persistence packages.
+     *
+     * <p>{@code FlowStepAction} lambdas execute on Exeris-owned virtual threads under a
+     * {@code ScopedValue} scope independent of the Spring request thread — pulling
+     * request-path or transaction-context types into a step body inverts ownership and
+     * would silently break the kernel's threading model. Constructor-injected ports
+     * (e.g. an {@code InventoryPort} bean delegating to JDBC) are the supported
+     * collaboration shape; the step body must call those collaborators by interface,
+     * not import their underlying technology directly.
+     *
+     * <p>The bridge module ships no production flow implementations, so the rule passes
+     * vacuously here today. It serves as a forward-compatibility guard against future
+     * contributors landing example flows that violate the closure-boundary contract.
+     */
+    @Test
+    void flowDefinitionAndStepActionImplementorsDoNotImportRequestPathOrTxPackages() {
+        ArchRule rule = classes()
+                .that().implement(ExerisFlowDefinition.class)
+                .or().implement(FlowStepAction.class)
+                .should().onlyDependOnClassesThat().resideOutsideOfPackages(
+                        "jakarta.servlet..",
+                        "javax.servlet..",
+                        "eu.exeris.kernel.spi.http..",
+                        "org.springframework.web..",
+                        "org.springframework.transaction..",
+                        "javax.sql..",
+                        "java.sql..",
+                        "jakarta.persistence..",
+                        "org.hibernate..")
                 .allowEmptyShould(true);
         rule.check(flowModuleClasses);
     }

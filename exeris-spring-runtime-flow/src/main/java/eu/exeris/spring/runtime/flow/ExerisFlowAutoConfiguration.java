@@ -12,6 +12,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 
 import eu.exeris.kernel.spi.flow.FlowEngine;
@@ -25,27 +26,27 @@ import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
  * {@link FlowEngine} being on the classpath and an {@link ExerisRuntimeLifecycle}
  * bean being available to wire the {@link FlowEngineSupplier}.
  *
- * <h2>Step 1 (this commit) — module skeleton only</h2>
- * <p>Currently exposes only:
+ * <h2>Step 2 (current) — declarative + imperative surface</h2>
  * <ul>
- *   <li>{@link FlowEngineSupplier} bean — wired to
+ *   <li>{@link FlowEngineSupplier} — deferred {@code ScopedValue} accessor wired to
  *       {@link ExerisRuntimeLifecycle#getFlowEngine()}.</li>
+ *   <li>{@link ExerisFlowTemplate} — imperative invocation facade (schedule, park, wake,
+ *       lookupParked, stats, plan registry).</li>
+ *   <li>{@link ExerisFlowDefinitionRegistrar} — discovers {@link ExerisFlowDefinition}
+ *       beans, compiles their {@code FlowExecutionPlan}s at lifecycle start, and
+ *       populates the template's plan registry. Tolerates a missing engine when
+ *       {@code exeris.runtime.flow.require-engine=false} (test/dev only).</li>
  * </ul>
  *
- * <p>Subsequent Phase 4B steps will add:
- * <ul>
- *   <li>{@code ExerisFlowDefinition} — declarative flow DSL,</li>
- *   <li>{@code ExerisFlowTemplate} — imperative flow invocation surface,</li>
- *   <li>{@code ExerisFlowChoreographyBridge} — opt-in event-driven flow trigger,
- *       gated additionally on {@code FlowEngineCapabilities.choreographySupport()}.</li>
- * </ul>
+ * <p>Step 3 will add {@code ExerisFlowChoreographyBridge} — opt-in event-driven flow
+ * trigger, gated additionally on {@code FlowEngineCapabilities.choreographySupport()}.
  *
  * <h2>What This Does NOT Do</h2>
  * <p>Does not own transport, web handling, transactions, or persistence. Does not wire
- * Spring {@code ApplicationEventPublisher} into the kernel — flow choreography (when
- * enabled in a later step) reads from the kernel {@code EventBus} via the events
- * module's bridge. Does not provide {@code @Async} compatibility — {@code @Async} is
- * explicitly NOT a workaround for missing flow capability.
+ * Spring {@code ApplicationEventPublisher} into the kernel — flow choreography (Step 3)
+ * reads from the kernel {@code EventBus} via the events module bridge. Does not provide
+ * {@code @Async} compatibility — {@code @Async} is explicitly NOT a workaround for
+ * missing flow capability.
  *
  * @since 0.1.0
  */
@@ -60,5 +61,20 @@ public class ExerisFlowAutoConfiguration {
     @ConditionalOnMissingBean
     public FlowEngineSupplier exerisFlowEngineSupplier(ExerisRuntimeLifecycle lifecycle) {
         return lifecycle::getFlowEngine;
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ExerisFlowTemplate exerisFlowTemplate(FlowEngineSupplier engineSupplier) {
+        return new ExerisFlowTemplate(engineSupplier);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ExerisFlowDefinitionRegistrar exerisFlowDefinitionRegistrar(ApplicationContext applicationContext,
+                                                                        FlowEngineSupplier engineSupplier,
+                                                                        ExerisFlowTemplate template,
+                                                                        ExerisFlowProperties properties) {
+        return new ExerisFlowDefinitionRegistrar(applicationContext, engineSupplier, template, properties);
     }
 }
