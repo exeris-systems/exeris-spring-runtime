@@ -61,7 +61,11 @@ class ExerisFlowAutoConfigurationTest {
     }
 
     @Test
-    void defaultPropertiesAreAllFalse() {
+    void optionalFlagsDefaultFalseEvenWhenEnabled() {
+        // The master switch (enabled=true) is required to materialise ExerisFlowProperties
+        // as a bean — that's the autoconfig's gate. Once active, the optional sub-feature
+        // flags must still default to false: persistence is held back for 0.5.0-preview,
+        // and choreography requires both this flag AND kernel choreographySupport().
         contextRunner
                 .withPropertyValues("exeris.runtime.flow.enabled=true")
                 .run(context -> {

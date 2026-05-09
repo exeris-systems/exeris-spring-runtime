@@ -39,19 +39,7 @@ public record ExerisFlowProperties(
 
 ) {
 
-    /**
-     * Canonical constructor anchor for Spring Boot's {@code @ConfigurationProperties}
-     * binder. Required because a convenience no-arg constructor is also present.
-     */
     @ConstructorBinding
     public ExerisFlowProperties {
-    }
-
-    /**
-     * Convenience constructor for direct instantiation outside a Spring context.
-     * Mirrors the all-default state.
-     */
-    public ExerisFlowProperties() {
-        this(false, false, false);
     }
 }
