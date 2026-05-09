@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>eu.exeris</groupId>
+        <artifactId>exeris-spring-runtime-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>exeris-spring-runtime-events</artifactId>
+
+    <name>Exeris Spring Runtime :: Events Bridge</name>
+    <description>
+        Compatibility-friendly bridge that exposes the kernel EventBus to Spring beans
+        as publish/subscribe primitives without making the Spring ApplicationContext the
+        canonical event owner.
+
+        Scope (Phase 4A — 1.0 preview, default-off):
+          - ExerisEventPublisher: Spring bean publishing into kernel EventBus,
+          - @ExerisEventListener: method-level annotation; scanned by ExerisEventListenerRegistrar
+            and registered as kernel EventHandler subscriptions,
+          - ExerisEventTypeRegistry: facade over kernel EventRegistry for type-name → ordinal lookup.
+
+        Activation:
+          exeris.runtime.events.enabled = true (matchIfMissing = false)
+
+        Hard rules:
+          - Spring ApplicationEventPublisher is NEVER wired into the Exeris EventBus.
+          - No Spring event types (org.springframework.context.event.*) on the kernel bus path.
+          - No HTTP / transaction / persistence concerns in this module.
+
+        See docs/phases/phase-4-events-flow.md (Section 4A) for the full delivery plan.
+    </description>
+
+    <dependencies>
+
+        <!-- Kernel SPI — EventEngine, EventBus, EventDescriptor, EventPayload, EventHandler,
+             EventRegistry, SubscriptionToken, KernelProviders, EventTypeSpec. -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-spi</artifactId>
+        </dependency>
+
+        <!-- autoconfigure — for ExerisRuntimeLifecycle.getEventEngine() seam. -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-spring-boot-autoconfigure</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- Spring Boot autoconfigure — @AutoConfiguration, @ConditionalOn*. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+
+        <!-- Spring Context — ApplicationContext (for listener bean discovery), bean lifecycle. -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+        </dependency>
+
+        <!-- Test scope -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Runtime integration test: boot a real kernel with the community providers
+             on the test classpath so EventProvider, MemoryProvider, ConfigProvider, etc.
+             are discovered via ServiceLoader. Test scope only — never main/runtime,
+             that would invert provider ownership into this Spring module. -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-community</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- H2 in-memory database to satisfy the kernel persistence subsystem during
+             the integration test boot. Phase 4A is event-only; this is the cheapest
+             way to get a clean kernel up without standing up PostgreSQL. -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>
