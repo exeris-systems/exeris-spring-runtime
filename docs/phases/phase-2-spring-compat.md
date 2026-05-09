@@ -4,7 +4,7 @@
 **Depends on:** Phase 1 (closed 2026-05-09)
 **Milestone:** M2
 **Mode:** Compatibility Mode — opt-in, never default
-**Governing ADRs:** ADR-006 (The Wall), ADR-010 (Host Runtime Model), ADR-011 (Pure vs Compatibility), [ADR-021](../adr/ADR-021%20Gateway-Class%20Workloads%20Out%20of%20Compatibility%20Scope.md) (gateway-class out of Compat scope)
+**Governing ADRs:** ADR-006 (The Wall), ADR-010 (Host Runtime Model), ADR-011 (Pure vs Compatibility), [ADR-021](../adr/ADR-021-gateway-class-workloads-out-of-compatibility-scope.md) (gateway-class out of Compat scope)
 **Invariants captured in:** [`phase-2-invariants.md`](phase-2-invariants.md)
 
 ---
