@@ -195,18 +195,6 @@ regression; the test is not the bug.
 
 ---
 
-## Known issue (post-merge follow-up)
-
-`ExerisEventBridgeRuntimeIntegrationTest` (2 tests) is **environment-sensitive**:
-the test does not set `exeris.runtime.network.port=0`, so `BindException`
-surfaces when default port 8080 is occupied on the runner. The fix is a
-one-line property addition; tracked separately as the test exercises full
-runtime startup (which is orthogonal to the events bridge invariants above —
-the bridge code paths are exercised by the unit + module-level tests, all of
-which are green).
-
----
-
 ## Graduation criterion (preview → 1.0.x bounded GA)
 
 Per the roadmap's single graduation criterion (applies in both 1.0 and 1.0.x):

@@ -136,6 +136,12 @@ class ExerisEventBridgeRuntimeIntegrationTest {
         // requiring a real database; events module verification does not depend
         // on persistence behaviour and we just need bootstrap to complete.
         MockEnvironment env = new MockEnvironment()
+                // Bind to an ephemeral port so the test does not collide with whatever
+                // is already listening on the conventional default. Without this the
+                // kernel HTTP transport throws BindException when port 8080 is occupied,
+                // which manifests as a flaky-looking "lifecycle bootstrap failed" error
+                // even though the test exercises the events bridge, not HTTP.
+                .withProperty("exeris.runtime.network.port", "0")
                 .withProperty("exeris.runtime.persistence.jdbc-url",
                         "jdbc:h2:mem:exeris_events_runtime_it;DB_CLOSE_DELAY=-1")
                 .withProperty("exeris.runtime.persistence.username", "sa")

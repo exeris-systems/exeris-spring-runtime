@@ -1,7 +1,7 @@
 # Phase 4: Events, Flow/Saga, and Graph Integration
 
 **Status:**
-- **4A (Events) — Closed (2026-05-09)** as `0.6.0-preview`-track preview module (default-off). Implementation landed in PR #11; closure docs (this revision + [`phase-4a-events-invariants.md`](phase-4a-events-invariants.md)) ship in the Phase 4A closure PR. Module: `exeris-spring-runtime-events` (646 LOC main / 7 test files / 28 of 30 tests green; the 2 errors are an environment-specific port-bind flake in `ExerisEventBridgeRuntimeIntegrationTest` — known issue, see follow-up below).
+- **4A (Events) — Closed (2026-05-09)** as `0.5.0-preview`-track preview module (default-off). Implementation landed in PR #11; closure docs (this revision + [`phase-4a-events-invariants.md`](phase-4a-events-invariants.md)) ship in the Phase 4A closure PR. Module: `exeris-spring-runtime-events` (646 LOC main / 7 test files / **30/30 tests green** — the runtime integration test's port-bind flake was fixed in the closure PR by binding to an ephemeral port).
 - **4B (Flow/Saga) — Planned (1.0 preview)**, target `0.5.0-preview` release train. No scaffolds yet.
 - **4C (Graph) — Post-1.0**, candidate for the `1.1.x` train
 
@@ -124,7 +124,7 @@ the `FlowEngine` bridge is the correct tool and `@Async` MUST NOT be introduced 
 | 8 | `EventModuleBoundaryTest` — 5 ArchUnit rules (no Spring `ApplicationEventPublisher`, no `spring-context.event`, no HTTP/servlet, no tx/persistence, no JPA) | (test) | 5/5 — module boundary mechanically enforced |
 | 9 | `PureModeClasspathGuardTest` — module-local Pure-Mode classpath ban (servlet API, Netty/Reactor, WebFlux, `DispatcherServlet`) | (test) | 4/4 — replicated per Phase 1c invariant |
 
-**Test sweep:** 28/30 green. Two errors in `ExerisEventBridgeRuntimeIntegrationTest` (`lifecycleCapturesEventEngineDuringBootAndClearsItOnStop`, `publisherDispatchesIntoKernelBusAndReachesAnnotatedListener`) are an environment-specific port-bind flake — the runtime integration test does not set `exeris.runtime.network.port=0` (ephemeral), so `BindException: Adres jest już w użyciu` surfaces when port 8080 is occupied. **Not a code regression**; tracked as a post-merge follow-up.
+**Test sweep:** 30/30 green. `ExerisEventBridgeRuntimeIntegrationTest` was previously flaky (2 errors) when port 8080 was occupied on the runner; the closure PR fixes this by adding `exeris.runtime.network.port=0` (ephemeral) to the test's `MockEnvironment` — the events bridge does not depend on a fixed HTTP port, so binding to an ephemeral one keeps the test environment-robust without weakening the runtime startup proof.
 
 ### Goal
 
