@@ -74,7 +74,7 @@ public final class ExerisDataSource implements DataSource {
         // rawJdbcConnection() approved caller: integration bridge. See ADR-017 §6.4.
         ExerisConnectionProxy proxy =
                 new ExerisConnectionProxy(jdbcConn.rawJdbcConnection(), conn, false);
-        JpaConnectionAcquiredEvent.emit(false);
+        JpaConnectionAcquiredEvent.emit();
         return proxy;
     }
 

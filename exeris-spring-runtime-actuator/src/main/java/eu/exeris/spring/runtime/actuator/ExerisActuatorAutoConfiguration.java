@@ -29,7 +29,8 @@ import eu.exeris.spring.runtime.actuator.compat.ExerisCompatibilityActuatorContr
  *   <li>{@link ExerisRuntimeHealthIndicator} — lifecycle liveness indicator (always,
  *       when Spring Boot Actuator is on the classpath)
  *   <li>{@link ExerisCompatibilityActuatorController} — compatibility-mode HTTP diagnostics
- *       bridge for [PBM]-style health checks without requiring servlet or reactive ownership
+ *       bridge exposing Spring Boot Actuator's standard {@code /actuator/health} and
+ *       {@code /actuator/info} endpoint shape without requiring servlet or reactive ownership
  *   <li>{@link ExerisActuatorTelemetryBridge} — Micrometer event-level counter bridge
  *       (only when {@code io.micrometer.core.instrument.MeterRegistry} is present)
  * </ul>

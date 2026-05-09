@@ -32,21 +32,21 @@ public final class JpaConnectionAcquiredEvent extends Event {
     private static final EventType EVENT_TYPE =
             EventType.getEventType(JpaConnectionAcquiredEvent.class);
 
-    /** Whether the connection was opened in read-only mode. */
-    @Label("Read-only")
-    public boolean readOnly;
-
     /**
      * Emits a {@link JpaConnectionAcquiredEvent} if JFR is enabled and recording.
      *
-     * @param readOnly whether the connection is read-only
+     * <p>The original event carried a {@code readOnly} field, but the only call site
+     * always passed {@code false} (the kernel {@code PersistenceConnection} surface does
+     * not currently expose a stable read-only flag, and JPA's read-only hint travels at
+     * a higher layer). The field was removed rather than left as an always-false
+     * placeholder. If a real read-only signal is plumbed through later, it should arrive
+     * with concrete semantics, not as a default.
      */
-    public static void emit(boolean readOnly) {
+    public static void emit() {
         if (!EVENT_TYPE.isEnabled()) {
             return;
         }
         JpaConnectionAcquiredEvent event = new JpaConnectionAcquiredEvent();
-        event.readOnly = readOnly;
         event.commit();
     }
 }
