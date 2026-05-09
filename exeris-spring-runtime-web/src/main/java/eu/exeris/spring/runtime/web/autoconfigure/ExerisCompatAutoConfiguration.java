@@ -31,6 +31,7 @@ import org.springframework.web.method.support.HandlerMethodArgumentResolverCompo
 import org.springframework.web.method.support.HandlerMethodReturnValueHandlerComposite;
 
 import eu.exeris.spring.runtime.web.ExerisErrorMapper;
+import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
 import eu.exeris.spring.runtime.web.compat.ExerisCompatDispatcher;
 import eu.exeris.spring.runtime.web.compat.ExerisExceptionHandlerResolver;
 import eu.exeris.spring.runtime.web.compat.ExerisHandlerMethodRegistry;
@@ -55,6 +56,7 @@ import eu.exeris.spring.runtime.web.compat.resolver.ExerisRequestParamArgumentRe
 @AutoConfiguration
 @ConditionalOnClass(ExerisCompatDispatcher.class)
 @ConditionalOnProperty(prefix = "exeris.runtime.web", name = "mode", havingValue = "compatibility")
+@CompatibilityMode
 public class ExerisCompatAutoConfiguration {
 
     // 1. Message converter

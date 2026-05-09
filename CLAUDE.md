@@ -89,7 +89,7 @@ When docs disagree, the source-of-truth order is:
 3. `docs/phases/phase-*.md` — current delivery scope
 4. `.github/copilot-instructions.md` — repo-wide review behaviour
 
-Phase semantics: **Phase 0** bootstrap coexistence + Wall integrity; **Phase 1** Exeris-owned ingress; **Phase 2** opt-in Spring compatibility; **Phase 3** tx/context/persistence; **Phase 4A** events bridge (1.0 preview, default-off); **Phase 4B** flow/saga bridge (1.0 preview, default-off); **Phase 4C** graph integration (post-1.0).
+Phase semantics: **Phase 0** bootstrap coexistence + Wall integrity; **Phase 1** Exeris-owned ingress; **Phase 2** opt-in Spring compatibility; **Phase 3** tx/context/persistence; **Phase 4A** events bridge (1.0 preview, default-off); **Phase 4B** flow/saga bridge (1.0 preview, default-off); **Phase 4C** graph integration (post-1.0); **Phase 5** edge gateway (`exeris-spring-runtime-gateway`, 1.0 preview, default-off; per ADR-021 — **not** an SCG compatibility bridge).
 
 When changes affect ownership model, mode semantics, module contracts, or compatibility guarantees → **trigger an ADR**, don't just edit code.
 

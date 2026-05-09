@@ -24,6 +24,7 @@ import org.springframework.lang.Nullable;
  * {@code finally}. If no filter is wired, the dispatcher runs without security context
  * (anonymous — no authentication attempted).
  */
+@CompatibilityMode
 public final class ExerisCompatDispatcher implements HttpHandler {
 
     private final ExerisSpringMvcBridge mvcBridge;
