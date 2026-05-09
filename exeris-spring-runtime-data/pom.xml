@@ -70,6 +70,13 @@
             <artifactId>assertj-core</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Phase 1c closure: PureModeClasspathGuardTest uses ArchUnit to enforce that
+             this module never picks up servlet/Netty/Reactor/WebFlux on the classpath. -->
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
 </project>
