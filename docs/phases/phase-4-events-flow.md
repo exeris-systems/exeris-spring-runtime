@@ -1,9 +1,30 @@
 # Phase 4: Events, Flow/Saga, and Graph Integration
 
-**Status:** Not Started (Proposed)
-**Depends on:** Phase 3 substantially complete (tx context propagation and persistence bridge operational)
-**Milestone:** M4
+**Status:**
+- **4A (Events) — Promoted to 1.0 preview**, planned for the `0.5.0-preview` release train
+- **4B (Flow/Saga) — Promoted to 1.0 preview**, planned for the `0.5.0-preview` release train
+- **4C (Graph) — Post-1.0**, candidate for the `1.1.x` train
+
+**Depends on:**
+- 4A: only `KernelProviders.EVENT_ENGINE` slot binding required; persistence is not on the critical path
+- 4B: Phase 3 substantially complete (tx context propagation operational). **Durable snapshot persistence via `FlowSnapshotStore` does NOT ship in `0.5.0-preview`.** 4B preview ships with `persistenceEnabled=false` only — flows live in process memory and are lost on restart. The `exeris.runtime.flow.snapshot-persistence.enabled` flag is held back until Phase 3 reaches production-ready and an Exeris-owned `FlowSnapshotStore` implementation lands in `exeris-spring-runtime-tx` or `exeris-spring-runtime-data`. Applications that need durable parked-flow recovery must wait for that follow-up.
+- 4C: kernel Graph SPI lab tests, ADR for graph backend dialect selection
+
+**Milestone:** M4 (split into M4-A/B for 1.0 preview, M4-C for post-1.0)
 **Mode:** Pure Mode primary; event-driven choreography available in both modes
+**Activation:** all three modules ship default-off behind property flags
+(`exeris.runtime.events.enabled`, `exeris.runtime.flow.enabled`, `exeris.runtime.graph.enabled` — `matchIfMissing = false`).
+Promotion to 1.0 preview does **not** weaken this rule; activation remains explicit.
+
+> **Why 4A/4B were promoted to 1.0 preview:** downstream Spring services migrating onto the runtime
+> need event-driven choreography and saga semantics during their migration, not after it. Shipping
+> these as preview default-off lets those services depend on the runtime without forcing 1.0 to wait
+> for Phase 4 to finish, while keeping the GA promise narrow until verification gates clear.
+
+> **ADR follow-up:** the implementation PR for `exeris-spring-runtime-events` must reference (or
+> create) an ADR pinning the EventBus ↔ Spring `ApplicationEventPublisher` boundary — that is where
+> ownership-inversion regressions are most likely to surface. This roadmap shift is timing-only and
+> does not by itself invalidate or replace any existing ADR.
 
 ---
 
@@ -455,12 +476,16 @@ Community allocation is bounded and documented. Enterprise is zero-allocation af
 
 ## New Module Additions Required
 
-Before Phase 4 implementation begins, the root `pom.xml` reactor and
-`docs/architecture/module-boundaries.md` must be updated to add:
+The split scope means the three new modules land in two waves. Each wave updates the root `pom.xml` reactor and `docs/architecture/module-boundaries.md` before code lands in that module.
 
-1. `exeris-spring-runtime-events` — new Maven module
-2. `exeris-spring-runtime-flow` — new Maven module
-3. `exeris-spring-runtime-graph` — new Maven module
+**Wave 1 — alongside 0.5.0-preview (M4-A/B, in 1.0 train):**
+
+1. `exeris-spring-runtime-events` — new Maven module (4A)
+2. `exeris-spring-runtime-flow` — new Maven module (4B)
+
+**Wave 2 — post-1.0 (M4-C):**
+
+3. `exeris-spring-runtime-graph` — new Maven module (4C)
 
 Module boundary rules for the two new modules:
 
@@ -549,24 +574,24 @@ Forbidden:
 
 ## Sprint Breakdown
 
-Phase 4 is intentionally planned as a proposed, post-1.0 workstream unless a hard dependency appears earlier. The sequence below is a backlog, not a committed 1.0 scope.
+Phase 4 is split across the 1.0 preview train and the post-1.0 train. Sprints 4.1–4.3 land in `0.5.0-preview` (M4-A/B). Sprint 4.4 stays scheduled for the post-1.0 train (M4-C); it is not committed 1.0 scope.
 
-### Sprint 4.1 — Events Module Foundation
+### Sprint 4.1 — Events Module Foundation _(0.5.0-preview, M4-A)_
 - Introduce an event publisher and listener registration over the Exeris `EventBus`.
 - Keep Spring `ApplicationEventPublisher` separate from runtime event ownership.
 - Exit: event publish/subscribe works through Exeris-owned adapters only.
 
-### Sprint 4.2 — Flow Template and Boot-Time Plan Compilation
+### Sprint 4.2 — Flow Template and Boot-Time Plan Compilation _(0.5.0-preview, M4-B)_
 - Register `ExerisFlowDefinition` beans and compile plans at startup.
 - Support schedule, park, wake, and complete lifecycle handling.
 - Exit: one representative saga path is operational in runtime tests.
 
-### Sprint 4.3 — Choreography and Capability Gating
+### Sprint 4.3 — Choreography and Capability Gating _(0.5.0-preview, M4-B)_
 - Register mappers only when the kernel advertises support.
 - Preserve explicit lifecycle and shutdown ordering.
 - Exit: event-driven start/wake is verified where supported and safely skipped where not.
 
-### Sprint 4.4 — Graph Integration Spike
+### Sprint 4.4 — Graph Integration Spike _(post-1.0, M4-C)_
 - Add metadata registration and a thin `ExerisGraphTemplate`.
 - Keep JPA, Spring Data, and reactive APIs out of scope.
 - Exit: traversal and node/edge CRUD work in an opt-in lab profile.
