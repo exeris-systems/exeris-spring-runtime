@@ -62,6 +62,15 @@ public final class ExerisPlatformTransactionManager extends AbstractPlatformTran
     private static final long serialVersionUID = 1L;
 
     /**
+     * Diagnostic logger. Used at {@code DEBUG} level only — never on the request hot path.
+     * The transaction manager is silent in normal operation; messages here surface
+     * conditions that are intentionally swallowed to preserve commit/rollback exception
+     * semantics (e.g. pool-return failure during connection cleanup).
+     */
+    private static final System.Logger LOGGER =
+            System.getLogger(ExerisPlatformTransactionManager.class.getName());
+
+    /**
      * Optional JDBC resource callback for integration bridges (e.g., {@code ExerisDataSource}).
      * Null when no JDBC compat bridge is active.
      */
@@ -263,8 +272,12 @@ public final class ExerisPlatformTransactionManager extends AbstractPlatformTran
         if (connection != null) {
             try {
                 connection.close();
-            } catch (RuntimeException ignored) {
-                // pool return failure must not override original exception
+            } catch (RuntimeException ex) {
+                // pool return failure must not override original exception (commit/rollback outcome
+                // takes precedence). Surface at DEBUG so a pool-return regression is diagnosable
+                // without changing exception semantics.
+                LOGGER.log(System.Logger.Level.DEBUG,
+                        "Failed to close PersistenceConnection during transaction finalize", ex);
             }
         }
     }
