@@ -71,7 +71,7 @@ class ExerisRequestParamArgumentResolverTest {
     }
 
     @Test
-    void invalidEnumValueProducesIllegalArgumentException() throws Exception {
+    void invalidEnumValueProducesIllegalArgumentException() {
         // Bad enum literals must surface as IllegalArgumentException, matching the
         // surface the compat error mapper translates to HTTP 400.
         ExerisNativeWebRequest webRequest = webRequest("/orders?status=NOT_A_STATUS");

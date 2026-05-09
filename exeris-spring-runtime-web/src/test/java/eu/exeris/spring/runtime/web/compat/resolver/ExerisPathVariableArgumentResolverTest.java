@@ -96,21 +96,17 @@ class ExerisPathVariableArgumentResolverTest {
     static final class TestController {
         @SuppressWarnings("unused")
         void acceptUuid(@PathVariable("id") UUID id) {
-            consume(id);
+            // no-op: only the @PathVariable annotation matters for resolver tests
         }
 
         @SuppressWarnings("unused")
         void acceptStatus(@PathVariable("status") Status status) {
-            consume(status);
+            // no-op: only the @PathVariable annotation matters for resolver tests
         }
 
         @SuppressWarnings("unused")
         void listPathVar(@PathVariable("ids") List<String> ids) {
-            consume(ids);
-        }
-
-        private static void consume(Object... ignored) {
-            // no-op
+            // no-op: only the @PathVariable annotation matters for resolver tests
         }
     }
 

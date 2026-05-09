@@ -58,15 +58,20 @@ final class ExerisCompatTypeConverter {
         try {
             Object result = conversionService.convert(raw, type);
             if (result == null && type.isPrimitive()) {
-                // Do not include the raw value in the exception message: it is user-controlled
-                // (query/path/header) and would flow into logs verbatim (CWE-117/532).
                 throw new IllegalArgumentException(
                         "Cannot convert request value to primitive " + type.getSimpleName());
             }
             return result;
         } catch (ConversionException ex) {
+            // Deliberately drop the cause: ConversionFailedException.getMessage() embeds
+            // the raw user-controlled value (CWE-117 / CWE-532). Exposing it through the
+            // cause chain would let the value flow into logs verbatim once the surrounding
+            // error mapper logs the IllegalArgumentException. Keep the failing target type
+            // and the original exception class name for diagnostics; the value itself stays
+            // out of the message.
             throw new IllegalArgumentException(
-                    "Cannot convert request value to " + type.getSimpleName(), ex);
+                    "Cannot convert request value to " + type.getSimpleName()
+                            + " (cause: " + ex.getClass().getSimpleName() + ")");
         }
     }
 }
