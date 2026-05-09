@@ -1,7 +1,7 @@
 # Architecture Overview
 
 **Repository:** `exeris-spring-runtime`  
-**Version:** 0.1.0-SNAPSHOT  
+**Version:** 0.5.0-SNAPSHOT  
 **Status:** Phase 0 — Architecture Spike  
 **Kernel target:** `exeris-kernel` 0.5.0-SNAPSHOT (TRL-3, Java 26)
 
