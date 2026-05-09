@@ -154,6 +154,36 @@ class ExerisBootstrapIntegrationTest {
     }
 
     @Test
+    void prepareBootstrap_publishesLegacyHttpAliasesFromRuntimeNetworkProperties() {
+        Map<String, String> previous = captureKernelHttpProperties();
+        clearKernelHttpProperties();
+
+        try (var ctx = createContext(Map.of(
+                "exeris.runtime.auto-start", "false",
+                "exeris.runtime.network.port", "8181"
+        ))) {
+            ExerisSpringConfigProvider provider = ctx.getBean(ExerisSpringConfigProvider.class);
+
+            provider.prepareBootstrap();
+            try {
+                assertThat(System.getProperty("exeris.http.mode")).isEqualTo("SERVER");
+                assertThat(System.getProperty("http.mode")).isEqualTo("SERVER");
+                assertThat(System.getProperty("exeris.http.port")).isEqualTo("8181");
+                assertThat(System.getProperty("http.port")).isEqualTo("8181");
+            } finally {
+                provider.clearBootstrap();
+            }
+
+            assertThat(System.getProperty("exeris.http.mode")).isEqualTo(previous.get("exeris.http.mode"));
+            assertThat(System.getProperty("http.mode")).isEqualTo(previous.get("http.mode"));
+            assertThat(System.getProperty("exeris.http.port")).isEqualTo(previous.get("exeris.http.port"));
+            assertThat(System.getProperty("http.port")).isEqualTo(previous.get("http.port"));
+        } finally {
+            restoreKernelHttpProperties(previous);
+        }
+    }
+
+    @Test
     void lifecycleStartup_withHttpHandlerOverride_doesNotFailFromUnboundScopedValue() throws Exception {
         int port = 0;
         withKernelHttpSystemProperties(port, () -> {
@@ -422,7 +452,7 @@ class ExerisBootstrapIntegrationTest {
         throw new TimeoutException("Exeris lifecycle did not begin startup within " + timeout);
     }
 
-    private static void withKernelHttpSystemProperties(int port, Runnable action) {
+    private static Map<String, String> captureKernelHttpProperties() {
         Map<String, String> previous = new LinkedHashMap<>();
         previous.put("exeris.http.mode", System.getProperty("exeris.http.mode"));
         previous.put("exeris.http.bindHost", System.getProperty("exeris.http.bindHost"));
@@ -430,6 +460,25 @@ class ExerisBootstrapIntegrationTest {
         previous.put("http.mode", System.getProperty("http.mode"));
         previous.put("http.bindHost", System.getProperty("http.bindHost"));
         previous.put("http.port", System.getProperty("http.port"));
+        return previous;
+    }
+
+    private static void clearKernelHttpProperties() {
+        captureKernelHttpProperties().keySet().forEach(System::clearProperty);
+    }
+
+    private static void restoreKernelHttpProperties(Map<String, String> previous) {
+        previous.forEach((key, value) -> {
+            if (value == null) {
+                System.clearProperty(key);
+            } else {
+                System.setProperty(key, value);
+            }
+        });
+    }
+
+    private static void withKernelHttpSystemProperties(int port, Runnable action) {
+        Map<String, String> previous = captureKernelHttpProperties();
 
         System.setProperty("exeris.http.mode", "SERVER");
         System.setProperty("exeris.http.bindHost", "127.0.0.1");
@@ -441,13 +490,7 @@ class ExerisBootstrapIntegrationTest {
         try {
             action.run();
         } finally {
-            previous.forEach((key, value) -> {
-                if (value == null) {
-                    System.clearProperty(key);
-                } else {
-                    System.setProperty(key, value);
-                }
-            });
+            restoreKernelHttpProperties(previous);
         }
     }
 

@@ -58,6 +58,13 @@
             <artifactId>spring-context</artifactId>
         </dependency>
 
+        <!-- Spring Boot autoconfigure — @AutoConfiguration, @ConditionalOnClass / @ConditionalOnProperty
+             / @ConditionalOnMissingBean used by ExerisTransactionAutoConfiguration. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+
         <!-- Test scope -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>

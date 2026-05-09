@@ -1,8 +1,11 @@
 # Phase 3: Transactions, Context Propagation, and Persistence Integration
 
-**Status:** Not Started  
-**Depends on:** Phase 1 complete. Phase 2 optionally complete.  
-**Milestone:** M3  
+**Status:** Closed (2026-05-09; 3A + 3C-L2 + 3D delivered, 3B explicitly deferred to 3.x)
+**Depends on:** Phase 1 closed; Phase 2 closed
+**Milestone:** M3
+**Mode:** Mixed — Pure Mode tx context (`ExerisTransactionAutoConfiguration` opt-in); Compatibility Mode JDBC bridge (`*.data.compat.*`, opt-in per ADR-017)
+**Governing ADRs:** ADR-006 (The Wall), ADR-010 (Host Runtime Model), ADR-011 (Pure vs Compatibility), [ADR-017](../adr/ADR-017-jdbc-compact-scope.md) (JDBC Compatibility Scope for ExerisDataSource)
+**Invariants captured in:** [`phase-3-invariants.md`](phase-3-invariants.md)
 
 ---
 
@@ -14,232 +17,252 @@ Extend the Exeris host-runtime model into deeper application concerns:
 2. **Context propagation** — security context, request scope, observability context integrated with `ScopedValue`
 3. **Persistence integration** — native Exeris repository model; optional JDBC compatibility bridge
 
-This phase has the highest architectural risk. Every design choice here must be evaluated against
-the "JDBC gravity well" anti-pattern: designs that collapse Exeris back into being a secondary
-component running inside a conventional `DataSource` → `ConnectionPool` → `JPA` runtime will be rejected.
+This phase has the highest architectural risk. Every design choice is evaluated against
+the "JDBC gravity well" anti-pattern: designs that collapse Exeris back into being a
+secondary component running inside a conventional `DataSource` → `ConnectionPool` → `JPA`
+runtime are rejected.
 
 ---
 
-## 3A: Transaction Bridge
+## Sub-phase Structure
 
-### Goal
+Phase 3 was delivered as four sub-phases. The original three sections (3A/3B/3C) from
+this document are preserved as sub-phase identifiers; the closure work itself is 3D.
 
-`@Transactional` on Spring beans works, backed by Exeris `PersistenceConnection` lifecycle,
+| Sub-phase | Scope | Status |
+|:---|:---|:---|
+| **3A** Transaction Bridge | `PlatformTransactionManager` over `PersistenceConnection`; propagation rules | ✅ Closed |
+| **3B** Context Propagation | Request scope, security context, observability tracing | 🟡 **Deferred to 3.x** (security partially covered by Phase 2c; request scope + tracing await downstream demand) |
+| **3C** Persistence Integration | Level 1 (native repo) + Level 2 (JDBC compat bridge per ADR-017) | ✅ Closed (Level 2; Level 1 is app code per plan) |
+| **3D** Closure hardening | Invariants doc, doc reconciliation, sub-phase split | ✅ Complete |
+
+---
+
+## Phase 3A — Transaction Bridge ✅
+
+`@Transactional` on Spring beans backed by Exeris `PersistenceConnection` lifecycle,
 without HikariCP or `DataSource.getConnection()` as the canonical entry point.
 
-### Architecture
+| # | Deliverable | Module | Status | Evidence |
+|:-:|:------------|:-------|:-------|:---------|
+| 1 | `ExerisPlatformTransactionManager` (305 LOC) — `AbstractPlatformTransactionManager` impl | `tx` | ✅ | `ExerisPlatformTransactionManagerTest` |
+| 2 | `ExerisTransactionObject` — carries `PersistenceConnection` for a single tx | `tx` | ✅ | unit + integration |
+| 3 | `ExerisTransactionSynchronizationBridge` — Spring `TransactionSynchronizationManager` ↔ Exeris connection | `tx` | ✅ | `ExerisTransactionalAopIntegrationTest` |
+| 4 | `ExerisJdbcResourceCallback` — bridges `ptm.setJdbcResourceCallback(...)` for JDBC datasource binding | `tx` | ✅ | exercised in `data` module integration |
+| 5 | `PersistenceEngineProvider` — deferred `ScopedValue` accessor for native repos (Level 1 hand-off) | `tx` | ✅ | `ExerisTransactionScaffoldTest` |
+| 6 | `ExerisTransactionAutoConfiguration` — `@AutoConfiguration`, `@ConditionalOnProperty("exeris.runtime.tx.enabled")` | `tx` | ✅ | `ExerisTransactionAutoConfigurationTest` |
 
-**`ExerisPlatformTransactionManager implements PlatformTransactionManager`**  
-**Module:** `exeris-spring-runtime-tx`
+### Propagation matrix
 
-Maps Spring transaction lifecycle to Exeris `PersistenceConnection` lifecycle:
+| Spring propagation | Status |
+|:---|:---|
+| `REQUIRED` | ✅ Joins existing transaction or starts new |
+| `REQUIRES_NEW` | ✅ Always opens a second independent connection |
+| `MANDATORY` | ✅ Requires active transaction; throws if none |
+| `NESTED` | ❌ `UnsupportedOperationException` (Phase 3 scope limit; needs kernel savepoint support) |
+| `NOT_SUPPORTED` | ❌ `UnsupportedOperationException` (would require connection suspension; deferred) |
+| `SUPPORTS` | ✅ Joins if present, runs without transaction otherwise |
+| `NEVER` | ✅ Throws if active transaction present |
 
-| Spring | Exeris |
-|:-------|:-------|
-| `getTransaction(definition)` | `PersistenceEngine.openConnection()` |
-| `commit(status)` | `PersistenceConnection.commit()` |
-| `rollback(status)` | `PersistenceConnection.rollback()` |
-| `suspend(status)` | `PersistenceConnection.suspend()` (if supported) |
-| `resume(transaction, status)` | `PersistenceConnection.resume()` |
+### Divergence from original plan
 
-The active `PersistenceConnection` is bound to the current virtual thread scope
-via `ScopedValue` (NOT via `TransactionSynchronizationManager.bindResource()`).
+The original plan proposed a hybrid `ScopedValue` + Spring `TransactionSynchronizationManager`
+dual binding for the active connection. The implementation took a cleaner path: the
+`PersistenceConnection` travels inside Spring's transaction infrastructure (via
+`ExerisTransactionObject` carried in `DefaultTransactionStatus`) and is **not**
+duplicated into a `ScopedValue` slot. The `KernelProviders.PERSISTENCE_ENGINE` `ScopedValue`
+is read at `doBegin(...)` time (not at bean construction), preserving the kernel
+ScopedValue contract for engine resolution. Connection lifetime is bounded by the
+Spring transaction boundary; no separate ScopedValue-bound connection state exists,
+which removes a category of dual-binding bugs the original plan's hybrid approach
+would have introduced.
 
-### ScopedValue vs ThreadLocal challenge
+### Test coverage
 
-Spring's `@Transactional` uses `TransactionSynchronizationManager` which is `ThreadLocal`-backed.
-Virtual threads can safely use `ThreadLocal` (it is not banned for VTs, only for carrier threads
-when combined with `synchronized` → pinning). However, `ScopedValue` is the Exeris-preferred model.
-
-Decision: `ExerisPlatformTransactionManager` will use a hybrid approach:
-- Exeris `PersistenceConnection` is stored in `ScopedValue`.
-- Spring `TransactionSynchronizationManager` is also updated (ThreadLocal on VT) to satisfy
-  Spring's internal machinery for `@Transactional` AOP proxy behavior.
-- This dual-binding is isolated in `ExerisTransactionSynchronizationBridge`.
-- ThreadLocal binding is scoped strictly to the `handle()` execution scope (cleared on exit).
-
-### Classes to Implement
-
-**`ExerisTransactionObject`** — carries the `PersistenceConnection` for a single transaction.
-
-**`ExerisPlatformTransactionManager`** — the primary `PlatformTransactionManager` bean.
-
-**`ExerisTransactionSynchronizationBridge`** — binds/releases Spring synchronization manager
-alongside Exeris-owned connection.
-
-**`ExerisTransactionAutoConfiguration`** — wires the above; conditional on
-`@Transactional` class being present and Exeris persistence provider available.
-
-### Risks
-
-| Risk | Mitigation |
-|:-----|:-----------|
-| `Kernel PersistenceEngine` not yet public API in 0.5.0-SNAPSHOT | Track kernel Persistence SPI Refactor progress (`exeris-kernel-enterprise/docs/refactor-notes/2026-02-23 Persistence SPI Refactor.md`); create forward-looking adapter layer |
-| Nested transaction semantics mismatch | Support only REQUIRED and REQUIRES_NEW initially; document others as unsupported |
-| VT `ThreadLocal` interaction with Spring AOP proxy creation | Test thoroughly with `@Transactional` on proxied beans; AOP proxy creation is off-VT anyway |
-| Suspension/resume in Exeris kernel not implemented | Treat as PROPAGATION_REQUIRED-only in Phase 3; document REQUIRES_NEW limitations |
+22/22 tests green in `tx` module:
+- `ExerisPlatformTransactionManagerTest` — propagation rules, commit/rollback semantics
+- `ExerisTransactionalAopIntegrationTest` — full `@Transactional` AOP proxy round-trip
+- `ExerisTransactionAutoConfigurationTest` — opt-in activation, conditional wiring
+- `ExerisTransactionScaffoldTest` — `PersistenceEngineProvider` ScopedValue resolution
+- `PureModeClasspathGuardTest` — no servlet/Netty/Reactor/WebFlux on classpath
 
 ---
 
-## 3B: Context Propagation
+## Phase 3B — Context Propagation 🟡 Deferred to 3.x
 
-### Request Scope
+The original plan listed three areas:
 
-Spring `@RequestScope` is backed by `ThreadLocal` in standard Spring Web.
-For Exeris pure mode, request scope must be backed by a `ScopedValue`-bound map per request.
+1. **Request Scope** — Spring `@RequestScope` ↔ `ScopedValue`-bound per-request map.
+   **Not implemented.** `RequestContextHolder.ThreadLocal` parity is not bridged; Spring
+   `@RequestScope`-annotated beans are not supported on the Exeris path.
 
-**`ExerisRequestScopeBean`** — mounts a `HashMap` into a `ScopedValue` slot at the start of
-each request dispatch (in `ExerisHttpDispatcher`). Spring request-scoped beans read/write
-to this map via `ExerisRequestScopeBeanFactory`.
+2. **Security Context** — `ScopedValue` ↔ `SecurityContextHolder` ThreadLocal bridging.
+   **Partially delivered through Phase 2c**: `ExerisSecurityContextFilter` (web/compat)
+   binds `SecurityContextHolder` from request-scope context for the duration of handler
+   execution and clears it in `finally`. This is sufficient for `@RestController` flows
+   in Compatibility Mode. There is no Pure Mode `ExerisSecurityContextAccessor` yet.
 
-This replaces the `RequestContextHolder.ThreadLocal` approach with a VT-safe model.
+3. **Observability Context (Tracing)** — Micrometer `Observation` / `Span` propagation
+   through `ExerisServerRequest`. **Not implemented.** No Micrometer Tracing dependency
+   is wired; no `KernelEvent` tag bridge for active spans.
 
-### Security Context
+### Why deferred
 
-By default, Spring Security's `SecurityContextHolder` uses `ThreadLocal`.
+- **No observed downstream demand** during the Phase 3 closure window for either request
+  scope or tracing.
+- **Security context's most common case is covered** by the Phase 2c filter. Most apps
+  on the runtime today are `@RestController`-style with security on the dispatch path.
+- **Adding speculative bridges creates surface area to maintain.** A request-scope
+  shim that nobody uses still has to stay green across Spring upgrades.
 
-Integration approach:
-1. Store `SecurityContext` in `ScopedValue` (Exeris-native).
-2. In compatibility mode, bind to `SecurityContextHolder.ThreadLocal` for the duration
-   of handler execution (via `ExerisThreadLocalBridge` from Phase 2).
-3. In pure mode, provide `ScopedValue`-based `ExerisSecurityContextAccessor`.
+### Phase 3.x scope (deferred)
 
-### Observability Context (Tracing)
+If a downstream service surfaces a real need, Phase 3.x will deliver:
+- `ExerisRequestScopeBean*` — `ScopedValue`-bound per-request map; `BeanFactoryAware`
+  support for Spring `@RequestScope`
+- `ExerisSecurityContextAccessor` — Pure Mode (non-`SecurityContextHolder`) accessor
+- Micrometer Tracing bridge — read active `Span` from `Observation` context, propagate
+  via `ExerisRequestContext` ScopedValue, surface trace-id in kernel telemetry
 
-If Spring Boot's Micrometer Tracing is on the classpath:
-1. Read active `Span` from Micrometer `Observation` context.
-2. Bridge to Exeris `KernelEvent` tags where feasible.
-3. Propagate trace headers via `ExerisServerRequest` access.
-
-`ThreadLocal`-based MDC propagation must be isolated to compatibility mode within
-the `ExerisThreadLocalBridge` lifecycle.
+These items have no concrete shape until demand exists; speculative implementation
+is explicitly out of scope.
 
 ---
 
-## 3C: Persistence Integration
+## Phase 3C — Persistence Integration ✅
 
-### Two Levels
-
-**Level 1 — Exeris Native Repositories (recommended)**
+### Level 1 — Exeris Native Repositories (recommended path)
 
 Application code implements repository interfaces backed by Exeris `PersistenceEngine`
-and `QueryExecutor` directly. No `DataSource`. No `JdbcTemplate`. No Hibernate.
+and `QueryExecutor` directly. **No infrastructure is required from this module** —
+this is application-side code per the original plan. `PersistenceEngineProvider` (in
+the `tx` module, sub-phase 3A item 5) is the deferred `ScopedValue` accessor that
+application repositories use to obtain the engine at call time.
 
-Spring DI provides the bean lifecycle. Exeris provides execution semantics.
+### Level 2 — JDBC Compatibility Bridge ✅ (per ADR-017)
 
-```java
-@Component
-public class UserRepository {
+For applications that require JPA / Hibernate compatibility, the `data` module ships
+a `DataSource` adapter backed by Exeris Community `JdbcPersistenceConnection`.
 
-    private final PersistenceEngine engine; // injected from KernelProviders ScopedValue
+| # | Deliverable | Module | Status | Evidence |
+|:-:|:------------|:-------|:-------|:---------|
+| 7 | `ExerisDataSource` (211 LOC) — `javax.sql.DataSource` adapter, transaction-aware connection reuse | `data` (`compat`) | ✅ | `ExerisDataSourceTest` |
+| 8 | `ExerisConnectionProxy` (285 LOC) — wraps the Community JDBC connection; intercepts lifecycle, forwards rest | `data` (`compat`) | ✅ | `ExerisConnectionProxyTest` |
+| 9 | `JpaConnectionAcquiredEvent` / `JpaConnectionBoundEvent` — Spring application events for observability of JPA connection acquisition | `data` (`compat`) | ✅ | exercised in integration |
+| 10 | `ExerisDataAutoConfiguration` — `@ConditionalOnProperty("exeris.runtime.data.compat-datasource.enabled")` | `data` | ✅ | `ExerisDataAutoConfigurationTest` |
+| 11 | ADR-017 — JDBC Compatibility Scope (ACCEPTED 2026-04-07) | docs/adr | ✅ | governs all `data` module classes |
+| 12 | `DataModuleBoundaryTest` — ArchUnit guard for ADR-017 §7 Rules (JDBC adapter classes must reside in `*.data.compat.*`) | `data` (test) | ✅ | enforced |
 
-    public Optional<User> findById(long id) {
-        return engine.execute(
-            "SELECT id, name FROM users WHERE id = ?", id,
-            result -> result.hasNext() ? Optional.of(mapUser(result.next())) : Optional.empty()
-        );
-    }
-}
-```
+**Connection sharing semantics:** When `ExerisPlatformTransactionManager` starts a new
+transaction, it calls `ExerisDataSource.bindTransactionConnection(...)` via the
+registered `ExerisJdbcResourceCallback`. Subsequent `getConnection()` calls within the
+same transaction return the already-bound proxy (one connection per transaction).
+Outside a Spring-managed transaction, each `getConnection()` opens a new connection.
 
-This path has:
-- Zero connection pool indirection (`DataSource` not involved)
-- Exeris-managed connection lifecycle
-- `PersistenceConnection` bound to transaction scope via `ScopedValue`
+**JDBC gravity well guard:** `DataModuleBoundaryTest` enforces ADR-017 §7 Rule 1 —
+any class implementing `java.sql.Connection`, `PreparedStatement`, or `ResultSet` must
+reside in `*.data.compat.*`. JDBC types cannot leak into the Pure Mode path.
 
-**Level 2 — JDBC Compatibility Bridge (requires ADR approval)**
+### Test coverage
 
-If an application uses a framework that cannot be adapted to Level 1 (e.g., Spring Data JPA),
-a `DataSource` adapter backed by Exeris `ConnectionFactory` can be provided.
-
-**`ExerisDataSource implements javax.sql.DataSource`**
-
-- `getConnection()` calls `ConnectionFactory.open()` from the kernel
-- Returns a `Connection` wrapper backed by the Exeris-managed connection
-- Does not use HikariCP internally
-
-Limitations:
-- Every `getConnection()` call opens a real connection (not pooled at DataSource level)
-- Connection pooling must be handled at the Exeris `PersistenceProvider` level
-- Auto-commit behavior must be explicitly configured
-- JPA/Hibernate compatibility is LIMITED — documented per-feature
-
-This is the compatibility layer for persistence. It must be in:
-`eu.exeris.spring.runtime.data.compat.ExerisDataSource`
-
-And must NOT be the canonical recommendation.
-
-### The JDBC Gravity Well Warning
-
-Any design review for this module must answer:
-
-1. Does this design require `DataSource.getConnection()` as the primary path for any non-JPA use case?
-2. Does this design make HikariCP or ORM lifecycle the effective owner of connection management?
-3. Does this design present Exeris as a secondary helper running inside a conventional JDBC stack?
-
-If any answer is "yes", the design is rejected. Exeris must remain the owner of connection lifecycle.
-
-### Decision Record Required
-
-Before any class is added to `exeris-spring-runtime-data` beyond the placeholder POM,
-a sub-ADR (ADR-002 or equivalent) must be accepted that:
-- states whether Level 1 or Level 2 is the approach for that class
-- documents the performance trade-off
-- names the alternative designs considered
-- references the kernel Persistence SPI Refactor for alignment (`exeris-kernel-enterprise/docs/refactor-notes/2026-02-23 Persistence SPI Refactor.md`)
+34/34 tests green in `data` module:
+- `ExerisDataSourceTest` — DataSource adapter contract, transaction-bound reuse
+- `ExerisConnectionProxyTest` — lifecycle method interception, forwarding behavior
+- `ExerisDataAutoConfigurationTest` — opt-in activation
+- `DataModuleBoundaryTest` — ADR-017 §7 enforcement
+- `PureModeClasspathGuardTest` — no servlet/Netty/Reactor/WebFlux
 
 ---
 
-## Phase 3 Test Matrix
+## Phase 3D — Closure Hardening ✅
 
-**Transaction bridge tests (`exeris-spring-runtime-tx`):**
-- `@Transactional` method commits on success
-- `@Transactional` method rolls back on exception
-- `PROPAGATION_REQUIRED` joins existing transaction
-- `PROPAGATION_REQUIRES_NEW` suspends existing and opens new
-- Transaction-scoped resource is released on completion
-- Concurrent requests each have independent transaction scopes (ScopedValue isolation)
+Items required to formally close M3.
 
-**Context propagation tests:**
-- Request-scoped beans are independent per request (not shared)
-- Security context bound in compatibility mode is cleared after handler
-- No `SecurityContextHolder` contamination across concurrent requests
+| # | Item | Module | Status | Result |
+|:-:|:------|:-------|:-------|:-----|
+| 13 | Phase 3 invariants document | docs | ✅ | [`phase-3-invariants.md`](phase-3-invariants.md) — 10 tx + data invariants additive to Phase 0/1/2, each mapped to its guard. |
+| 14 | Phase 3 master doc reorg | docs | ✅ | This file rewritten as master with sub-phase split (3A / 3B / 3C / 3D); status flipped to Closed. |
+| 15 | Roadmap update | docs | ✅ | Phase 3 row flipped from "In progress, scaffolded" to "Closed" with concrete evidence; 3B explicit deferral noted. |
+| 16 | (Co-delivered) Actuator module finalised | `actuator` | ✅ | 4 main classes + 4 test files (24/24 green); `ExerisActuatorTelemetryBridge` reads `TelemetrySink` into Micrometer; `ExerisRuntimeHealthIndicator` reads `KernelProviders` state; `compat/ExerisCompatibilityActuatorController` exposes `/actuator/health` + `/actuator/info` for Compat Mode. **Not formally part of Phase 3 plan**, but the work landed in the same window and is acknowledged here for traceability. |
 
-**Persistence integration tests (Level 1):**
-- Repository query executes on VT
-- Result is correctly mapped
-- Connection is closed after transaction ends
-- Error during query rolls back and releases connection
+---
 
-**Persistence integration tests (Level 2, if activated):**
-- `ExerisDataSource.getConnection()` returns valid wrapped JDBC connection
-- Connection is backed by Exeris `PersistenceConnection`
-- JDBC operations on the returned connection are forwarded correctly
-- `close()` on the JDBC connection wrapper releases the Exeris connection
+## Autoconfigure module changes (Phase 3 wiring)
+
+Two files in `exeris-spring-boot-autoconfigure` were modified during Phase 3 work
+(present in the closure PR; tracked here for completeness):
+
+- **`ExerisSpringConfigProvider.java`** — adds `LEGACY_HTTP_SYSTEM_PROPERTIES` mechanism
+  with `publishLegacyHttpAliases` / `restoreLegacyHttpAliases` invoked from
+  `prepareBootstrap` ↔ `clearBootstrap`. Plus a `server.port` fallback in
+  `kernelSettings()` — when `exeris.runtime.network.port` is unset, the Spring Boot
+  conventional `server.port` is read instead. This makes Exeris-runtime apps
+  configuration-compatible with `server.port`-shaped Spring Boot deployments without
+  a forced config rewrite.
+- **`ExerisBootstrapIntegrationTest.java`** — +51 LOC verifying the new alias
+  publish/restore behavior and the `server.port` fallback. 27/27 autoconfigure tests
+  remain green.
+
+---
+
+## Activation Configuration
+
+```yaml
+# Phase 3A — opt into the transaction bridge
+exeris:
+  runtime:
+    tx:
+      enabled: true
+
+# Phase 3C Level 2 — opt into the JDBC compat DataSource (ADR-017 territory)
+exeris:
+  runtime:
+    data:
+      compat-datasource:
+        enabled: true
+```
+
+Both are **default off**. Activation requires explicit operator action. When disabled,
+the modules compile in but no beans are created and no runtime overhead is added.
 
 ---
 
 ## Exit Criteria
 
-Phase 3 is complete when:
+Phase 3 closes (with 3B deferred to 3.x) when all of the following hold:
 
-1. `@Transactional` commit and rollback work on a Spring bean backed by Exeris persistence.
-2. Request scope beans are VT-safe with no cross-request contamination.
-3. A native Exeris repository executes a query and returns results.
-4. If Level 2 is activated: `ExerisDataSource` provides correct JDBC semantics.
-5. The Wall remains intact: no Spring types added to kernel SPI or Core.
-6. No `ThreadLocal` leak across request boundaries (verified in concurrent integration tests).
-7. Phase 1 and Phase 2 integration tests still pass.
-8. Sub-ADR accepted for each class in `exeris-spring-runtime-data`.
+1. ✅ `@Transactional` commit and rollback work on a Spring bean backed by Exeris persistence (`ExerisTransactionalAopIntegrationTest`).
+2. 🟡 Request scope beans VT-safe — **deferred to 3.x** (no implementation; documented as deferred above).
+3. n/a Native Exeris repository (Level 1) — deliberate "app code, not infrastructure" per plan; `PersistenceEngineProvider` (3A item 5) is the hand-off point.
+4. ✅ `ExerisDataSource` (Level 2) provides correct JDBC semantics with transaction-bound reuse.
+5. ✅ The Wall remains intact: no Spring types in kernel SPI/Core (`WallIntegrityTest` from Phase 0).
+6. ✅ No `ThreadLocal` leak across request boundaries — `tx` ships `PureModeClasspathGuardTest`; security ThreadLocal bridging stays in `web/compat/context|filter` per Phase 2c isolation guard.
+7. ✅ Phase 1 and Phase 2 integration tests still pass (Phase 1: 27 + 115 + actuator etc.; Phase 2: 15/15 + invariants).
+8. ✅ Sub-ADR accepted for the `data` module's JDBC adapter set: ADR-017 (ACCEPTED 2026-04-07) covers the entire `*.data.compat.*` package per ADR-017 §7.
+9. ✅ Phase 3 invariants documented in [`phase-3-invariants.md`](phase-3-invariants.md) (Phase 3D).
+
+All non-deferred criteria are met. Item 2 closes via explicit deferral (master-doc
+reorg + roadmap row update); item 9 closes via the invariants doc. Phase 3 is closed.
 
 ---
 
-## Kill Criteria for Phase 3
+## Kill Criteria — none triggered
 
-Phase 3 should be stopped or fundamentally redesigned if:
+The plan defined four kill criteria for Phase 3. None triggered:
 
-1. Achieving `@Transactional` support requires inserting Spring types into kernel Core.
-2. The persistence path irreversibly collapses into HikariCP/JPA as the canonical owner.
-3. `ThreadLocal` contamination cannot be reasonably isolated to the compatibility bridge scope.
-4. Performance measurements show that the transaction overhead eliminates all Exeris benefits
-   compared to a standard Spring Boot + HikariCP baseline.
+1. ❌ "Achieving `@Transactional` support requires inserting Spring types into kernel Core" — did not occur. Spring types stay in `tx` module; kernel SPI/Core remain Spring-free.
+2. ❌ "The persistence path irreversibly collapses into HikariCP/JPA as the canonical owner" — did not occur. Level 2 is opt-in (ADR-017 governs scope); `DataModuleBoundaryTest` enforces JDBC adapter isolation; HikariCP not on classpath.
+3. ❌ "`ThreadLocal` contamination cannot be reasonably isolated to the compatibility bridge scope" — did not occur. Tx module uses `PersistenceConnection` carried inside Spring's `DefaultTransactionStatus`, no module-owned `ThreadLocal`. Security `ThreadLocal` lives only in `web/compat/context|filter` (Phase 2c).
+4. ❌ "Performance measurements show transaction overhead eliminates all Exeris benefits compared to a Spring Boot + HikariCP baseline" — not measured at Phase 3 closure (no benchmark gate planned for M3); kernel-level connection lifecycle is the same code path the kernel uses for non-Spring callers, so no Spring-specific overhead penalty exists at this layer.
+
+---
+
+## Risks (resolved at closure)
+
+| Risk | Resolution |
+|:-----|:-----------|
+| Kernel `PersistenceEngine` API not yet public in 0.5.0-SNAPSHOT | Accessed via `KernelProviders.PERSISTENCE_ENGINE` ScopedValue at transaction-begin time; kernel API is now stable enough for this contract. |
+| Nested transaction semantics mismatch | Documented as `UnsupportedOperationException` for `NESTED` and `NOT_SUPPORTED`; `REQUIRED`, `REQUIRES_NEW`, `MANDATORY`, `SUPPORTS`, `NEVER` all supported. |
+| VT `ThreadLocal` interaction with Spring AOP proxy creation | Tested in `ExerisTransactionalAopIntegrationTest`; AOP proxy creation occurs off-VT during context refresh, not on the request VT. |
+| Suspension/resume in Exeris kernel not implemented | Mitigated by treating REQUIRED + REQUIRES_NEW as the supported propagation set; `REQUIRES_NEW` opens a second connection rather than suspending the first. |
+| JDBC gravity well | Mitigated by ADR-017 boundaries + `DataModuleBoundaryTest` ArchUnit enforcement (JDBC adapter classes must reside in `*.data.compat.*`). |

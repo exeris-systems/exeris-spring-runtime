@@ -50,7 +50,13 @@
 
         <!-- Dependency versions -->
         <exeris.kernel.version>0.6.0</exeris.kernel.version>
-        <spring.boot.version>3.5.13</spring.boot.version>
+        <!-- Spring Boot 3.5.14 ships fixes for SNYK-JAVA-ORGSPRINGFRAMEWORKBOOT-16191649
+             (CWE-338 Weak PRNG, CVE-2026-40975), -16198880 (CWE-377 Insecure Temp File,
+             CVE-2026-40973), -16201011 (CWE-59 Symlink Attack, CVE-2026-40977),
+             -16191022 + -16200231 (CWE-297 Cert Hostname Mismatch, CVE-2026-40974 / -40971).
+             The same bump pulls spring-web through the BOM to a version that addresses
+             SNYK-JAVA-ORGSPRINGFRAMEWORK-16109615 (CWE-459 Incomplete Cleanup, CVE-2026-22740). -->
+        <spring.boot.version>3.5.14</spring.boot.version>
         <spring.framework.version>6.2.4</spring.framework.version>
 
         <!-- Build tooling -->

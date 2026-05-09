@@ -73,6 +73,15 @@
             <artifactId>spring-context</artifactId>
         </dependency>
 
+        <!-- Spring Web — @RestController and @GetMapping annotations used by
+             ExerisCompatibilityActuatorController (compat-mode HTTP diagnostics).
+             NOTE: spring-web ships the annotations only; no servlet container, no DispatcherServlet.
+             spring-webmvc remains banned per Phase 2 invariants. -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-web</artifactId>
+        </dependency>
+
         <!-- Test scope -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
