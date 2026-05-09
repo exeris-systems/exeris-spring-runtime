@@ -4,7 +4,7 @@
 **Depends on:** Phase 1 closed (Pure Mode ingress proven on the wire)
 **Milestone:** M5
 **Mode:** Gateway Mode — opt-in, never default; **not** a Spring Cloud Gateway compatibility bridge
-**Governing ADRs:** ADR-006 (The Wall), ADR-010 (Host Runtime Model), ADR-011 (Pure vs Compat), [ADR-021](../adr/ADR-021%20Gateway-Class%20Workloads%20Out%20of%20Compatibility%20Scope.md) (Gateway-class out of Compat)
+**Governing ADRs:** ADR-006 (The Wall), ADR-010 (Host Runtime Model), ADR-011 (Pure vs Compat), [ADR-021](../adr/ADR-021-gateway-class-workloads-out-of-compatibility-scope.md) (Gateway-class out of Compat)
 
 ---
 
