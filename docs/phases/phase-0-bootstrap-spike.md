@@ -1,6 +1,8 @@
 # Phase 0: Architecture Spike & Bootstrap Validation
 
-**Status:** Complete (closed 2026-05-09)
+**Status:** Closed 2026-05-09 (retrospective — deliverables 1–8 landed
+incrementally on `main` in earlier commits; this is the documentation closure
+date, not a same-day delivery)
 **Target:** Maven skeleton + ADR + bootstrap POC
 **Milestone:** M0
 **Invariants captured in:** [`phase-0-invariants.md`](phase-0-invariants.md)
