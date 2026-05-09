@@ -13,6 +13,11 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 /**
  * Configuration for the events bridge.
  *
+ * <p>Activation of the bridge itself is gated by {@code exeris.runtime.events.enabled}
+ * via {@code @ConditionalOnProperty} on {@link ExerisEventAutoConfiguration} — that
+ * property is consumed directly from the {@code Environment} and does not appear as a
+ * field on this record because the autoconfig already runs before bean construction.
+ *
  * <h2>Posture: fail loud when half-configured</h2>
  * <p>{@link #requireEngine()} defaults to {@code true}. When the application has declared
  * {@code @ExerisEventListener} methods but the kernel did not bind an {@code EventEngine}
@@ -29,15 +34,10 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  */
 @ConfigurationProperties(prefix = "exeris.runtime.events")
 public record ExerisEventProperties(
-        @DefaultValue("false") boolean enabled,
         @DefaultValue("true") boolean requireEngine
 ) {
 
     @ConstructorBinding
     public ExerisEventProperties {
-    }
-
-    public ExerisEventProperties() {
-        this(false, true);
     }
 }

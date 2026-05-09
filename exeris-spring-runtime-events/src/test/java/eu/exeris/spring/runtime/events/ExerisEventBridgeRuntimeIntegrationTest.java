@@ -94,7 +94,7 @@ class ExerisEventBridgeRuntimeIntegrationTest {
                 EventEngineSupplier supplier = lifecycle::getEventEngine;
                 ExerisEventTypeRegistry typeRegistry = new ExerisEventTypeRegistry(supplier);
                 ExerisEventListenerRegistrar registrar = new ExerisEventListenerRegistrar(
-                        ctx, supplier, new ExerisEventProperties(true, true));
+                        ctx, supplier, new ExerisEventProperties(true));
                 registrar.afterSingletonsInstantiated();
                 registrar.start();
                 try {
@@ -151,8 +151,10 @@ class ExerisEventBridgeRuntimeIntegrationTest {
     private static void registerEventType(EventEngine engine) {
         // Register only if not already present — the community kernel may seed default
         // types in future releases, and the test must remain idempotent across reboots.
+        // A high fixed ordinal (rather than registry().size()) avoids collisions if the
+        // kernel ever seeds default types in parallel during boot.
         if (!engine.registry().isRegistered(EVENT_TYPE_NAME)) {
-            engine.registry().register(EventTypeSpec.of(EVENT_TYPE_NAME, engine.registry().size()));
+            engine.registry().register(EventTypeSpec.of(EVENT_TYPE_NAME, 1024));
         }
     }
 

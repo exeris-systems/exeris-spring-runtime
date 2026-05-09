@@ -188,11 +188,11 @@ class ExerisEventListenerRegistrarTest {
     }
 
     private static ExerisEventProperties strict() {
-        return new ExerisEventProperties(true, true);
+        return new ExerisEventProperties(true);
     }
 
     private static ExerisEventProperties tolerant() {
-        return new ExerisEventProperties(true, false);
+        return new ExerisEventProperties(false);
     }
 
     static class GoodListenerBean {
