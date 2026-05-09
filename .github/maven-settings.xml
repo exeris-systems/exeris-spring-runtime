@@ -3,11 +3,16 @@
           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
           xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd">
   <servers>
-    <!-- Token is injected by CI workflow via env var; never hardcode credentials. -->
+    <!-- Tokens are injected via env vars; never hardcode credentials.
+         PACKAGES_READ_TOKEN: PAT (classic) with read:packages, used for cross-repo
+         reads of exeris-kernel snapshots. The default GITHUB_TOKEN in Actions cannot
+         read packages from a different repository unless that package's "Manage Actions
+         access" explicitly grants this repo. Locally, export PACKAGES_READ_TOKEN
+         alongside GITHUB_TOKEN (one PAT can cover both). -->
     <server>
       <id>github-exeris-kernel</id>
       <username>exeris-systems</username>
-      <password>${env.GITHUB_TOKEN}</password>
+      <password>${env.PACKAGES_READ_TOKEN}</password>
     </server>
     <server>
       <id>github-exeris-runtime-releases</id>
