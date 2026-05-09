@@ -8,7 +8,9 @@ package eu.exeris.spring.runtime.web.compat.resolver;
 
 import java.util.Map;
 
+import org.springframework.boot.convert.ApplicationConversionService;
 import org.springframework.core.MethodParameter;
+import org.springframework.core.convert.ConversionService;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.context.request.NativeWebRequest;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
@@ -19,14 +21,28 @@ import eu.exeris.spring.runtime.web.compat.ExerisHandlerMethodRegistry;
 /**
  * Resolves {@code @PathVariable} parameters from the path-variable map stored on
  * the {@link NativeWebRequest} under
- * {@link ExerisHandlerMethodRegistry#PATH_VARIABLES_ATTRIBUTE}.
+ * {@link ExerisHandlerMethodRegistry#PATH_VARIABLES_ATTRIBUTE}. Conversion runs
+ * through a {@link ConversionService} (see {@link ExerisCompatTypeConverter}).
  * No servlet types.
  */
 public final class ExerisPathVariableArgumentResolver implements HandlerMethodArgumentResolver {
 
+    private final ExerisCompatTypeConverter typeConverter;
+
+    public ExerisPathVariableArgumentResolver() {
+        this(ApplicationConversionService.getSharedInstance());
+    }
+
+    public ExerisPathVariableArgumentResolver(ConversionService conversionService) {
+        this.typeConverter = new ExerisCompatTypeConverter(conversionService);
+    }
+
     @Override
     public boolean supportsParameter(MethodParameter parameter) {
-        return parameter.hasParameterAnnotation(PathVariable.class);
+        if (!parameter.hasParameterAnnotation(PathVariable.class)) {
+            return false;
+        }
+        return typeConverter.isSupportedTargetType(parameter.getParameterType());
     }
 
     @Override
@@ -70,6 +86,6 @@ public final class ExerisPathVariableArgumentResolver implements HandlerMethodAr
             }
             return null;
         }
-        return ExerisRequestParamArgumentResolver.convert(raw, parameter.getParameterType());
+        return typeConverter.convert(raw, parameter.getParameterType());
     }
 }

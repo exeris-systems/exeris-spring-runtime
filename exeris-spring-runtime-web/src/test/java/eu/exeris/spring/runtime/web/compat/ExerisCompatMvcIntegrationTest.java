@@ -21,7 +21,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.convert.ConversionService;
+import org.springframework.core.convert.converter.Converter;
 import org.springframework.core.env.MapPropertySource;
+import org.springframework.format.support.DefaultFormattingConversionService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -211,6 +214,44 @@ class ExerisCompatMvcIntegrationTest {
         assertThat(bodyOf(exchange.response())).contains("ok");
     }
 
+    // ── Scenario 14: enum @RequestParam — relies on autoconfigured ConversionService ──
+
+    @Test
+    void compatMode_enumRequestParam_resolvedViaConversionService() throws Exception {
+        // Proves the autoconfig path falls back to ApplicationConversionService when
+        // no explicit ConversionService bean is registered, giving enum coercion
+        // out of the box (real-world parity with Spring MVC's binder).
+        TestExchange exchange = TestExchange.get(HttpMethod.GET,
+                "/compat-status?status=CONFIRMED", anyHttpVersion());
+        dispatcher.handle(exchange.proxy());
+        assertThat(statusOf(exchange.response())).isEqualTo(200);
+        assertThat(bodyOf(exchange.response())).contains("CONFIRMED");
+    }
+
+    // ── Scenario 15: user-registered Converter<String, T> is honoured end-to-end ──
+
+    @Test
+    void compatMode_userConverterBean_isAppliedToRequestParam() throws Exception {
+        // Re-bootstraps the context with a custom ConversionService bean to prove
+        // ObjectProvider<ConversionService>.getIfUnique() picks it up over the
+        // ApplicationConversionService fallback.
+        context.close();
+        context = new AnnotationConfigApplicationContext();
+        context.getEnvironment().getPropertySources().addFirst(
+                new MapPropertySource("testProps", Map.of("exeris.runtime.web.mode", "compatibility")));
+        context.register(ExerisCompatAutoConfiguration.class);
+        context.register(TestControllersConfig.class);
+        context.register(CustomConversionServiceConfig.class);
+        context.refresh();
+        dispatcher = context.getBean(ExerisCompatDispatcher.class);
+
+        TestExchange exchange = TestExchange.get(HttpMethod.GET,
+                "/compat-money?price=USD:99", anyHttpVersion());
+        dispatcher.handle(exchange.proxy());
+        assertThat(statusOf(exchange.response())).isEqualTo(200);
+        assertThat(bodyOf(exchange.response())).contains("USD").contains("99");
+    }
+
 
     // ─────────────────────────────────────────────────────────────────────
     // Helpers
@@ -342,6 +383,16 @@ class ExerisCompatMvcIntegrationTest {
             return "ok:" + payload.name();
         }
 
+        @GetMapping("/compat-status")
+        String status(@RequestParam("status") OrderStatus status) {
+            return "status=" + status.name();
+        }
+
+        @GetMapping("/compat-money")
+        String money(@RequestParam("price") Money price) {
+            return "money=" + price.currency() + ":" + price.amount();
+        }
+
         @ExceptionHandler(IllegalArgumentException.class)
         @ResponseStatus(org.springframework.http.HttpStatus.BAD_REQUEST)
         String handleLocalException(IllegalArgumentException ex) {
@@ -369,6 +420,34 @@ class ExerisCompatMvcIntegrationTest {
     }
 
     public record ValidatedPayload(@NotBlank String name) {}
+
+    public enum OrderStatus { PENDING, CONFIRMED, CANCELLED }
+
+    public record Money(String currency, long amount) {}
+
+    @Configuration
+    static class CustomConversionServiceConfig {
+        @Bean
+        ConversionService conversionService() {
+            DefaultFormattingConversionService service = new DefaultFormattingConversionService();
+            service.addConverter(new Converter<String, Money>() {
+                @Override
+                public Money convert(String source) {
+                    String[] parts = source.split(":", 2);
+                    if (parts.length != 2 || parts[0].isEmpty() || parts[1].isEmpty()) {
+                        throw new IllegalArgumentException(
+                                "Invalid money format, expected '<currency>:<amount>': " + source);
+                    }
+                    try {
+                        return new Money(parts[0], Long.parseLong(parts[1]));
+                    } catch (NumberFormatException ex) {
+                        throw new IllegalArgumentException("Invalid money amount: " + parts[1], ex);
+                    }
+                }
+            });
+            return service;
+        }
+    }
 
     @RestController
     @RequestMapping("/compat-prefix")

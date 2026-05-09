@@ -6,8 +6,9 @@
  */
 package eu.exeris.spring.runtime.web.compat.resolver;
 
+import org.springframework.boot.convert.ApplicationConversionService;
 import org.springframework.core.MethodParameter;
-import org.springframework.util.ClassUtils;
+import org.springframework.core.convert.ConversionService;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.ValueConstants;
 import org.springframework.web.context.request.NativeWebRequest;
@@ -16,26 +17,28 @@ import org.springframework.web.method.support.ModelAndViewContainer;
 
 /**
  * Resolves {@code @RequestHeader} parameters from the inbound Spring {@code HttpHeaders}.
- * Supports {@link String}, primitive/boxed scalar types, {@link java.util.UUID},
- * {@link java.time.LocalDate}, and {@link java.time.LocalDateTime} via
- * {@link ExerisRequestParamArgumentResolver#convert(String, Class)}.
+ * Conversion runs through a {@link ConversionService} (see {@link ExerisCompatTypeConverter})
+ * for parity with Spring MVC's binder behaviour.
  * No servlet types.
  */
 public final class ExerisRequestHeaderArgumentResolver implements HandlerMethodArgumentResolver {
+
+    private final ExerisCompatTypeConverter typeConverter;
+
+    public ExerisRequestHeaderArgumentResolver() {
+        this(ApplicationConversionService.getSharedInstance());
+    }
+
+    public ExerisRequestHeaderArgumentResolver(ConversionService conversionService) {
+        this.typeConverter = new ExerisCompatTypeConverter(conversionService);
+    }
 
     @Override
     public boolean supportsParameter(MethodParameter parameter) {
         if (!parameter.hasParameterAnnotation(RequestHeader.class)) {
             return false;
         }
-        Class<?> type = parameter.getParameterType();
-        return (ClassUtils.isPrimitiveOrWrapper(type)
-                && !Void.TYPE.equals(type)
-                && !Void.class.equals(type))
-                || String.class.equals(type)
-                || java.util.UUID.class.equals(type)
-                || java.time.LocalDate.class.equals(type)
-                || java.time.LocalDateTime.class.equals(type);
+        return typeConverter.isSupportedTargetType(parameter.getParameterType());
     }
 
     @Override
@@ -67,11 +70,11 @@ public final class ExerisRequestHeaderArgumentResolver implements HandlerMethodA
                 throw new IllegalArgumentException("Required header '" + name + "' is not present");
             }
             if (!annotation.defaultValue().equals(ValueConstants.DEFAULT_NONE)) {
-                return ExerisRequestParamArgumentResolver.convert(annotation.defaultValue(), targetType);
+                return typeConverter.convert(annotation.defaultValue(), targetType);
             }
             return null;
         }
 
-        return ExerisRequestParamArgumentResolver.convert(value, targetType);
+        return typeConverter.convert(value, targetType);
     }
 }

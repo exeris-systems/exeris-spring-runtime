@@ -26,7 +26,11 @@ mvn -s .github/maven-settings.xml -pl exeris-spring-runtime-web test \
 mvn -s .github/maven-settings.xml clean deploy         # publish to GitHub Packages
 ```
 
-The `.github/maven-settings.xml` flag is required for snapshot resolution from GitHub Packages — `GITHUB_TOKEN` must be exported with `read:packages` scope. Kernel snapshots come from `maven.pkg.github.com/exeris-systems/exeris-kernel`.
+The `.github/maven-settings.xml` flag is required for snapshot resolution from GitHub Packages. Two env vars are read:
+- `PACKAGES_READ_TOKEN` — used for the `github-exeris-kernel` server (cross-repo read of `maven.pkg.github.com/exeris-systems/exeris-kernel`). PAT (classic) with `read:packages` scope.
+- `GITHUB_TOKEN` — used for the three `github-exeris-runtime-*` servers (this repo's own packages). Same PAT works for local dev — just `export PACKAGES_READ_TOKEN=$GITHUB_TOKEN`.
+
+In CI, `GITHUB_TOKEN` is provided automatically by Actions and `PACKAGES_READ_TOKEN` must be configured as a repo secret (a PAT with `read:packages` scope). Deploy workflow: `.github/workflows/deploy.yml` (snapshots auto on push to main, releases via `workflow_dispatch`).
 
 ## Module layout (and what belongs where)
 
