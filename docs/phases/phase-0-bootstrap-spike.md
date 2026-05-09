@@ -1,8 +1,9 @@
 # Phase 0: Architecture Spike & Bootstrap Validation
 
-**Status:** In Progress  
-**Target:** Maven skeleton + ADR + bootstrap POC  
+**Status:** Complete (closed 2026-05-09)
+**Target:** Maven skeleton + ADR + bootstrap POC
 **Milestone:** M0
+**Invariants captured in:** [`phase-0-invariants.md`](phase-0-invariants.md)
 
 ---
 
@@ -23,11 +24,11 @@ This phase is completed when the "single process" question is answered with code
 | 1 | Maven multi-module reactor with module skeletons | Done |
 | 2 | ADR-010 accepted | Done |
 | 3 | Architecture documentation (`overview.md`, `module-boundaries.md`, `kernel-integration-seams.md`) | Done |
-| 4 | `ExerisSpringConfigProvider` — Spring `Environment` → kernel `ConfigProvider` | Not Started |
-| 5 | `ExerisRuntimeLifecycle` — `SmartLifecycle` triggering `KernelBootstrap` | Not Started |
-| 6 | Bootstrap POC: Spring + Exeris start/stop in a single JVM process | Not Started |
-| 7 | Architecture guard test — Wall verification | Not Started |
-| 8 | Phase 0 invariants document | Not Started |
+| 4 | `ExerisSpringConfigProvider` — Spring `Environment` → kernel `ConfigProvider` | Done |
+| 5 | `ExerisRuntimeLifecycle` — `SmartLifecycle` triggering `KernelBootstrap` | Done |
+| 6 | Bootstrap POC: Spring + Exeris start/stop in a single JVM process | Done |
+| 7 | Architecture guard test — Wall verification | Done |
+| 8 | Phase 0 invariants document | Done |
 
 ---
 
@@ -56,7 +57,7 @@ This phase is completed when the "single process" question is answered with code
 ## Key Classes to Implement
 
 ### `ExerisRuntimeProperties`
-**Package:** `eu.exeris.spring.boot.autoconfigure`  
+**Package:** `eu.exeris.spring.boot.autoconfigure`
 **Module:** `exeris-spring-boot-autoconfigure`
 
 ```java
@@ -75,6 +76,14 @@ public record ExerisRuntimeProperties(
     }
 }
 ```
+
+> **Implemented shape (since closure):** the flat sketch above was superseded
+> during implementation by a nested form — `WebProperties` (mode),
+> `LifecycleProperties` (`startupTimeoutSeconds`), and `ShutdownProperties`
+> (`graceful`, `timeoutSeconds`) — plus an `autoStart` toggle. The HTTP port
+> moved out of `exeris.runtime` and into the kernel network properties
+> (`exeris.runtime.network.port`). The sketch is preserved as historical
+> Phase-0 intent; the source of truth is `ExerisRuntimeProperties.java`.
 
 ### `ExerisSpringConfigProvider`
 **Package:** `eu.exeris.spring.boot.autoconfigure`  
@@ -187,11 +196,13 @@ Verifies:
 
 Phase 0 is complete when:
 
-1. `mvn clean install` succeeds across all modules (compile + test).
-2. `ExerisBootstrapIntegrationTest` passes: Spring starts, Exeris bootstraps, clean shutdown.
-3. `WallIntegrityTest` passes: no Spring leakage into kernel.
-4. No Tomcat/Netty dependency on effective classpath (verified by `mvn dependency:tree`).
-5. Phase 1 invariants are documented.
+1. `mvn clean install` succeeds across all modules (compile + test). ✅
+2. `ExerisBootstrapIntegrationTest` passes: Spring starts, Exeris bootstraps, clean shutdown. ✅ (13/13)
+3. `WallIntegrityTest` passes: no Spring leakage into kernel. ✅ (6/6)
+4. No Tomcat/Netty dependency on effective classpath (verified by `PureModeClasspathGuardTest` + the no-servlet/no-Tomcat/no-Reactor rules in `WallIntegrityTest`). ✅
+5. Phase 0 invariants documented in [`phase-0-invariants.md`](phase-0-invariants.md). ✅
+
+All five criteria are met. Phase 0 is closed.
 
 ---
 
