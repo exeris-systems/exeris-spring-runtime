@@ -7,7 +7,7 @@
 
 **Depends on:**
 - 4A: only `KernelProviders.EVENT_ENGINE` slot binding required; persistence is not on the critical path
-- 4B: Phase 3 substantially complete (tx context propagation operational); snapshot persistence via `FlowSnapshotStore` waits on Phase 3 production-ready
+- 4B: Phase 3 substantially complete (tx context propagation operational). **Durable snapshot persistence via `FlowSnapshotStore` does NOT ship in `0.5.0-preview`.** 4B preview ships with `persistenceEnabled=false` only — flows live in process memory and are lost on restart. The `exeris.runtime.flow.snapshot-persistence.enabled` flag is held back until Phase 3 reaches production-ready and an Exeris-owned `FlowSnapshotStore` implementation lands in `exeris-spring-runtime-tx` or `exeris-spring-runtime-data`. Applications that need durable parked-flow recovery must wait for that follow-up.
 - 4C: kernel Graph SPI lab tests, ADR for graph backend dialect selection
 
 **Milestone:** M4 (split into M4-A/B for 1.0 preview, M4-C for post-1.0)
@@ -20,6 +20,11 @@ Promotion to 1.0 preview does **not** weaken this rule; activation remains expli
 > need event-driven choreography and saga semantics during their migration, not after it. Shipping
 > these as preview default-off lets those services depend on the runtime without forcing 1.0 to wait
 > for Phase 4 to finish, while keeping the GA promise narrow until verification gates clear.
+
+> **ADR follow-up:** the implementation PR for `exeris-spring-runtime-events` must reference (or
+> create) an ADR pinning the EventBus ↔ Spring `ApplicationEventPublisher` boundary — that is where
+> ownership-inversion regressions are most likely to surface. This roadmap shift is timing-only and
+> does not by itself invalidate or replace any existing ADR.
 
 ---
 
