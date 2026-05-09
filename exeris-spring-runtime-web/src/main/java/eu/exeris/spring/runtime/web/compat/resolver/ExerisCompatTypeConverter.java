@@ -55,8 +55,18 @@ final class ExerisCompatTypeConverter {
         if (String.class.equals(type)) {
             return raw;
         }
+        // Neutralise log-forging sequences (CR/LF/TAB) before the value reaches
+        // Spring's converter. Spring may log the raw value internally at DEBUG/TRACE,
+        // and our error mapper logs the wrapping IllegalArgumentException too —
+        // either path would let an attacker inject fake log lines via embedded
+        // newlines (CWE-117 / S5145). Scalar non-string targets (UUID, enum,
+        // number, date) never legitimately contain these characters, so replacing
+        // them with a space is observably equivalent to letting the conversion
+        // fail; @RequestParam/@PathVariable/@RequestHeader of String type returns
+        // earlier in this method without sanitisation.
+        String safe = raw.replace('\r', ' ').replace('\n', ' ').replace('\t', ' ');
         try {
-            Object result = conversionService.convert(raw, type);
+            Object result = conversionService.convert(safe, type);
             if (result == null && type.isPrimitive()) {
                 throw new IllegalArgumentException(
                         "Cannot convert request value to primitive " + type.getSimpleName());
