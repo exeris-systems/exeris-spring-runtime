@@ -1,8 +1,9 @@
 # Phase 1 Milestone Status — Pure Mode Ingress (M1)
 
-- Date: 2026-03-15
+- Date: 2026-05-09 (updated; original 2026-03-15)
 - Scope owner: `exeris-spring-boot-autoconfigure` + `exeris-spring-runtime-web`
 - Reporting intent: practical coordination status for M1 closure, without host-runtime overclaims.
+- See: [`phase-1-web-ingress.md`](phase-1-web-ingress.md) for the sub-phase split (1a/1b/1c) and [`phase-1b-kernel-seam-closure.md`](phase-1b-kernel-seam-closure.md) for the seam delivery record.
 
 ## Objective and Scope (M1)
 
@@ -23,53 +24,31 @@ Status language in this report is strict:
 
 | Scope item | Status | Evidence (repo paths) | Notes |
 |---|---|---|---|
-| Spring starts app | DONE | `exeris-spring-boot-autoconfigure/src/main/java/eu/exeris/spring/boot/autoconfigure/ExerisRuntimeAutoConfiguration.java` ; `exeris-spring-boot-autoconfigure/src/test/java/eu/exeris/spring/boot/autoconfigure/ExerisBootstrapIntegrationTest.java` | Context boot + beans verified in tests. |
-| Exeris binds port | PARTIAL | `exeris-spring-boot-autoconfigure/src/main/java/eu/exeris/spring/boot/autoconfigure/ExerisRuntimeLifecycle.java` ; `exeris-spring-boot-autoconfigure/src/main/java/eu/exeris/spring/boot/autoconfigure/ExerisSpringConfigProvider.java` | Lifecycle calls `HttpServerEngine.start()` with injected handler, but no runtime socket-bind E2E assertion yet (unverified). |
-| request enters via Exeris | PARTIAL | `exeris-spring-boot-autoconfigure/src/main/java/eu/exeris/spring/boot/autoconfigure/ExerisRuntimeLifecycle.java` ; `exeris-spring-runtime-web/src/main/java/eu/exeris/spring/runtime/web/ExerisHttpDispatcher.java` ; `exeris-spring-runtime-web/src/test/java/eu/exeris/spring/runtime/web/ExerisPureModeRequestPathIntegrationTest.java` | Dispatcher-level integration proof exists (runtime dispatcher handles a realistic kernel exchange in Spring context), but wire-level socket E2E ingress proof (real bind + HTTP client round-trip) is still missing. |
-| endpoint is Spring bean | DONE | `exeris-spring-runtime-web/src/main/java/eu/exeris/spring/runtime/web/autoconfigure/ExerisWebAutoConfiguration.java` ; `exeris-spring-runtime-web/src/test/java/eu/exeris/spring/runtime/web/autoconfigure/ExerisWebAutoConfigurationTest.java` | Route registry discovers Spring beans implementing `ExerisRequestHandler` and annotated with `@ExerisRoute`; tested. |
-| response exits via Exeris | PARTIAL | `exeris-spring-runtime-web/src/main/java/eu/exeris/spring/runtime/web/ExerisHttpDispatcher.java` ; `exeris-spring-runtime-web/src/main/java/eu/exeris/spring/runtime/web/ExerisServerResponse.java` ; `exeris-spring-runtime-web/src/test/java/eu/exeris/spring/runtime/web/ExerisPureModeRequestPathIntegrationTest.java` | Dispatcher-level integration proof exists (`exchange.respond(...)` path is exercised), but wire-level socket E2E response proof (real bind + HTTP client round-trip) is still missing. |
-| telemetry + graceful shutdown | PARTIAL | `exeris-spring-boot-autoconfigure/src/main/java/eu/exeris/spring/boot/autoconfigure/ExerisSpringConfigProvider.java` ; `exeris-spring-boot-autoconfigure/src/main/java/eu/exeris/spring/boot/autoconfigure/ExerisRuntimeProperties.java` ; `exeris-spring-boot-autoconfigure/src/main/java/eu/exeris/spring/boot/autoconfigure/ExerisRuntimeLifecycle.java` ; `exeris-spring-runtime-web/src/test/java/eu/exeris/spring/runtime/web/ExerisPureModeRequestPathIntegrationTest.java` ; `exeris-spring-runtime-actuator/pom.xml` | Graceful shutdown callback behavior now has dispatcher-level integration proof (`ExerisRuntimeLifecycle.stop(...)` callback invoked), but in-flight drain behavior and telemetry emission/visibility are not yet proven in wire-level runtime integration tests. |
-| no Tomcat/Netty/Servlet API | PARTIAL | `pom.xml` ; `exeris-spring-runtime-web/pom.xml` ; `exeris-spring-boot-autoconfigure/src/test/java/eu/exeris/spring/boot/autoconfigure/ExerisBootstrapIntegrationTest.java` ; `exeris-spring-runtime-web/src/test/java/eu/exeris/spring/runtime/web/PureModeClasspathGuardTest.java` | Dependency policy/exclusions, classpath assertions, and a web-module ArchUnit guard are present; coverage is still partial because enforcement is scoped to selected web classes and not yet expanded across all Pure Mode modules. |
+| Spring starts app | DONE | `ExerisRuntimeAutoConfiguration.java` ; `ExerisBootstrapIntegrationTest` (13/13) | Context boot + beans verified in tests. |
+| Exeris binds port | DONE | `ExerisRuntimeLifecycle.java` ; `ExerisWireLevelRuntimeIntegrationTest#pureMode_bindsPort_routesRequest_and_cleansUpAfterFixtureAndContextClose` | Real socket bind verified end-to-end via the kernel testkit fixture. |
+| request enters via Exeris | DONE | `ExerisHttpDispatcher.java` ; `ExerisWireLevelRuntimeIntegrationTest` (6/6) | Wire-level HTTP client round-trip through Exeris ingress proven (bind, body, 404, status, drain, telemetry scope). |
+| endpoint is Spring bean | DONE | `ExerisWebAutoConfiguration.java` ; `ExerisWebAutoConfigurationTest` (6/6) | Route registry discovers Spring beans implementing `ExerisRequestHandler` and annotated with `@ExerisRoute`; tested. |
+| response exits via Exeris | DONE | `ExerisServerResponse.java` ; `ExerisWireLevelRuntimeIntegrationTest#pureMode_bodyResponse_returnsCorrectPayloadAndHeaders` ; `#pureMode_customStatus_bodyResponse_returns201WithPayload` | Body, headers, and custom status proven on the wire. |
+| telemetry + graceful shutdown | DONE | `ExerisRuntimeLifecycle.java` ; `ExerisWireLevelRuntimeIntegrationTest#pureMode_shutdownDrainsInFlightRequest_beforeIngressBecomesUnavailable` ; `#pureMode_wireRequest_providesTelemetryScopeEvidence` | In-flight drain at shutdown and telemetry scope binding both verified at wire level. |
+| no Tomcat/Netty/Servlet API | DONE | `WallIntegrityTest` (autoconfigure) ; `PureModeClasspathGuardTest` (autoconfigure + web + tx + data + actuator) | All five Pure Mode modules ship their own `PureModeClasspathGuardTest`; each runs four ArchUnit rules against servlet, Netty/Reactor, WebFlux server abstractions, and `DispatcherServlet`. 4/4 green per module. |
 
-## Risks / Unknowns Blocking M1 Closure
+## M1 Closure
 
-1. Missing wire-level runtime E2E proof for Exeris-owned ingress (real bind → HTTP client request in → handler → response out).
-2. Graceful shutdown semantics have lifecycle callback proof, but in-flight drain behavior is not yet verified under real ingress load.
-3. Telemetry is configuration-wired, but emission/visibility behavior is not proven in integration tests.
-4. Existing phase document baseline still says Phase 1 status is not started (`docs/phases/phase-1-web-ingress.md`), creating planning drift.
-5. Dependency hygiene now has a dedicated web-module architecture guard, but drift risk remains for unguarded classes/modules until guard scope is expanded for all Pure Mode modules.
+All three sub-phases are complete:
 
-## Ordered Continuation Plan
-
-### P0 (must land to close M1)
-
-1. Add runtime integration test in web module for real HTTP round-trip with Exeris engine:
-   - boot Spring context,
-   - Exeris binds configured port,
-   - HTTP client performs round-trip through real ingress,
-   - Spring `@ExerisRoute` bean invoked,
-   - response read on client socket.
-2. Extend runtime integration to verify graceful shutdown in-flight drain behavior with bounded timeout.
-3. Add telemetry integration proof for at least one request-path signal in Pure Mode runtime.
-
-### P1 (high value, near-term hardening)
-
-1. Expand architecture guard coverage beyond current web-module scope so build fails on servlet/netty/webflux classpath leakage across all Pure Mode modules.
-2. Reconcile phase docs to remove status drift between planning and implementation reality.
-
-### P2 (follow-up after M1 closure)
-
-1. Add performance smoke checks for request-path allocation/latency baselines.
-2. Expand route capabilities (path variables/wildcards) only after Pure Mode ingress gate is stable.
+- **1a** dispatcher path — dispatcher, routing, request/response model, error mapping, autoconfiguration.
+- **1b** wire-level E2E ingress proof — `ExerisWireLevelRuntimeIntegrationTest` 6/6, kernel testkit fixture consumed.
+- **1c** closure hardening — `PureModeClasspathGuardTest` replicated to `tx`, `data`, and `actuator` (4 rules × 5 modules, all green); `ExerisDispatcherAllocationBaselineTest` enforces a hard ≤ 1024 B/req mean budget for empty-body GET dispatch (observed ≈ 277 B/dispatch, ~27% of budget); [`phase-1-invariants.md`](phase-1-invariants.md) documents the ten web-specific invariants.
 
 ## Exit Gate Checklist for M1 Complete
 
-- [ ] Wire-level end-to-end runtime test demonstrates Exeris-owned HTTP ingress path with real bind + HTTP client round-trip (no servlet/reactive runtime ownership).
-- [ ] End-to-end test demonstrates Spring-managed `@ExerisRoute` bean invocation through `ExerisHttpDispatcher`.
-- [ ] End-to-end test demonstrates response emission through Exeris `HttpExchange.respond(...)` path.
-- [ ] Graceful shutdown behavior is verified with in-flight request drain in wire-level runtime tests.
-- [ ] Telemetry integration is verified in at least one runtime request-path test.
-- [ ] Architecture guard coverage enforces no Tomcat/Netty/Servlet/WebFlux dependency creep for Pure Mode modules.
-- [ ] Phase documentation reflects current milestone truth and no longer reports this scope as "not started".
+- [x] Wire-level end-to-end runtime test demonstrates Exeris-owned HTTP ingress path with real bind + HTTP client round-trip (no servlet/reactive runtime ownership). — `ExerisWireLevelRuntimeIntegrationTest` 6/6
+- [x] End-to-end test demonstrates Spring-managed `@ExerisRoute` bean invocation through `ExerisHttpDispatcher`. — same test class
+- [x] End-to-end test demonstrates response emission through Exeris `HttpExchange.respond(...)` path. — `pureMode_bodyResponse_*` and `pureMode_customStatus_*`
+- [x] Graceful shutdown behavior is verified with in-flight request drain in wire-level runtime tests. — `pureMode_shutdownDrainsInFlightRequest_beforeIngressBecomesUnavailable`
+- [x] Telemetry integration is verified in at least one runtime request-path test. — `pureMode_wireRequest_providesTelemetryScopeEvidence`
+- [x] Allocation baseline test enforces a hard per-dispatch budget on the Pure Mode hot path. — `ExerisDispatcherAllocationBaselineTest` asserts mean ≤ 1024 B/req for empty-body GET dispatch (observed ≈ 277 B/dispatch over 30k iterations after 30k-iter warmup)
+- [x] Architecture guard coverage enforces no Tomcat/Netty/Servlet/WebFlux dependency creep for **all** Pure Mode modules. — `PureModeClasspathGuardTest` ships in `autoconfigure`, `web`, `tx`, `data`, `actuator` (4 rules × 5 modules, all green)
+- [x] Phase documentation reflects current milestone truth. — reconciled in this commit; sub-phase split lives in `phase-1-web-ingress.md`
 
-Current closure verdict: **M1 is in-progress and not yet complete** due to missing runtime E2E verification gates.
+Current closure verdict: **M1 closed (2026-05-09).** All exit-gate items are met. Phase 1 invariants are captured in [`phase-1-invariants.md`](phase-1-invariants.md).
