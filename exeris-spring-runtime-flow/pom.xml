@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>eu.exeris</groupId>
+        <artifactId>exeris-spring-runtime-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>exeris-spring-runtime-flow</artifactId>
+
+    <name>Exeris Spring Runtime :: Flow / Saga Bridge</name>
+    <description>
+        Compatibility-friendly bridge that exposes the kernel FlowEngine to Spring beans
+        as a structured asynchronous / saga programming model — without making
+        Spring @Async (or any thread-pool task executor) the canonical execution path
+        for compensable, parkable, or event-triggered work.
+
+        Scope (Phase 4B — 1.0 preview, default-off, this module skeleton ships first):
+          - FlowEngineSupplier: deferred ScopedValue accessor pattern (analog to
+            EventEngineSupplier in events module),
+          - ExerisFlowProperties: enabled + persistenceEnabled + choreographyEnabled
+            flags, all default-off,
+          - ExerisFlowAutoConfiguration: @ConditionalOnProperty gating,
+            wires FlowEngineSupplier from ExerisRuntimeLifecycle.getFlowEngine().
+
+        Subsequent Phase 4B steps will land:
+          - ExerisFlowDefinition (declarative DSL bridging FlowDefinitionBuilder),
+          - ExerisFlowTemplate (imperative invocation surface for Spring beans),
+          - ExerisFlowChoreographyBridge (opt-in event-driven flow trigger,
+            gated on FlowEngineCapabilities.choreographySupport()).
+
+        Activation:
+          exeris.runtime.flow.enabled = true (matchIfMissing = false)
+
+        Hard rules (Phase 4B invariants — to be locked in at closure):
+          - @Async is NOT a workaround for missing flow capability.
+          - Durable snapshot persistence (FlowSnapshotStore) is NOT shipped in
+            0.5.0-preview; persistenceEnabled defaults false. Held back until an
+            Exeris-owned FlowSnapshotStore lands in tx or data module.
+          - Step lambdas closing over Spring beans must not invert lifecycle
+            ownership — flow lifecycle stays kernel-owned.
+          - No HTTP / web / persistence concerns in this module.
+
+        See docs/phases/phase-4-events-flow.md (Section 4B) for the full delivery plan.
+    </description>
+
+    <dependencies>
+
+        <!-- Kernel SPI — FlowEngine, FlowScheduler, FlowDefinitionBuilder,
+             FlowExecutionPlan, FlowState, ChoreographyDecision, KernelProviders. -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-spi</artifactId>
+        </dependency>
+
+        <!-- autoconfigure — for ExerisRuntimeLifecycle.getFlowEngine() seam. -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-spring-boot-autoconfigure</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- Spring Boot autoconfigure — @AutoConfiguration, @ConditionalOn*. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+
+        <!-- Spring Context — ApplicationContext (for bean discovery), bean lifecycle. -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+        </dependency>
+
+        <!-- Test scope -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Phase 1c invariant: every Pure Mode module ships PureModeClasspathGuardTest +
+             a module boundary guard via ArchUnit. -->
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>
