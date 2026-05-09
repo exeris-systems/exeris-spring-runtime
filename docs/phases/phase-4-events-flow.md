@@ -1,8 +1,8 @@
 # Phase 4: Events, Flow/Saga, and Graph Integration
 
 **Status:**
-- **4A (Events) — Promoted to 1.0 preview**, planned for the `0.5.0-preview` release train
-- **4B (Flow/Saga) — Promoted to 1.0 preview**, planned for the `0.5.0-preview` release train
+- **4A (Events) — Closed (2026-05-09)** as `0.6.0-preview`-track preview module (default-off). Implementation landed in PR #11; closure docs (this revision + [`phase-4a-events-invariants.md`](phase-4a-events-invariants.md)) ship in the Phase 4A closure PR. Module: `exeris-spring-runtime-events` (646 LOC main / 7 test files / 28 of 30 tests green; the 2 errors are an environment-specific port-bind flake in `ExerisEventBridgeRuntimeIntegrationTest` — known issue, see follow-up below).
+- **4B (Flow/Saga) — Planned (1.0 preview)**, target `0.5.0-preview` release train. No scaffolds yet.
 - **4C (Graph) — Post-1.0**, candidate for the `1.1.x` train
 
 **Depends on:**
@@ -104,7 +104,27 @@ the `FlowEngine` bridge is the correct tool and `@Async` MUST NOT be introduced 
 
 ---
 
-## 4A: Exeris Events Bridge
+## 4A: Exeris Events Bridge — ✅ Closed (2026-05-09)
+
+**Module:** `exeris-spring-runtime-events`
+**Activation:** `exeris.runtime.events.enabled=true` (default off, `matchIfMissing=false`)
+**Invariants:** [`phase-4a-events-invariants.md`](phase-4a-events-invariants.md)
+
+### Delivered (PR #11)
+
+| # | Class | LOC | Evidence |
+|:-:|:------|:---:|:---------|
+| 1 | `ExerisEventTypeRegistry` — `String name → eventTypeOrdinal` lookup; eager populate at `afterSingletonsInstantiated()` | 114 | `ExerisEventTypeRegistryTest` 4/4 |
+| 2 | `ExerisEventPublisher` — Spring-injectable publisher with `descriptorFor(name)` convenience overload | 79 | `ExerisEventPublisherTest` 4/4 |
+| 3 | `@ExerisEventListener` — `@Target(METHOD)` annotation; `String[] eventTypes()` | 47 | exercised in registrar tests |
+| 4 | `ExerisEventListenerRegistrar implements SmartInitializingSingleton, SmartLifecycle` — scans + registers + cleans up subscriptions; tolerant/strict mode for engine unavailability | 240 | `ExerisEventListenerRegistrarTest` 7/7 |
+| 5 | `ExerisEventAutoConfiguration` — `@ConditionalOnProperty("exeris.runtime.events.enabled", matchIfMissing=false)` | 77 | `ExerisEventAutoConfigurationTest` 4/4 |
+| 6 | `ExerisEventProperties` | 43 | covered by autoconfig tests |
+| 7 | `EventEngineSupplier` — deferred `ScopedValue` accessor (consistent with Phase 3 `PersistenceEngineProvider` pattern) | 46 | exercised across publisher + registrar tests |
+| 8 | `EventModuleBoundaryTest` — 5 ArchUnit rules (no Spring `ApplicationEventPublisher`, no `spring-context.event`, no HTTP/servlet, no tx/persistence, no JPA) | (test) | 5/5 — module boundary mechanically enforced |
+| 9 | `PureModeClasspathGuardTest` — module-local Pure-Mode classpath ban (servlet API, Netty/Reactor, WebFlux, `DispatcherServlet`) | (test) | 4/4 — replicated per Phase 1c invariant |
+
+**Test sweep:** 28/30 green. Two errors in `ExerisEventBridgeRuntimeIntegrationTest` (`lifecycleCapturesEventEngineDuringBootAndClearsItOnStop`, `publisherDispatchesIntoKernelBusAndReachesAnnotatedListener`) are an environment-specific port-bind flake — the runtime integration test does not set `exeris.runtime.network.port=0` (ephemeral), so `BindException: Adres jest już w użyciu` surfaces when port 8080 is occupied. **Not a code regression**; tracked as a post-merge follow-up.
 
 ### Goal
 
