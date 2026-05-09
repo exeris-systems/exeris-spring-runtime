@@ -207,10 +207,12 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         return Optional.ofNullable(capturedEventEngine.get());
     }
 
-    private void captureKernelEngines() {
+    private void captureEventEngine() {
         // Runs on the boot thread inside the kernel's ScopedValue scope where the
-        // KernelProviders slots are bound. Subsystems are optional, so each capture
-        // is guarded by isBound() and stored only when present.
+        // KernelProviders slots are bound. The events subsystem is optional, so
+        // capture is guarded by isBound() and stored only when present. Phase 4B
+        // will extend this with FLOW_ENGINE; at that point this method should be
+        // renamed back to captureKernelEngines() (plural) to match the new scope.
         if (KernelProviders.EVENT_ENGINE.isBound()) {
             capturedEventEngine.set(KernelProviders.EVENT_ENGINE.get());
         }
@@ -255,7 +257,7 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
                             CountDownLatch bootReady,
                             CountDownLatch releaseSignal) throws KernelBootstrap.BootstrapException {
         Runnable holdKernelScopeOpen = () -> {
-            captureKernelEngines();
+            captureEventEngine();
             bootReady.countDown();
             awaitStopSignal(releaseSignal);
         };

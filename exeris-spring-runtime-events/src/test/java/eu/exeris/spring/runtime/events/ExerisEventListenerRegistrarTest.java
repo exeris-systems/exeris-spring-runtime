@@ -41,7 +41,7 @@ class ExerisEventListenerRegistrarTest {
         when(bus.subscribe(any(String.class), any(EventHandler.class)))
                 .thenReturn(new SubscriptionToken(1, 1L));
 
-        ExerisEventListenerRegistrar registrar = new ExerisEventListenerRegistrar(ctx, supplier(bus));
+        ExerisEventListenerRegistrar registrar = new ExerisEventListenerRegistrar(ctx, supplier(bus), strict());
         registrar.afterSingletonsInstantiated();
         assertThat(registrar.boundListenerCount()).isEqualTo(2);
 
@@ -67,7 +67,7 @@ class ExerisEventListenerRegistrarTest {
         when(bus.subscribe(eq("payment.failed"), any(EventHandler.class)))
                 .thenReturn(new SubscriptionToken(1, 2L));
 
-        ExerisEventListenerRegistrar registrar = new ExerisEventListenerRegistrar(ctx, supplier(bus));
+        ExerisEventListenerRegistrar registrar = new ExerisEventListenerRegistrar(ctx, supplier(bus), strict());
         registrar.afterSingletonsInstantiated();
         registrar.start();
 
@@ -92,7 +92,7 @@ class ExerisEventListenerRegistrarTest {
         when(bus.subscribe(any(String.class), any(EventHandler.class)))
                 .thenReturn(new SubscriptionToken(1, 1L), new SubscriptionToken(1, 2L));
 
-        ExerisEventListenerRegistrar registrar = new ExerisEventListenerRegistrar(ctx, supplier(bus));
+        ExerisEventListenerRegistrar registrar = new ExerisEventListenerRegistrar(ctx, supplier(bus), strict());
         registrar.afterSingletonsInstantiated();
         registrar.start();
         registrar.stop();
@@ -110,7 +110,8 @@ class ExerisEventListenerRegistrarTest {
         ctx.register(BadListenerBean.class);
         ctx.refresh();
 
-        ExerisEventListenerRegistrar registrar = new ExerisEventListenerRegistrar(ctx, supplier(mock(EventBus.class)));
+        ExerisEventListenerRegistrar registrar =
+                new ExerisEventListenerRegistrar(ctx, supplier(mock(EventBus.class)), strict());
 
         assertThatThrownBy(registrar::afterSingletonsInstantiated)
                 .isInstanceOf(IllegalStateException.class)
@@ -120,15 +121,15 @@ class ExerisEventListenerRegistrarTest {
     }
 
     @Test
-    void engineUnavailableAtStartSkipsSubscriptionsButTransitionsToRunning() {
-        // Test harness / auto-start=false scenario: the kernel never bound an EventEngine.
-        // The registrar must still transition to running so Spring's lifecycle stop()
-        // ordering is correct; subscriptions simply stay empty.
+    void engineUnavailableInTolerantModeSkipsSubscriptionsButTransitionsToRunning() {
+        // Test harness / auto-start=false scenario with require-engine=false: the kernel
+        // never bound an EventEngine. The registrar must still transition to running so
+        // Spring's lifecycle stop() ordering is correct; subscriptions simply stay empty.
         AnnotationConfigApplicationContext ctx = new AnnotationConfigApplicationContext();
         ctx.register(GoodListenerBean.class);
         ctx.refresh();
 
-        ExerisEventListenerRegistrar registrar = new ExerisEventListenerRegistrar(ctx, Optional::empty);
+        ExerisEventListenerRegistrar registrar = new ExerisEventListenerRegistrar(ctx, Optional::empty, tolerant());
         registrar.afterSingletonsInstantiated();
         registrar.start();
 
@@ -139,10 +140,59 @@ class ExerisEventListenerRegistrarTest {
         ctx.close();
     }
 
+    @Test
+    void engineUnavailableInStrictModeFailsLoudWhenListenersDeclared() {
+        // Production posture (default): require-engine=true. If listeners are declared
+        // but the kernel did not bind an EventEngine, lifecycle start fails so the
+        // operator sees the misconfiguration immediately rather than discovering
+        // unfired handlers later.
+        AnnotationConfigApplicationContext ctx = new AnnotationConfigApplicationContext();
+        ctx.register(GoodListenerBean.class);
+        ctx.refresh();
+
+        ExerisEventListenerRegistrar registrar = new ExerisEventListenerRegistrar(ctx, Optional::empty, strict());
+        registrar.afterSingletonsInstantiated();
+
+        assertThatThrownBy(registrar::start)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("no kernel EventEngine is available")
+                .hasMessageContaining("require-engine=false");
+
+        assertThat(registrar.isRunning()).isFalse();
+
+        ctx.close();
+    }
+
+    @Test
+    void engineUnavailableWithoutListenersIsAlwaysTolerated() {
+        // No @ExerisEventListener methods declared: the registrar has nothing to wire,
+        // so a missing engine is irrelevant for this bean even in strict mode. Hot
+        // paths (publisher, type registry) still fail loud at first call.
+        AnnotationConfigApplicationContext ctx = new AnnotationConfigApplicationContext();
+        ctx.refresh();
+
+        ExerisEventListenerRegistrar registrar = new ExerisEventListenerRegistrar(ctx, Optional::empty, strict());
+        registrar.afterSingletonsInstantiated();
+        registrar.start();
+
+        assertThat(registrar.isRunning()).isTrue();
+        assertThat(registrar.boundListenerCount()).isZero();
+
+        ctx.close();
+    }
+
     private static EventEngineSupplier supplier(EventBus bus) {
         EventEngine engine = mock(EventEngine.class);
         when(engine.bus()).thenReturn(bus);
         return () -> Optional.of(engine);
+    }
+
+    private static ExerisEventProperties strict() {
+        return new ExerisEventProperties(true, true);
+    }
+
+    private static ExerisEventProperties tolerant() {
+        return new ExerisEventProperties(true, false);
     }
 
     static class GoodListenerBean {

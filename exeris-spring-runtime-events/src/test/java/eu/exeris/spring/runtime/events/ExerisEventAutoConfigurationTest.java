@@ -18,7 +18,13 @@ class ExerisEventAutoConfigurationTest {
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withPropertyValues(
                     "exeris.runtime.enabled=true",
-                    "exeris.runtime.auto-start=false")
+                    "exeris.runtime.auto-start=false",
+                    // The autoconfig tests intentionally skip kernel boot, so the
+                    // EventEngine reference is never captured. require-engine=false
+                    // opts the listener registrar into tolerant mode so Spring's
+                    // SmartLifecycle auto-start can still complete when no listener
+                    // beans are wired into the test context.
+                    "exeris.runtime.events.require-engine=false")
             .withConfiguration(AutoConfigurations.of(
                     ExerisRuntimeAutoConfiguration.class,
                     ExerisEventAutoConfiguration.class));
@@ -41,6 +47,7 @@ class ExerisEventAutoConfigurationTest {
                     assertThat(context).hasSingleBean(ExerisEventTypeRegistry.class);
                     assertThat(context).hasSingleBean(ExerisEventPublisher.class);
                     assertThat(context).hasSingleBean(ExerisEventListenerRegistrar.class);
+                    assertThat(context).hasSingleBean(ExerisEventProperties.class);
                 });
     }
 
@@ -52,6 +59,28 @@ class ExerisEventAutoConfigurationTest {
                 .run(context -> {
                     assertThat(context).hasSingleBean(EventEngineSupplier.class);
                     assertThat(context.getBean(EventEngineSupplier.class).tryGet()).isEmpty();
+                });
+    }
+
+    @Test
+    void requireEngineDefaultIsTrue() {
+        // When users do not override the property, the registrar runs in strict mode
+        // — the production posture that surfaces misconfigurations loudly.
+        new ApplicationContextRunner()
+                .withPropertyValues(
+                        "exeris.runtime.enabled=true",
+                        "exeris.runtime.auto-start=false",
+                        "exeris.runtime.events.enabled=true")
+                .withConfiguration(AutoConfigurations.of(
+                        ExerisRuntimeAutoConfiguration.class,
+                        ExerisEventAutoConfiguration.class))
+                .run(context -> {
+                    // No @ExerisEventListener beans in this context, so the registrar
+                    // tolerates the missing engine even in strict mode (no listeners
+                    // to wire). This proves the default property value without forcing
+                    // a refresh failure.
+                    assertThat(context).hasSingleBean(ExerisEventProperties.class);
+                    assertThat(context.getBean(ExerisEventProperties.class).requireEngine()).isTrue();
                 });
     }
 }

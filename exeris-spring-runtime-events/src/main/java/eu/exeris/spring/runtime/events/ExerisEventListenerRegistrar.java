@@ -63,15 +63,19 @@ public final class ExerisEventListenerRegistrar implements SmartInitializingSing
 
     private final ApplicationContext applicationContext;
     private final EventEngineSupplier engineSupplier;
+    private final ExerisEventProperties properties;
+    private final Object lifecycleLock = new Object();
 
     private final List<ListenerBinding> bindings = new ArrayList<>();
     private final List<SubscriptionToken> activeSubscriptions = new ArrayList<>();
     private volatile boolean running = false;
 
     public ExerisEventListenerRegistrar(ApplicationContext applicationContext,
-                                        EventEngineSupplier engineSupplier) {
+                                        EventEngineSupplier engineSupplier,
+                                        ExerisEventProperties properties) {
         this.applicationContext = Objects.requireNonNull(applicationContext, "applicationContext");
         this.engineSupplier = Objects.requireNonNull(engineSupplier, "engineSupplier");
+        this.properties = Objects.requireNonNull(properties, "properties");
     }
 
     @Override
@@ -96,56 +100,74 @@ public final class ExerisEventListenerRegistrar implements SmartInitializingSing
 
     @Override
     public void start() {
-        if (running) {
-            return;
-        }
-        // Tolerate an absent engine during start: the kernel may be intentionally not
-        // booted (test harness with auto-start=false, dev fallback, or a kernel
-        // configured without an EventProvider). In all those cases the lifecycle
-        // contract still requires the bean to transition to running so Spring's
-        // shutdown ordering remains correct; subscriptions simply stay empty and a
-        // diagnostic line is emitted. Mis-publish at runtime still fails loud
-        // because the publisher and type registry call requireEngine().
-        Optional<EventEngine> engine = engineSupplier.tryGet();
-        if (engine.isEmpty()) {
-            if (!bindings.isEmpty()) {
-                LOG.log(Level.WARNING,
-                        "Exeris event listener registrar starting without a kernel EventEngine — "
-                                + "{0} @ExerisEventListener method(s) will not be subscribed. "
-                                + "Confirm the kernel has an EventProvider on the classpath and "
-                                + "exeris.runtime.auto-start has not been disabled in production.",
-                        bindings.size());
+        synchronized (lifecycleLock) {
+            if (running) {
+                return;
+            }
+            // Two failure modes when the kernel did not bind an EventEngine:
+            //   - bindings.isEmpty(): no @ExerisEventListener methods declared, so the
+            //     missing engine is irrelevant for THIS bean's responsibility. Transition
+            //     to running and let publisher/type-registry fail loud at first use if
+            //     the application actually tries to talk to the bus.
+            //   - bindings.isNotEmpty(): listeners were declared but cannot be wired.
+            //     If exeris.runtime.events.require-engine=true (default) this is a real
+            //     misconfiguration and we fail loud at lifecycle start; if explicitly
+            //     opted out (test harness with auto-start=false, dev fallback) we log
+            //     a diagnostic and let the bean transition to running so shutdown
+            //     ordering stays consistent.
+            Optional<EventEngine> engine = engineSupplier.tryGet();
+            if (engine.isEmpty()) {
+                if (!bindings.isEmpty()) {
+                    if (properties.requireEngine()) {
+                        throw new IllegalStateException(
+                                "Exeris event listener registrar cannot start: "
+                                        + bindings.size() + " @ExerisEventListener method(s) declared "
+                                        + "but no kernel EventEngine is available. Confirm the kernel "
+                                        + "has an EventProvider on the classpath and "
+                                        + "exeris.runtime.auto-start is enabled. To explicitly tolerate "
+                                        + "this in tests/dev, set "
+                                        + "exeris.runtime.events.require-engine=false.");
+                    }
+                    LOG.log(Level.WARNING,
+                            "Exeris event listener registrar starting without a kernel EventEngine — "
+                                    + "{0} @ExerisEventListener method(s) will not be subscribed. "
+                                    + "exeris.runtime.events.require-engine=false has been set; this is "
+                                    + "intended for test/dev only.",
+                            bindings.size());
+                }
+                running = true;
+                return;
+            }
+            EventBus bus = engine.get().bus();
+            for (ListenerBinding binding : bindings) {
+                EventHandler handler = (descriptor, payload) -> invokeHandler(binding, descriptor, payload);
+                SubscriptionToken token = bus.subscribe(binding.eventTypeName(), handler);
+                activeSubscriptions.add(token);
             }
             running = true;
-            return;
         }
-        EventBus bus = engine.get().bus();
-        for (ListenerBinding binding : bindings) {
-            EventHandler handler = (descriptor, payload) -> invokeHandler(binding, descriptor, payload);
-            SubscriptionToken token = bus.subscribe(binding.eventTypeName(), handler);
-            activeSubscriptions.add(token);
-        }
-        running = true;
     }
 
     @Override
     public void stop() {
-        if (!running) {
-            return;
-        }
-        // Best-effort: try to unsubscribe via the captured engine; if the kernel is
-        // already torn down (e.g. ExerisRuntimeLifecycle.stop() ran first) the engine
-        // reference is gone and there is nothing left to clean up on the bus side.
-        engineSupplier.tryGet().ifPresent(engine -> {
-            EventBus bus = engine.bus();
-            for (SubscriptionToken token : activeSubscriptions) {
-                if (token != null && token.isValid()) {
-                    bus.unsubscribe(token);
-                }
+        synchronized (lifecycleLock) {
+            if (!running) {
+                return;
             }
-        });
-        activeSubscriptions.clear();
-        running = false;
+            // Best-effort: try to unsubscribe via the captured engine; if the kernel is
+            // already torn down (e.g. ExerisRuntimeLifecycle.stop() ran first) the engine
+            // reference is gone and there is nothing left to clean up on the bus side.
+            engineSupplier.tryGet().ifPresent(engine -> {
+                EventBus bus = engine.bus();
+                for (SubscriptionToken token : activeSubscriptions) {
+                    if (token != null && token.isValid()) {
+                        bus.unsubscribe(token);
+                    }
+                }
+            });
+            activeSubscriptions.clear();
+            running = false;
+        }
     }
 
     @Override
@@ -182,8 +204,11 @@ public final class ExerisEventListenerRegistrar implements SmartInitializingSing
     }
 
     private static MethodHandle bindHandle(Object bean, Method method) {
+        // bean.getClass().getMethods() yielded only public methods, so setAccessible
+        // would be a no-op here under standard classloading. Listener beans must be
+        // public types with a public listener method; non-exported JPMS modules are
+        // outside the supported configuration for the events bridge.
         try {
-            method.setAccessible(true);
             return MethodHandles.lookup().unreflect(method).bindTo(bean).asType(HANDLER_TYPE);
         } catch (IllegalAccessException ex) {
             throw new IllegalStateException(

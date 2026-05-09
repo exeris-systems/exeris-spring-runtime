@@ -90,6 +90,29 @@
             <artifactId>archunit-junit5</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- Runtime integration test: boot a real kernel with the community providers
+             on the test classpath so EventProvider, MemoryProvider, ConfigProvider, etc.
+             are discovered via ServiceLoader. Test scope only — never main/runtime,
+             that would invert provider ownership into this Spring module. -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-community</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- H2 in-memory database to satisfy the kernel persistence subsystem during
+             the integration test boot. Phase 4A is event-only; this is the cheapest
+             way to get a clean kernel up without standing up PostgreSQL. -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
 </project>
