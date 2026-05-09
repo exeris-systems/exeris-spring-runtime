@@ -6,6 +6,8 @@
  */
 package eu.exeris.spring.boot.autoconfigure;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -63,6 +65,8 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
      */
     private static final AtomicReference<Environment> BOOTSTRAP_ENVIRONMENT = new AtomicReference<>();
     private static final AtomicBoolean BOOTSTRAP_PREPARED = new AtomicBoolean(false);
+    private static final AtomicReference<Map<String, String>> LEGACY_HTTP_SYSTEM_PROPERTIES =
+            new AtomicReference<>(Map.of());
 
     private final Environment environment;
 
@@ -92,6 +96,7 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
             throw new IllegalStateException("Exeris bootstrap environment already prepared");
         }
         BOOTSTRAP_ENVIRONMENT.set(this.environment);
+        publishLegacyHttpAliases(this.environment);
     }
 
     /**
@@ -99,6 +104,7 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
      * after {@code KernelBootstrap.boot()} returns or throws.
      */
     void clearBootstrap() {
+        restoreLegacyHttpAliases();
         BOOTSTRAP_ENVIRONMENT.set(null);
         BOOTSTRAP_PREPARED.set(false);
     }
@@ -125,8 +131,12 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
                     .getProperty("exeris.runtime.memory.global-mb", Long.class, defaults.globalMemoryMb());
 
             NetworkSettings defaultNetwork = defaults.network();
+            Integer configuredPort = environment.getProperty("exeris.runtime.network.port", Integer.class);
+            if (configuredPort == null) {
+                configuredPort = environment.getProperty("server.port", Integer.class, defaultNetwork.port());
+            }
             NetworkSettings network = new NetworkSettings(
-                    environment.getProperty("exeris.runtime.network.port", Integer.class, defaultNetwork.port()),
+                    configuredPort,
                     environment.getProperty("exeris.runtime.network.buffer-size", Integer.class, defaultNetwork.bufferSize()),
                     environment.getProperty("exeris.runtime.network.native-transport-preferred", Boolean.class, defaultNetwork.nativeTransportPreferred()),
                     environment.getProperty("exeris.runtime.network.reactor-count", Integer.class, defaultNetwork.reactorCount()),
@@ -157,14 +167,26 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
 
     @Override
     public Optional<String> getString(String key) {
-        return environment == null ? Optional.empty()
-            : Optional.ofNullable(environment.getProperty(key));
+        if (environment == null) {
+            return Optional.empty();
+        }
+        String direct = environment.getProperty(key);
+        if (direct != null) {
+            return Optional.of(direct);
+        }
+        return legacyHttpStringAlias(key, environment);
     }
 
     @Override
     public Optional<Integer> getInt(String key) {
-        return environment == null ? Optional.empty()
-            : Optional.ofNullable(environment.getProperty(key, Integer.class));
+        if (environment == null) {
+            return Optional.empty();
+        }
+        Integer direct = environment.getProperty(key, Integer.class);
+        if (direct != null) {
+            return Optional.of(direct);
+        }
+        return legacyHttpIntAlias(key, environment);
     }
 
     @Override
@@ -181,13 +203,109 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
 
     @Override
     public <T> Optional<T> get(String key, Class<T> type) {
-        return environment == null ? Optional.empty()
-            : Optional.ofNullable(environment.getProperty(key, type));
+        if (environment == null) {
+            return Optional.empty();
+        }
+        T direct = environment.getProperty(key, type);
+        if (direct != null) {
+            return Optional.of(direct);
+        }
+        if (type == String.class) {
+            return legacyHttpStringAlias(key, environment).map(type::cast);
+        }
+        if (type == Integer.class) {
+            return legacyHttpIntAlias(key, environment).map(type::cast);
+        }
+        return Optional.empty();
     }
 
     @Override
     public void watch(String namespace, String key, Consumer<Object> listener) {
         // Spring Environment does not expose a standard cross-source watch API.
         // Phase 0 behavior: no-op callback registration.
+    }
+
+    private static void publishLegacyHttpAliases(Environment environment) {
+        Map<String, String> previous = captureLegacyHttpSystemProperties();
+        LEGACY_HTTP_SYSTEM_PROPERTIES.set(previous);
+
+        if (environment == null) {
+            return;
+        }
+
+        Integer port = legacyHttpIntAlias("exeris.http.port", environment).orElse(null);
+        String mode = legacyHttpStringAlias("exeris.http.mode", environment).orElse(null);
+        String bindHost = legacyHttpStringAlias("exeris.http.bindHost", environment).orElse(null);
+
+        setIfPresent("exeris.http.mode", mode);
+        setIfPresent("http.mode", mode);
+        setIfPresent("exeris.http.bindHost", bindHost);
+        setIfPresent("http.bindHost", bindHost);
+        if (port != null) {
+            setIfPresent("exeris.http.port", Integer.toString(port));
+            setIfPresent("http.port", Integer.toString(port));
+        }
+    }
+
+    private static void restoreLegacyHttpAliases() {
+        Map<String, String> previous = LEGACY_HTTP_SYSTEM_PROPERTIES.getAndSet(Map.of());
+        previous.forEach((key, value) -> {
+            if (value == null) {
+                System.clearProperty(key);
+            } else {
+                System.setProperty(key, value);
+            }
+        });
+    }
+
+    private static Map<String, String> captureLegacyHttpSystemProperties() {
+        Map<String, String> previous = new LinkedHashMap<>();
+        previous.put("exeris.http.mode", System.getProperty("exeris.http.mode"));
+        previous.put("exeris.http.bindHost", System.getProperty("exeris.http.bindHost"));
+        previous.put("exeris.http.port", System.getProperty("exeris.http.port"));
+        previous.put("http.mode", System.getProperty("http.mode"));
+        previous.put("http.bindHost", System.getProperty("http.bindHost"));
+        previous.put("http.port", System.getProperty("http.port"));
+        return previous;
+    }
+
+    private static Optional<String> legacyHttpStringAlias(String key, Environment environment) {
+        return switch (key) {
+            case "exeris.http.mode", "http.mode" -> Optional.of("SERVER");
+            case "exeris.http.bindHost", "http.bindHost" -> Optional.ofNullable(
+                    firstNonBlank(
+                            environment.getProperty("exeris.runtime.network.bind-host"),
+                            environment.getProperty("server.address"),
+                            System.getProperty("exeris.http.bindHost"),
+                            "0.0.0.0"
+                    ));
+            default -> Optional.empty();
+        };
+    }
+
+    private static Optional<Integer> legacyHttpIntAlias(String key, Environment environment) {
+        if (!"exeris.http.port".equals(key) && !"http.port".equals(key)) {
+            return Optional.empty();
+        }
+        Integer configuredPort = environment.getProperty("exeris.runtime.network.port", Integer.class);
+        if (configuredPort == null) {
+            configuredPort = environment.getProperty("server.port", Integer.class);
+        }
+        return Optional.ofNullable(configuredPort);
+    }
+
+    private static void setIfPresent(String key, String value) {
+        if (value != null && !value.isBlank()) {
+            System.setProperty(key, value);
+        }
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
     }
 }

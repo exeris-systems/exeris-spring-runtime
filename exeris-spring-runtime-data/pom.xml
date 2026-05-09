@@ -44,10 +44,39 @@
             <artifactId>exeris-kernel-spi</artifactId>
         </dependency>
 
+        <!-- Kernel Community — JdbcPersistenceConnection used by the JDBC compat bridge
+             (ADR-017: Level 2 JDBC compatibility scope). The community persistence
+             connection is the only kernel surface that exposes a JDBC-compatible
+             Connection without going through HikariCP. -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-community</artifactId>
+        </dependency>
+
+        <!-- exeris-spring-runtime-tx — ExerisPlatformTransactionManager is referenced
+             by ExerisDataAutoConfiguration to coordinate JDBC-bridge transaction lifecycle. -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-spring-runtime-tx</artifactId>
+        </dependency>
+
         <!-- Spring TX — needed for DataSource integration and TransactionSynchronization -->
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-tx</artifactId>
+        </dependency>
+
+        <!-- Spring Context — @Bean configuration support -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+        </dependency>
+
+        <!-- Spring Boot autoconfigure — @AutoConfiguration, @ConditionalOn* used by
+             ExerisDataAutoConfiguration. Default-off (per ADR-017 / Phase 3C Level 2). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
         </dependency>
 
         <!-- spring-jdbc — OPTIONAL. Only added if JDBC compatibility bridge is approved.
@@ -68,6 +97,22 @@
         <dependency>
             <groupId>org.assertj</groupId>
             <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Spring Boot test — TestPropertyValues, ApplicationContextRunner used in
+             ExerisDataAutoConfigurationTest to verify default-off activation. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- H2 — in-memory JDBC driver for ExerisConnectionProxyTest scenarios.
+             Test scope only; never reaches the runtime classpath. -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
             <scope>test</scope>
         </dependency>
         <!-- Phase 1c closure: PureModeClasspathGuardTest uses ArchUnit to enforce that
