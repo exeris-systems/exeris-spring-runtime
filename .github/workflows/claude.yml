@@ -18,10 +18,16 @@ jobs:
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
       (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
     runs-on: ubuntu-latest
+    # Per https://github.com/anthropics/claude-code-action/blob/main/examples/claude.yml
+    # the @claude-mention job needs write across contents / pull-requests / issues so
+    # Claude can push commits, post comments, and update issues / PRs in response to a
+    # mention. With read-only permissions the action accepts the trigger but every
+    # mutation call gets 403 from the GitHub API, leaving the user with a triggered
+    # action that produced no visible response.
     permissions:
-      contents: read
-      pull-requests: read
-      issues: read
+      contents: write
+      pull-requests: write
+      issues: write
       id-token: write
       actions: read # Required for Claude to read CI results on PRs
     steps:
