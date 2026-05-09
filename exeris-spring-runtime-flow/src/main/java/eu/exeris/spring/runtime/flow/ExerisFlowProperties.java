@@ -13,21 +13,30 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 /**
  * Configuration properties for the Exeris Flow / Saga bridge module (Phase 4B).
  *
- * <p>All flags default to {@code false}. The flow module is opt-in and never activates
- * implicitly. {@link #enabled()} gates the entire module; {@link #persistenceEnabled()}
- * gates durable snapshot persistence (deliberately held back in {@code 0.5.0-preview} —
- * see Phase 4B plan); {@link #choreographyEnabled()} gates event-driven flow triggers
- * (which additionally require {@code FlowEngineCapabilities.choreographySupport()} on
- * the kernel side).
+ * <p>All optional flags default to {@code false}. The flow module is opt-in and never
+ * activates implicitly.
+ *
+ * <ul>
+ *   <li>{@link #enabled()} — master switch for the flow module; gates
+ *       {@code ExerisFlowAutoConfiguration} via {@code @ConditionalOnProperty}.</li>
+ *   <li>{@link #persistenceEnabled()} — gates durable snapshot persistence (deliberately
+ *       held back in {@code 0.5.0-preview} until an Exeris-owned {@code FlowSnapshotStore}
+ *       lands; see Phase 4B plan).</li>
+ *   <li>{@link #choreographyEnabled()} — gates event-driven flow triggers via the
+ *       choreography bridge (Step 3); additionally requires
+ *       {@code FlowEngineCapabilities.choreographySupport()} on the kernel side.</li>
+ *   <li>{@link #requireEngine()} — defaults to {@code true}. When {@code ExerisFlowDefinition}
+ *       beans are declared but the kernel did not bind a {@code FlowEngine} during
+ *       bootstrap, the registrar fails the lifecycle start instead of silently dropping
+ *       compiled plans. Test harnesses that intentionally skip kernel boot opt out by
+ *       setting this to {@code false} (mirrors {@code exeris.runtime.events.require-engine}).</li>
+ * </ul>
  *
  * @param enabled              master switch for the flow module — default {@code false}
  * @param persistenceEnabled   gates durable snapshot persistence; default {@code false}
- *                             until an Exeris-owned {@code FlowSnapshotStore} ships in
- *                             tx or data module
- * @param choreographyEnabled  gates event-driven flow triggers via
- *                             {@code ExerisFlowChoreographyBridge}; default {@code false};
- *                             additionally requires the kernel to advertise
- *                             {@code choreographySupport()=true}
+ * @param choreographyEnabled  gates event-driven flow triggers; default {@code false}
+ * @param requireEngine        fail-loud posture when definitions are declared without an
+ *                             engine; default {@code true}
  * @since 0.1.0
  */
 @ConfigurationProperties(prefix = "exeris.runtime.flow")
@@ -35,7 +44,8 @@ public record ExerisFlowProperties(
 
         @DefaultValue("false") boolean enabled,
         @DefaultValue("false") boolean persistenceEnabled,
-        @DefaultValue("false") boolean choreographyEnabled
+        @DefaultValue("false") boolean choreographyEnabled,
+        @DefaultValue("true") boolean requireEngine
 
 ) {
 

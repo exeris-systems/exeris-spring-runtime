@@ -20,19 +20,26 @@
         Spring @Async (or any thread-pool task executor) the canonical execution path
         for compensable, parkable, or event-triggered work.
 
-        Scope (Phase 4B — 1.0 preview, default-off, this module skeleton ships first):
-          - FlowEngineSupplier: deferred ScopedValue accessor pattern (analog to
-            EventEngineSupplier in events module),
+        Scope (Phase 4B — 1.0 preview, default-off):
+          - FlowEngineSupplier: deferred ScopedValue accessor pattern (Step 1).
           - ExerisFlowProperties: enabled + persistenceEnabled + choreographyEnabled
-            flags, all default-off,
-          - ExerisFlowAutoConfiguration: @ConditionalOnProperty gating,
-            wires FlowEngineSupplier from ExerisRuntimeLifecycle.getFlowEngine().
+            + requireEngine flags, all default to safe values.
+          - ExerisFlowAutoConfiguration: @ConditionalOnProperty gating; wires the
+            template, registrar, and engine supplier from
+            ExerisRuntimeLifecycle.getFlowEngine().
+          - ExerisFlowDefinition (Step 2): interface for Spring beans declaring
+            kernel FlowDefinitions through FlowDefinitionBuilder + FlowStepAction
+            lambdas.
+          - ExerisFlowTemplate (Step 2): imperative invocation surface for Spring
+            beans — schedule, park, wake, lookupParked, stats, plan registry. Resolves
+            the engine via FlowEngineSupplier per call (ScopedValue contract).
+          - ExerisFlowDefinitionRegistrar (Step 2): SmartInitializingSingleton +
+            SmartLifecycle that compiles plans at lifecycle start and populates the
+            template's plan registry; tolerates a missing engine when
+            exeris.runtime.flow.require-engine=false (test/dev only).
 
-        Subsequent Phase 4B steps will land:
-          - ExerisFlowDefinition (declarative DSL bridging FlowDefinitionBuilder),
-          - ExerisFlowTemplate (imperative invocation surface for Spring beans),
-          - ExerisFlowChoreographyBridge (opt-in event-driven flow trigger,
-            gated on FlowEngineCapabilities.choreographySupport()).
+        Step 3 will add ExerisFlowChoreographyBridge (opt-in event-driven flow
+        trigger, gated additionally on FlowEngineCapabilities.choreographySupport()).
 
         Activation:
           exeris.runtime.flow.enabled = true (matchIfMissing = false)
@@ -96,6 +103,22 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Runtime integration test: a real FlowProvider on the test classpath so the
+             kernel bootstrap discovers and binds KernelProviders.FLOW_ENGINE. Production
+             classpath stays clean — community is test-scope only. -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-community</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- H2 in-memory keeps the kernel persistence subsystem happy during runtime IT
+             bootstrap. The flow bridge does not depend on persistence; we only need the
+             kernel boot DAG to complete so FLOW_ENGINE gets bound. -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
             <scope>test</scope>
         </dependency>
         <!-- Phase 1c invariant: every Pure Mode module ships PureModeClasspathGuardTest +

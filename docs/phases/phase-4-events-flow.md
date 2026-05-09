@@ -221,6 +221,12 @@ hot path.
 
 ## 4B: Flow / Saga Bridge
 
+**Status:**
+- **Step 1 — Closed (PR #17, 2026-05-09):** module skeleton, `FlowEngineSupplier`, `ExerisFlowProperties`, `ExerisFlowAutoConfiguration` (engine supplier only), `FlowModuleBoundaryTest` (incl. mechanical `@Async` ban), `PureModeClasspathGuardTest`. Lifecycle seam — `ExerisRuntimeLifecycle.getFlowEngine()` — landed in the same PR.
+- **Step 2 — Closed (PR #TBD, 2026-05-09):** declarative + imperative invocation surface. `ExerisFlowDefinition` interface, `ExerisFlowTemplate` (schedule / park / wake / lookupParked / stats / plan registry), `ExerisFlowDefinitionRegistrar` (boot-time compile + registry population, tolerant/strict posture mirroring events module via `exeris.runtime.flow.require-engine`). Runtime IT proves lifecycle capture + first `requireEngine()` consumer call site against the live community kernel. Step-closure architecture guard added to `FlowModuleBoundaryTest`.
+- **Step 3 — Planned:** `ExerisFlowChoreographyBridge` — opt-in event-driven flow trigger, gated on both `exeris.runtime.flow.choreography-enabled=true` and `FlowEngineCapabilities.choreographySupport()`.
+- **Step 4 — Planned:** Phase 4B closure — invariants doc, master-doc closure section, full lifecycle (schedule → park → wake → complete) runtime IT.
+
 ### Goal
 
 Spring beans declare `FlowEngine`-backed flows using a minimal interface contract.
@@ -308,20 +314,25 @@ Step methods receive `FlowContext` (SPI type) and return `FlowOutcome` (SPI enum
 are injected into the flow class via constructor injection — they do not appear in the SPI
 method signatures.
 
-**`ExerisFlowTemplate`**
-- Holds the compiled `FlowExecutionPlan` map by definition name
+**`ExerisFlowTemplate`** _(Step 2, delivered)_
+- Holds the compiled `FlowExecutionPlan` map by definition name (populated by the registrar at lifecycle start; cleared at stop).
+- Resolves the kernel `FlowEngine` via `FlowEngineSupplier.requireEngine()` per call — the engine is read from the current `ScopedValue` scope, never captured at construction.
 - Exposes:
-  - `FlowContext newContext(String definitionName)` — creates a new `FlowContext` UUID instance
-  - `void schedule(String definitionName, FlowContext context)` — schedules for execution
-  - `void wake(FlowContext context)` — wakes a parked instance
-  - `FlowEngineStats stats()` — diagnostic stats from `FlowEngine.stats()`
-- Thin delegation only — owns no state beyond the compiled plan map
+  - `FlowContext newContext(String definitionName)` — heap-backed seed implementing `FlowContext`: UUID-split instance id, `state=CREATED`, `currentStep=0`, plan-derived `timeoutNanos`.
+  - `FlowContext schedule(String definitionName)` — convenience: `schedule(name, newContext(name))`; returns the seed for later park/wake.
+  - `void schedule(String definitionName, FlowContext context)` — schedules an explicit context for execution.
+  - `void park(FlowContext context)` / `void wake(FlowContext context)` — symmetric scheduler delegation.
+  - `Optional<FlowContext> lookupParked(long, long)` — read-through to the kernel scheduler.
+  - `FlowEngineStats stats()` — diagnostic stats.
+  - `Set<String> registeredFlowNames()`, `boolean hasFlow(String)`, `Map<String, FlowExecutionPlan> registeredPlans()` — read-only diagnostic surface.
+- Thin delegation only — owns no flow state beyond the compiled plan map.
 
-**`ExerisFlowDefinitionRegistrar implements SmartInitializingSingleton`**
-- Collects all `ExerisFlowDefinition` beans after context refresh
-- Compiles `FlowExecutionPlan` for each via `FlowEngine.plans().compile(definition)`
-- Populates `ExerisFlowTemplate` plan registry
-- Fails fast at startup if `FlowEngine` slot is unbound (`FlowEngineException`)
+**`ExerisFlowDefinitionRegistrar implements SmartInitializingSingleton, SmartLifecycle`** _(Step 2, delivered)_
+- Collects all `ExerisFlowDefinition` beans at `afterSingletonsInstantiated()`; rejects duplicate `name()` and blank names at collection time.
+- At lifecycle `start()` (phase `Integer.MAX_VALUE - 99`, immediately after the kernel lifecycle): for each binding, calls `engine.plans().newDefinition(name)` → `bean.define(builder)` → `engine.plans().compile(def)` → `template.registerPlan(name, plan)`.
+- Validates `definition.name()` matches the supplied bean name — catches a bean that ignored the registrar-provided builder.
+- Posture matches the events registrar: when no engine is bound and `exeris.runtime.flow.require-engine=true` (default) **with** definitions declared, fails the lifecycle start loud; when set to `false` (test/dev), logs a warning and transitions to running with no compiled plans. With zero definitions declared the registrar is always tolerant.
+- `stop()` clears the template plan registry so a re-bootstrap starts from an empty state.
 
 **`ExerisFlowChoreographyBridge implements SmartInitializingSingleton`**
 - Discovers all `FlowChoreographyMapper` beans
