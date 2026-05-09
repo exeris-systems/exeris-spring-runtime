@@ -58,13 +58,15 @@ final class ExerisCompatTypeConverter {
         try {
             Object result = conversionService.convert(raw, type);
             if (result == null && type.isPrimitive()) {
+                // Do not include the raw value in the exception message: it is user-controlled
+                // (query/path/header) and would flow into logs verbatim (CWE-117/532).
                 throw new IllegalArgumentException(
-                        "Cannot convert '" + raw + "' to primitive " + type.getSimpleName());
+                        "Cannot convert request value to primitive " + type.getSimpleName());
             }
             return result;
         } catch (ConversionException ex) {
             throw new IllegalArgumentException(
-                    "Cannot convert '" + raw + "' to " + type.getSimpleName(), ex);
+                    "Cannot convert request value to " + type.getSimpleName(), ex);
         }
     }
 }
