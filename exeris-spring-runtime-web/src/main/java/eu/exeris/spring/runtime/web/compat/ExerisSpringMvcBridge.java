@@ -32,6 +32,7 @@ import eu.exeris.spring.runtime.web.compat.context.ExerisThreadLocalBridge;
  * <p>ThreadLocal binding is performed only in {@link ExerisThreadLocalBridge},
  * deterministically cleared in {@code finally}, isolated from the pure-mode path.
  */
+@CompatibilityMode
 public final class ExerisSpringMvcBridge {
 
     public sealed interface DispatchResult permits DispatchResult.Handled, DispatchResult.NotHandled {
