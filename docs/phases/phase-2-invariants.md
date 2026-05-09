@@ -91,10 +91,14 @@ cost is acknowledged and tracked, not constrained.
 - **Guard:** `ExerisCompatAllocationCostReportTest` (informational only;
   sanity assertions verify both dispatchers produce a response).
 - **Current observed baseline (2026-05-09):** Pure ≈ 176 B/dispatch, Compat
-  ≈ 5856 B/dispatch (≈ 33× overhead, dominated by argument resolution
+  ≈ 5095 B/dispatch (≈ 29× overhead, dominated by argument resolution
   wrappers, `ServerHttpRequest`/`Response` adapters, and ThreadLocal
-  binding/clear cycles). Pure Mode keeps its hard ≤ 1024 B/req budget per
-  Phase 1.
+  binding/clear cycles). The Pure number in this report differs from the
+  Phase 1 hard-budget baseline (`ExerisDispatcherAllocationBaselineTest`,
+  ~248 B/dispatch with budget 1024) — the cost report's compat warmup
+  pre-tier-compiles the dispatch path to a deeper level before measurement,
+  which lowers Pure absolute numbers in this fixture; the relative magnitude
+  of the Compat overhead is the load-bearing reading.
 
 ## 8. `@CompatibilityMode` marker on top-level Compat entry classes
 

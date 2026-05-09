@@ -109,7 +109,7 @@ compatibility cost.
 | # | Item | Module | Status | Result |
 |:-:|:------|:-------|:-------|:-----|
 | 20 | `@CompatibilityMode` marker annotation (per ADR-011) | `web` | ✅ | `eu.exeris.spring.runtime.web.compat.CompatibilityMode` (`RetentionPolicy.CLASS`); applied to `ExerisCompatDispatcher`, `ExerisSpringMvcBridge`, `ExerisCompatAutoConfiguration`. Documentation marker; isolation enforced by package convention + `CompatibilityIsolationGuardTest` 7/7. |
-| 21 | Compatibility allocation cost report test | `web` (test) | ✅ | `ExerisCompatAllocationCostReportTest` — side-by-side pure vs compat for the same empty-body GET; logs delta; informational only. **Observed (2026-05-09):** Pure ≈ 176 B/dispatch, Compat ≈ 5856 B/dispatch (≈ 33× overhead). Satisfies ADR-011 "compatibility-mode allocation cost is documented, never hidden". |
+| 21 | Compatibility allocation cost report test | `web` (test) | ✅ | `ExerisCompatAllocationCostReportTest` — side-by-side pure vs compat for the same empty-body GET; logs delta; informational only. Test scaffolding mirrors `ExerisDispatcherAllocationBaselineTest` (direct `final class TestExchange implements HttpExchange`; `HttpRequest.noBody(...)` factory; `HttpVersion.HTTP_1_1` constant — no reflection). **Observed (2026-05-09):** Pure ≈ 176 B/dispatch, Compat ≈ 5095 B/dispatch (≈ 29× overhead, +4919 B/req). Pure Mode hard budget (≤ 1024 B/req) from Phase 1 baseline test stays green. Satisfies ADR-011 "compatibility-mode allocation cost is documented, never hidden". |
 | 22 | Phase 2 invariants document | docs | ✅ | [`phase-2-invariants.md`](phase-2-invariants.md) — 10 compat-specific invariants additive to Phase 0/1, each mapped to its guard. |
 | 23 | Doc reconciliation | docs | ✅ | This file rewritten as master with sub-phases; feature-support matrix corrected for items moved to ADR-021 (gateway-class) and `HandlerInterceptor`/`WebMvcConfigurer` (deferred). |
 
@@ -225,7 +225,7 @@ Phase 2 closes when all of the following hold:
 2. ✅ JSON request/response body works.
 3. ✅ `@ExceptionHandler` is invoked for handler exceptions (controller + `@ControllerAdvice`).
 4. ✅ No `jakarta.servlet.*` on the classpath in Compatibility Mode.
-5. ✅ Compatibility Mode heap allocation report is generated and logged (`ExerisCompatAllocationCostReportTest`; observed Pure ≈ 176 B/dispatch, Compat ≈ 5856 B/dispatch, ≈ 33× overhead).
+5. ✅ Compatibility Mode heap allocation report is generated and logged (`ExerisCompatAllocationCostReportTest`; observed Pure ≈ 176 B/dispatch, Compat ≈ 5095 B/dispatch, ≈ 29× overhead).
 6. ✅ Pure Mode allocation baseline is unchanged — Phase 1 `ExerisDispatcherAllocationBaselineTest` stays green.
 7. ✅ `ExerisHttpDispatcher` has zero imports from `*.compat.*` (`CompatibilityIsolationGuardTest`).
 8. ✅ Phase 1 integration tests continue to pass unchanged.
@@ -240,6 +240,6 @@ All ten criteria are met. Phase 2 is closed.
 
 | Risk | Resolution |
 |:-----|:-----------|
-| Compat allocation cost test becomes flaky on CI | Test ships informational only — no assertion on Compat magnitude. Output is a logged report (Pure ≈ 176 B, Compat ≈ 5856 B, ≈ 33× ratio observed); 30k warmup + 30k measurement smooths JIT/GC noise. Sanity assertions on response presence are robust. |
+| Compat allocation cost test becomes flaky on CI | Test ships informational only — no assertion on Compat magnitude. Output is a logged report (Pure ≈ 176 B, Compat ≈ 5095 B, ≈ 29× ratio observed); 30k warmup + 30k measurement smooths JIT/GC noise. Sanity assertions on response presence are robust. Direct `HttpExchange` interface implementation mirrors Phase 1 baseline test scaffolding so the Pure reading stays consistent with Phase 1 budget enforcement. |
 | `@CompatibilityMode` marker drifts (added to one class, missed on another) | Marker is documentation, not enforcement. Architectural isolation enforced by package convention + `CompatibilityIsolationGuardTest` 7/7 — independent of marker placement. Future entry classes can be marked at PR time. |
 | Phase 2 invariants overlap with Phase 0/1 | `phase-2-invariants.md` is additive — references Phase 0/1 instead of duplicating. Compat-specific (mode opt-in, no `DispatcherServlet`, gateway-class out, `ThreadLocal` bounded, allocation cost reported). |

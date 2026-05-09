@@ -2,7 +2,7 @@
 
 | Attribute       | Value                                                                                                                                          |
 |:----------------|:-----------------------------------------------------------------------------------------------------------------------------------------------|
-| **Status**      | **PROPOSED** (drafted 2026-05-09)                                                                                                              |
+| **Status**      | **ACCEPTED** (drafted and accepted 2026-05-09; single decider — no future gating event; ratified by the PR that introduces this file)          |
 | **Deciders**    | Arkadiusz Przychocki                                                                                                                           |
 | **Date**        | 2026-05-09                                                                                                                                     |
 | **Scope**       | spring (binds `exeris-spring-runtime-web` Compatibility Mode contract; introduces `exeris-spring-runtime-gateway` artefact slot)               |

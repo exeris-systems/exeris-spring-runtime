@@ -195,7 +195,7 @@ Phase 5 closes (preview-graduates inside 1.0.x) when all of the following hold:
 | Gateway dispatcher coupling into `web` module | Gateway lives in its own module; `web` does not depend on `gateway`; gateway depends on `web` read-only (`ExerisServerRequest/Response`). |
 | `LoanedBuffer` ownership across forwarder hops | The forwarder must observe Phase 1 invariant 5 (`LoanedBuffer` ownership transfer). If the response body is forwarded, ownership transfers to the engine via `exchange.respond()`. Body modification is deferred (out of scope) precisely because this is subtle. |
 | Operators activate gateway by mistake in production | Default-off via `exeris.runtime.gateway.enabled`; activation requires explicit operator action; bootstrap log line announces gateway mode loudly. |
-| Confusion with Phase 2 Compatibility Mode | Marker annotation `@GatewayMode` and a separate auto-configuration class signal at code-review and review-tool time that this is not Compat. ADR-021 cited from package-info. |
+| Confusion with Phase 2 Compatibility Mode | **Mitigations land with Phase 5 implementation, not before.** Deliverable #8 introduces a `@GatewayMode` marker analogous to `@CompatibilityMode` (already shipped in Phase 2c); a separate auto-configuration class plus a `gateway` module package-info citing ADR-021 by number make Gateway Mode visually distinct from Compat at code-review and review-tool time. Until then, ADR-021 itself (already accepted) is the architectural anchor reviewers cite. |
 
 ---
 
