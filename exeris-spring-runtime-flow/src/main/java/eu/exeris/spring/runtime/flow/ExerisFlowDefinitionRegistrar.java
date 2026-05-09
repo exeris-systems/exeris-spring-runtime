@@ -58,7 +58,7 @@ import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
  * tests with {@code exeris.runtime.auto-start=false}) opt out by setting
  * {@code exeris.runtime.flow.require-engine=false}.
  *
- * @since 0.1.0
+ * @since 0.5.0
  */
 public final class ExerisFlowDefinitionRegistrar implements SmartInitializingSingleton, SmartLifecycle {
 

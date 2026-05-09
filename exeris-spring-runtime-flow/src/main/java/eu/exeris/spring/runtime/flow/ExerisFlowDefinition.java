@@ -71,7 +71,7 @@ import eu.exeris.kernel.spi.flow.model.FlowDefinition;
  * }
  * }</pre>
  *
- * @since 0.1.0
+ * @since 0.5.0
  */
 public interface ExerisFlowDefinition {
 

@@ -53,7 +53,7 @@ import eu.exeris.kernel.spi.flow.model.FlowState;
  *   <li>{@link #planFor(String)} fails fast if the flow is unknown.</li>
  * </ul>
  *
- * @since 0.1.0
+ * @since 0.5.0
  */
 public final class ExerisFlowTemplate {
 
