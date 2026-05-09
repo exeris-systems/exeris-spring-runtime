@@ -36,6 +36,7 @@
         <module>exeris-spring-runtime-tx</module>
         <module>exeris-spring-runtime-data</module>
         <module>exeris-spring-runtime-actuator</module>
+        <module>exeris-spring-runtime-events</module>
     </modules>
 
     <properties>

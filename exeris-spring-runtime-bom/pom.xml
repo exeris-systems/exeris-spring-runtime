@@ -44,6 +44,11 @@
                 <artifactId>exeris-spring-runtime-actuator</artifactId>
                 <version>${project.version}</version>
             </dependency>
+            <dependency>
+                <groupId>eu.exeris</groupId>
+                <artifactId>exeris-spring-runtime-events</artifactId>
+                <version>${project.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
