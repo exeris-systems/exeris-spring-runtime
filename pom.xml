@@ -50,7 +50,7 @@
         <maven.compiler.release>26</maven.compiler.release>
 
         <!-- Dependency versions -->
-        <exeris.kernel.version>0.6.0</exeris.kernel.version>
+        <exeris.kernel.version>0.7.0</exeris.kernel.version>
         <!-- Spring Boot 3.5.14 ships fixes for SNYK-JAVA-ORGSPRINGFRAMEWORKBOOT-16191649
              (CWE-338 Weak PRNG, CVE-2026-40975), -16198880 (CWE-377 Insecure Temp File,
              CVE-2026-40973), -16201011 (CWE-59 Symlink Attack, CVE-2026-40977),
@@ -160,7 +160,7 @@
             <id>github-exeris-kernel</id>
             <url>https://maven.pkg.github.com/exeris-systems/exeris-kernel</url>
             <releases>
-                <enabled>false</enabled>
+                <enabled>true</enabled>
             </releases>
             <snapshots>
                 <enabled>true</enabled>
