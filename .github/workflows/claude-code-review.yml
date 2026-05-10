@@ -3,30 +3,22 @@ name: Claude Code Review
 on:
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened]
-    # Optional: Only run on specific file changes
-    # paths:
-    #   - "src/**/*.ts"
-    #   - "src/**/*.tsx"
-    #   - "src/**/*.js"
-    #   - "src/**/*.jsx"
 
 jobs:
   claude-review:
-    # Optional: Filter by PR author
-    # if: |
-    #   github.event.pull_request.user.login == 'external-contributor' ||
-    #   github.event.pull_request.user.login == 'new-developer' ||
-    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
-
     runs-on: ubuntu-latest
-    # Per https://github.com/anthropics/claude-code-action/blob/main/examples/pr-review-comprehensive.yml
-    # the review job needs `pull-requests: write` so Claude can actually post review
-    # comments / inline annotations on the PR. With `pull-requests: read` the action
-    # runs but every comment-post call gets 403 from the GitHub API, which silently
-    # turns the review into a no-op. `contents: read` is enough — the review action
-    # does not push commits, and `issues` permission is not needed for PR review.
-    # `id-token: write` is required for the action's OIDC-based app-token exchange —
-    # leave as-is.
+    # Permissions:
+    #   - `pull-requests: write` is required so Claude can actually post the review
+    #     (without it the action runs and produces no visible output).
+    #   - `contents: read` is enough — the review job does not push commits.
+    #   - `id-token: write` is required for the action's OIDC-based app-token exchange.
+    #
+    # Pattern mirrors `exeris-tooling/.github/workflows/claude-code-review.yml` (the
+    # canonical Exeris setup that delivers reviews end-to-end). The previous variant
+    # of this file used `plugin_marketplaces` + `plugins: code-review@claude-code-plugins`
+    # which ran cleanly but never posted comments. The plugin path does not enable
+    # comment-posting MCP tools by default; the inline-prompt path with explicit
+    # `--allowedTools` does. See `claude_args` below for the allow-list.
     permissions:
       contents: read
       pull-requests: write
@@ -34,7 +26,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 1
 
@@ -43,9 +35,65 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
-          plugins: 'code-review@claude-code-plugins'
-          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://code.claude.com/docs/en/cli-reference for available options
 
+          track_progress: true
+
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Review this PR. The repo is `exeris-spring-runtime` — a host-runtime
+            integration layer (NOT a Spring Boot starter). Spring is the application
+            framework; Exeris owns transport ingress, request lifecycle, backpressure,
+            off-heap memory, provider discovery (`ServiceLoader`), and the telemetry
+            hot path. The kernel (`exeris-kernel-spi`, `exeris-kernel-core`) is consumed
+            as binary deps and must remain Spring-free ("The Wall").
+
+            Source-of-truth docs (in precedence order):
+            1. `docs/adr/*` — long-lived architectural intent
+            2. `docs/architecture/module-boundaries.md`,
+               `docs/architecture/kernel-integration-seams.md` — structural contracts
+            3. `docs/phases/phase-*.md` — current delivery scope
+            4. `CLAUDE.md` — repo-wide guidance for AI reviewers (read this)
+
+            Focus on:
+            1. **Ownership / Wall integrity** — flag any change that quietly inverts
+               runtime ownership (servlet/Netty/Reactor on the request path, IoC
+               replacing `ServiceLoader`, JDBC-first persistence) or leaks Spring
+               types into `eu.exeris.kernel.*`.
+            2. **Mode discipline** — every meaningful change must declare Pure /
+               Compatibility / Mixed. Pure-mode code must not import from `*.compat.*`.
+               `ThreadLocal` is banned on hot paths (use `ScopedValue`); narrow
+               `ThreadLocal` is only allowed in `*.compat.*` with `finally` cleanup.
+            3. **Module boundaries** — banned edges: `autoconfigure → web/tx/data`,
+               `web → data`, `data → web`, `tx → web`, `actuator → web (data-plane)`.
+               `autoconfigure` stays thin (no transport, no request processing,
+               no tx, no persistence).
+            4. **Hot-path discipline** — no per-request wrapper DTO allocation in
+               pure mode; no body copy from `LoanedBuffer` to `byte[]`/`InputStream`
+               on the primary path; `LoanedBuffer` ownership rules respected;
+               `HttpHandler.handle` completes exactly once.
+            5. **Bootstrap order** — Spring `refresh()` → `ExerisRuntimeLifecycle.start()`
+               → `KernelBootstrap.bootstrap()` → handlers register → engine binds.
+               Shutdown reverses exactly. Flag any change that perturbs this.
+            6. **ADR / Phase impact** — if the change affects ownership model, mode
+               semantics, module contracts, or compatibility guarantees, flag the
+               need for an ADR (don't just edit code).
+            7. **Architecture guards** — `WallIntegrityTest`, `ModuleBoundaryTest`,
+               `*ClasspathGuardTest`, `CompatibilityIsolationGuardTest` failures are
+               real architectural regressions, not test problems.
+            8. **Correctness** — bugs, edge cases, broken contracts, merge artefacts.
+            9. **Scope** — does the diff match the PR title/description? Anything
+               in scope that's missing? Anything out of scope that should be split?
+
+            Skip cosmetic nits unless they affect the above. Be specific: cite
+            `file:line`. Lead with blockers, then in-scope improvements, then
+            non-blocking suggestions. End with a clear verdict
+            (LGTM / Approve with nits / Request changes).
+
+            Post your review as a single PR review (not many separate comments).
+            Use inline comments only when they materially help — `file:line` in the
+            text body is usually clearer.
+
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api:*),Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git status:*),Bash(git branch:*),Bash(git remote:*)"
