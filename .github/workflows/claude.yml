@@ -23,7 +23,8 @@ jobs:
     # Claude can push commits, post comments, and update issues / PRs in response to a
     # mention. With read-only permissions the action accepts the trigger but every
     # mutation call gets 403 from the GitHub API, leaving the user with a triggered
-    # action that produced no visible response.
+    # action that produced no visible response. `id-token: write` is required for the
+    # action's OIDC-based app-token exchange — leave as-is.
     permissions:
       contents: write
       pull-requests: write

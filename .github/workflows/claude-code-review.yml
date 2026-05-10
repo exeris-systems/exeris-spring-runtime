@@ -25,6 +25,8 @@ jobs:
     # runs but every comment-post call gets 403 from the GitHub API, which silently
     # turns the review into a no-op. `contents: read` is enough — the review action
     # does not push commits, and `issues` permission is not needed for PR review.
+    # `id-token: write` is required for the action's OIDC-based app-token exchange —
+    # leave as-is.
     permissions:
       contents: read
       pull-requests: write
