@@ -12,6 +12,7 @@ import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeAutoConfiguration;
+import eu.exeris.spring.runtime.events.ExerisEventAutoConfiguration;
 
 /**
  * Autoconfiguration tests for the flow module (Phase 4B).
@@ -27,9 +28,11 @@ import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeAutoConfiguration;
  *   <li>{@link ExerisFlowProperties} optional flags ({@code persistenceEnabled},
  *       {@code choreographyEnabled}) default to {@code false} even when the module
  *       is enabled. {@code requireEngine} defaults to {@code true} (fail-loud posture).</li>
+ *   <li>Step 3: {@link ExerisFlowChoreographyBridge} is conditional on
+ *       {@code exeris.runtime.flow.choreography-enabled=true} AND an
+ *       {@code ExerisEventPublisher} bean (events module active). Activation matrix
+ *       verified below.</li>
  * </ul>
- *
- * <p>Step 3 will extend this class once {@code ExerisFlowChoreographyBridge} lands.
  */
 class ExerisFlowAutoConfigurationTest {
 
@@ -122,6 +125,52 @@ class ExerisFlowAutoConfigurationTest {
                 .run(context -> {
                     assertThat(context).hasSingleBean(FlowEngineSupplier.class);
                     assertThat(context.getBean(FlowEngineSupplier.class).tryGet()).isEmpty();
+                });
+    }
+
+    // ---- Step 3 — choreography bridge activation matrix ----
+
+    @Test
+    void choreographyBridgeAbsentWhenChoreographyFlagDefaultFalse() {
+        contextRunner
+                .withConfiguration(AutoConfigurations.of(ExerisEventAutoConfiguration.class))
+                .withPropertyValues(
+                        "exeris.runtime.flow.enabled=true",
+                        "exeris.runtime.flow.require-engine=false",
+                        "exeris.runtime.events.enabled=true",
+                        "exeris.runtime.events.require-engine=false")
+                .run(context -> {
+                    assertThat(context).doesNotHaveBean(ExerisFlowChoreographyBridge.class);
+                });
+    }
+
+    @Test
+    void choreographyBridgeAbsentWhenEventsModuleNotLoaded() {
+        // No ExerisEventAutoConfiguration on the AutoConfigurations list — even with
+        // choreography-enabled=true the bridge stays absent because there is no
+        // ExerisEventPublisher bean to satisfy @ConditionalOnBean.
+        contextRunner
+                .withPropertyValues(
+                        "exeris.runtime.flow.enabled=true",
+                        "exeris.runtime.flow.require-engine=false",
+                        "exeris.runtime.flow.choreography-enabled=true")
+                .run(context -> {
+                    assertThat(context).doesNotHaveBean(ExerisFlowChoreographyBridge.class);
+                });
+    }
+
+    @Test
+    void choreographyBridgeWiredWhenFlagOnAndEventsActive() {
+        contextRunner
+                .withConfiguration(AutoConfigurations.of(ExerisEventAutoConfiguration.class))
+                .withPropertyValues(
+                        "exeris.runtime.flow.enabled=true",
+                        "exeris.runtime.flow.require-engine=false",
+                        "exeris.runtime.flow.choreography-enabled=true",
+                        "exeris.runtime.events.enabled=true",
+                        "exeris.runtime.events.require-engine=false")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(ExerisFlowChoreographyBridge.class);
                 });
     }
 }

@@ -241,7 +241,113 @@ redefine event envelopes, or bypass `KernelEvent` encoding. It may only read and
 
 ---
 
-## Seam 7: Persistence Bridge (Phase 3)
+## Seam 7: Events Bridge (Phase 4A)
+
+**Kernel SPI:**
+- `eu.exeris.kernel.spi.events.EventEngine`
+- `eu.exeris.kernel.spi.events.EventBus`
+- `eu.exeris.kernel.spi.events.EventDescriptor`
+- `eu.exeris.kernel.spi.events.EventPayload`
+- `eu.exeris.kernel.spi.events.EventHandler`
+- `eu.exeris.kernel.spi.events.EventTypeSpec`
+- `eu.exeris.kernel.spi.context.KernelProviders.EVENT_ENGINE`
+
+**Integration strategy:**
+
+The events module bridges Spring beans to the kernel `EventBus` *without* wiring Spring's
+`ApplicationEventPublisher` into it. The two buses stay separate by architectural rule —
+`@ExerisEventListener`-annotated methods subscribe to kernel types, `@EventListener`-annotated
+methods receive Spring application events; a single bean may carry both annotations on
+different methods, but the two pipes never join.
+
+```
+Spring beans
+    ← ExerisEventListenerRegistrar (SmartLifecycle, phase MAX_VALUE - 99)
+        → EventBus.subscribe(typeName, handler) — handlers invoked on kernel dispatch path
+    ← ExerisEventPublisher
+        → EventBus.publish(descriptor, payload) — payload ownership transferred to bus
+```
+
+`EventEngineSupplier` (a deferred `ScopedValue` accessor wrapping
+`KernelProviders.EVENT_ENGINE`) is the single seam through which Spring beans reach the
+engine — beans never read the `ScopedValue` slot directly.
+
+---
+
+## Seam 8: Flow / Saga Bridge (Phase 4B)
+
+**Kernel SPI:**
+- `eu.exeris.kernel.spi.flow.FlowEngine`
+- `eu.exeris.kernel.spi.flow.FlowExecutionPlanFactory`
+- `eu.exeris.kernel.spi.flow.FlowScheduler`
+- `eu.exeris.kernel.spi.flow.FlowDefinitionBuilder`
+- `eu.exeris.kernel.spi.flow.model.FlowDefinition` / `FlowExecutionPlan` / `FlowContext` / `FlowOutcome`
+- `eu.exeris.kernel.spi.flow.FlowEngineCapabilities`
+- `eu.exeris.kernel.spi.flow.FlowChoreographyMapper` / `ChoreographyDecision` *(Step 3)*
+- `eu.exeris.kernel.spi.context.KernelProviders.FLOW_ENGINE`
+
+**Integration strategy:**
+
+The flow module exposes the kernel `FlowEngine` as a structured asynchronous / saga
+programming model — the recommended replacement for Spring `@Async` whenever a unit of
+work needs compensation, park/wake, or event-driven invocation. Two surfaces, both opt-in
+behind `exeris.runtime.flow.enabled=true`:
+
+```
+Spring beans declaring saga shapes
+    ← ExerisFlowDefinitionRegistrar (SmartLifecycle, phase MAX_VALUE - 99)
+        → engine.plans().newDefinition(name) → bean.define(builder) → engine.plans().compile(def)
+        → ExerisFlowTemplate.registerPlan(name, plan)
+
+Imperative invocation
+    ← ExerisFlowTemplate
+        → engine.scheduler().schedule(plan, ctx) | park | wake | lookupParked
+```
+
+`FlowEngineSupplier` (a deferred `ScopedValue` accessor wrapping
+`KernelProviders.FLOW_ENGINE`) is the single seam — same pattern as `EventEngineSupplier`.
+Step lambdas execute on kernel-owned virtual threads; closing over a Spring bean is fine,
+but step bodies must call collaborators by interface, not couple to HTTP / transaction /
+JDBC packages directly (architecture guard enforces this).
+
+### Sub-seam 8a: Choreography Ladder (Step 3)
+
+When `exeris.runtime.flow.choreography-enabled=true` and the events module is active,
+`ExerisFlowChoreographyBridge` discovers `ExerisFlowChoreographyMapper` beans and registers
+each with the kernel via `FlowEngine.registerChoreographyMapper(mapper, eventTypeNames, bus)`.
+The kernel owns the resulting subscriptions and cancels them on `engine.close()`.
+
+```
+Spring choreography mapper beans (ExerisFlowChoreographyMapper)
+    ← ExerisFlowChoreographyBridge (SmartLifecycle, phase MAX_VALUE - 98)
+        → flowEngine.registerChoreographyMapper(mapper, eventTypeNames, eventBus)
+            → for each name: bus.subscribe(name, kernel-internal handler that calls mapper.map())
+                → mapper.map(EventDescriptor) returns
+                    ChoreographyDecision.Ignore | Wake(uuid) | Start(plan, uuid)
+```
+
+Phase ordering: registrars sit at `MAX_VALUE - 99` (flow definitions, event listeners) so
+that plans are compiled and listeners subscribed before the choreography bridge wires
+mappers at `MAX_VALUE - 98`. The kernel lifecycle itself sits at `MAX_VALUE - 100`, so
+both `FlowEngine` and `EventEngine` references are captured by the time any of these
+`SmartLifecycle.start()` calls fire.
+
+Three gates guard activation, in order:
+1. `exeris.runtime.flow.choreography-enabled=true` (opt-in property; default false).
+2. `ExerisEventPublisher` bean present (events module active).
+3. `flowEngine.capabilities().choreographySupport()` returns true at `start()` (capability
+   gate — checked at lifecycle start, not at bean construction, because capabilities cannot
+   be probed until the kernel has booted). Failure here is always loud: the user explicitly
+   opted in and a tier without the capability cannot honour the contract.
+
+Mappers receive only the `EventDescriptor` (routing metadata) — no payload, no scheduler
+reference. Payload-based logic belongs in `@ExerisEventListener` methods on the events
+module side. This keeps choreography mappers implementation-blind to broker types and
+makes the choreography decision a routing decision, not an event-handling decision.
+
+---
+
+## Seam 9: Persistence Bridge (Phase 3)
 
 **Kernel SPI:**
 - `eu.exeris.kernel.spi.persistence.PersistenceProvider`
@@ -287,5 +393,8 @@ Spring `@Transactional` method, using `ScopedValue` rather than `TransactionSync
 | `SubsystemProvider` | `SmartLifecycle` | `ExerisRuntimeLifecycle` | `autoconfigure` | 0/1 |
 | `KernelProviders` | Context propagation | `ExerisContextHolder` (ScopedValue) | `web` | 1 |
 | `TelemetryProvider` / `TelemetrySink` | Micrometer / Actuator | `ExerisActuatorTelemetryBridge` | `actuator` | 1/2 |
+| `EventEngine` / `EventBus` | Spring beans publish/subscribe | `ExerisEventPublisher`, `ExerisEventListenerRegistrar`, `ExerisEventTypeRegistry` | `events` | 4A |
+| `FlowEngine` / `FlowScheduler` | Saga / structured async | `ExerisFlowTemplate`, `ExerisFlowDefinitionRegistrar` | `flow` | 4B Steps 1–2 |
+| `FlowChoreographyMapper` / `ChoreographyDecision` | Event-driven flow trigger | `ExerisFlowChoreographyBridge`, `ExerisFlowChoreographyMapper` | `flow` | 4B Step 3 |
 | `PersistenceEngine` / `ConnectionFactory` | Repository / DataSource | `ExerisPersistenceAdapter` | `data` | 3 |
 | `PlatformTransactionManager` (Spring) | `StorageContext` | `ExerisPlatformTransactionManager` | `tx` | 3 |

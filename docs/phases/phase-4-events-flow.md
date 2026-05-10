@@ -91,7 +91,7 @@ the `FlowEngine` bridge is the correct tool and `@Async` MUST NOT be introduced 
 | 6 | `ExerisFlowDefinition` interface — Spring beans implement to declare flow steps | `flow` | 4B |
 | 7 | `ExerisFlowTemplate` — programmatic schedule/wake API wrapping `FlowEngine` | `flow` | 4B |
 | 8 | `ExerisFlowDefinitionRegistrar` — scans `ExerisFlowDefinition` beans, compiles plans at boot | `flow` | 4B |
-| 9 | `ExerisFlowChoreographyBridge` — registers beans implementing `FlowChoreographyMapper` with `FlowEngine.registerChoreographyMapper()` | `flow` | 4B |
+| 9 | `ExerisFlowChoreographyMapper` interface (extends kernel `FlowChoreographyMapper`, adds `eventTypeNames()`) + `ExerisFlowChoreographyBridge` — registers each mapper bean with `FlowEngine.registerChoreographyMapper()` | `flow` | 4B |
 | 10 | `ExerisFlowAutoConfiguration` — wires the above; conditional on `FlowEngine` slot bound | `flow` | 4B |
 | 11 | Runtime integration test: full flow lifecycle (schedule → park → wake → complete) | `flow` (test) | 4B |
 | 12 | Runtime integration test: event-triggered choreography (publish event → flow started/woken) | `flow` + `events` (test) | 4B |
@@ -224,7 +224,7 @@ hot path.
 **Status:**
 - **Step 1 — Closed (PR #17, 2026-05-09):** module skeleton, `FlowEngineSupplier`, `ExerisFlowProperties`, `ExerisFlowAutoConfiguration` (engine supplier only), `FlowModuleBoundaryTest` (incl. mechanical `@Async` ban), `PureModeClasspathGuardTest`. Lifecycle seam — `ExerisRuntimeLifecycle.getFlowEngine()` — landed in the same PR.
 - **Step 2 — Closed (PR #TBD, 2026-05-09):** declarative + imperative invocation surface. `ExerisFlowDefinition` interface, `ExerisFlowTemplate` (schedule / park / wake / lookupParked / stats / plan registry), `ExerisFlowDefinitionRegistrar` (boot-time compile + registry population, tolerant/strict posture mirroring events module via `exeris.runtime.flow.require-engine`). Runtime IT proves lifecycle capture + first `requireEngine()` consumer call site against the live community kernel. Step-closure architecture guard added to `FlowModuleBoundaryTest`.
-- **Step 3 — Planned:** `ExerisFlowChoreographyBridge` — opt-in event-driven flow trigger, gated on both `exeris.runtime.flow.choreography-enabled=true` and `FlowEngineCapabilities.choreographySupport()`.
+- **Step 3 — Closed (PR #TBD, 2026-05-10):** `ExerisFlowChoreographyBridge` — opt-in event-driven flow trigger. New `ExerisFlowChoreographyMapper` interface (extends kernel `FlowChoreographyMapper`, adds `eventTypeNames()` for discovery). Bridge runs at `SmartLifecycle` phase `Integer.MAX_VALUE - 98` (one slot after the Step-2 registrars at -99) and registers each mapper with the kernel via `FlowEngine.registerChoreographyMapper(mapper, eventTypeNames, eventBus)`. Three activation gates, in order: opt-in property `exeris.runtime.flow.choreography-enabled=true`, presence of an `ExerisEventPublisher` bean (events module active), and capability gate `FlowEngineCapabilities.choreographySupport()=true` checked at lifecycle start (always-loud failure when violated — the user explicitly opted in). Tolerant/strict posture for missing engine mirrors the Step-2 registrar (`exeris.runtime.flow.require-engine`). Runtime IT exercises real event-bus dispatch into a registered mapper. Choreography ladder + summary-table rows added to `docs/architecture/kernel-integration-seams.md`.
 - **Step 4 — Planned:** Phase 4B closure — invariants doc, master-doc closure section, full lifecycle (schedule → park → wake → complete) runtime IT.
 
 ### Goal
@@ -334,15 +334,28 @@ method signatures.
 - Posture matches the events registrar: when no engine is bound and `exeris.runtime.flow.require-engine=true` (default) **with** definitions declared, fails the lifecycle start loud; when set to `false` (test/dev), logs a warning and transitions to running with no compiled plans. With zero definitions declared the registrar is always tolerant.
 - `stop()` clears the template plan registry so a re-bootstrap starts from an empty state.
 
-**`ExerisFlowChoreographyBridge implements SmartInitializingSingleton`**
-- Discovers all `FlowChoreographyMapper` beans
-- Guards on `FlowEngineCapabilities.choreographySupport()` — if false, emits a warning and skips
-- For each mapper bean: reads `@ExerisChoreographyListener(eventTypes = {...})` to determine
-  which event type names to subscribe to
-- Calls `FlowEngine.registerChoreographyMapper(mapper, eventTypeNames, eventBus)` — requires
-  `ExerisEventAutoConfiguration` to be active (declared dependency in `ExerisFlowAutoConfiguration`)
-- Choreography bridge is `@ConditionalOnBean(ExerisEventPublisher.class)` — no event module,
-  no choreography wiring
+**`ExerisFlowChoreographyBridge implements SmartInitializingSingleton, SmartLifecycle`** _(Step 3, delivered)_
+- `SmartLifecycle` phase `Integer.MAX_VALUE - 98` — one slot after the registrars at -99 so
+  flow plans are compiled and event listeners are subscribed before mappers wire to the bus.
+- Discovers all `ExerisFlowChoreographyMapper` beans (interface, not annotation; extends kernel
+  `FlowChoreographyMapper` and adds `eventTypeNames()` for discovery — chosen over an
+  annotation because mappers typically resolve plans through `ExerisFlowTemplate` and benefit
+  from class-shaped beans + constructor injection).
+- For each mapper bean: validates `eventTypeNames()` is non-empty (rejected at metadata
+  collection time), then calls `FlowEngine.registerChoreographyMapper(mapper, eventTypeNames, eventBus)`.
+  The kernel owns the resulting subscription tokens and cancels them on `engine.close()`.
+- Tolerant/strict posture mirrors `ExerisFlowDefinitionRegistrar`: `exeris.runtime.flow.require-engine`
+  controls whether a missing `FlowEngine` or `EventEngine` fails loud (default) or logs and
+  continues (test/dev only).
+- **Capability gate is always loud:** if mapper beans are declared but
+  `flowEngine.capabilities().choreographySupport()` returns `false`, lifecycle start throws —
+  the user explicitly opted in via `exeris.runtime.flow.choreography-enabled=true` and a tier
+  without the capability cannot honour the contract. The capability is checked at `start()`
+  rather than as a bean condition because capabilities cannot be probed until the kernel has
+  booted.
+- Activation: `@ConditionalOnProperty("exeris.runtime.flow.choreography-enabled", matchIfMissing = false)`
+  + `@ConditionalOnBean(ExerisEventPublisher.class)` — no events module, no choreography wiring.
+  `flow → events` is the documented dependency direction (see module pom).
 
 **`ExerisFlowAutoConfiguration`**
 - Condition: `@ConditionalOnProperty("exeris.runtime.flow.enabled", matchIfMissing = false)`
@@ -377,7 +390,7 @@ Web mode does not affect `ExerisFlowAutoConfiguration` activation.
 | Risk | Mitigation |
 |:-----|:-----------|
 | `FlowEngine` may not be bound in all kernels (optional subsystem) | Guard with `KernelProviders.FLOW_ENGINE.isBound()` check at boot; fail-fast with clear message |
-| `registerChoreographyMapper` throws `UnsupportedOperationException` in Community by default | `ExerisFlowChoreographyBridge` checks `FlowEngineCapabilities.choreographySupport()` before calling; logs warning if unsupported |
+| `registerChoreographyMapper` throws `UnsupportedOperationException` on engines without choreography support | `ExerisFlowChoreographyBridge` checks `FlowEngineCapabilities.choreographySupport()` at lifecycle start. If mappers are declared and the gate is false, the bridge throws `IllegalStateException` (always-loud — opt-in flag was set, so silent skip is wrong) |
 | Step lambdas closing over Spring beans create lifecycle coupling | Document clearly: Spring bean must outlive the flow engine; `SmartLifecycle` stop order must drain in-flight flows before Spring context closes |
 | `FlowContext` is an SPI interface; Enterprise uses Flyweight pattern | Spring step beans must never cache `FlowContext` beyond the single `execute()` call; enforce via documentation and architecture guard test |
 | Spring-side `FlowSnapshotStore` binding depends on Pure Mode persistence autoconfig winning over Boot's `DataSourceAutoConfiguration` | Keep `persistenceEnabled=false` default in `0.5.0-preview`; flip the default only after Phase 4B Step 4 closure verifies the binding under the autoconfig ordering and Spring-side wiring tests pass |
