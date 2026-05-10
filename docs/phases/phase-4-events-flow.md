@@ -7,7 +7,7 @@
 
 **Depends on:**
 - 4A: only `KernelProviders.EVENT_ENGINE` slot binding required; persistence is not on the critical path
-- 4B: Phase 3 substantially complete (tx context propagation operational). **Durable snapshot persistence via `FlowSnapshotStore` does NOT ship in `0.5.0-preview`.** 4B preview ships with `persistenceEnabled=false` only — flows live in process memory and are lost on restart. The `exeris.runtime.flow.snapshot-persistence.enabled` flag is held back until Phase 3 reaches production-ready and an Exeris-owned `FlowSnapshotStore` implementation lands in `exeris-spring-runtime-tx` or `exeris-spring-runtime-data`. Applications that need durable parked-flow recovery must wait for that follow-up.
+- 4B: Phase 3 substantially complete (tx context propagation operational). **Durable snapshot persistence is NOT enabled by default in `0.5.0-preview`.** 4B preview ships with `persistenceEnabled=false` — flows live in process memory and are lost on restart. Kernel 0.7.0 added a Community `JdbcFlowSnapshotStore` (with `exeris_saga_state` DDL and auto-DDL bootstrap), so the kernel-side prerequisite is satisfied. The Spring-side bridge that binds it through `KernelProviders.FLOW_SNAPSHOT_STORE` is sequenced for **Phase 4B Step 4 closure** and depends on the Pure Mode persistence autoconfiguration ordering being settled. The activation flag is `exeris.runtime.flow.persistence-enabled` (kebab-cased; record field `persistenceEnabled` on `ExerisFlowProperties`); applications that need durable parked-flow recovery must wait for Step 4.
 - 4C: kernel Graph SPI lab tests, ADR for graph backend dialect selection
 
 **Milestone:** M4 (split into M4-A/B for 1.0 preview, M4-C for post-1.0)
@@ -353,11 +353,14 @@ method signatures.
 
 Both are optional kernel SPI components. The Spring integration layer does not implement either.
 
-- If the kernel `FlowEngine` is configured with `persistenceEnabled=true`, the bootstrapper
-  (in `ExerisRuntimeLifecycle`) must bind `KernelProviders.FLOW_SNAPSHOT_STORE` before
-  `FlowEngine.start()`. In Phase 4, this requires an Exeris-owned
-  `FlowSnapshotStore` implementation backed by a `PersistenceEngine` — wiring lives in
-  `exeris-spring-runtime-tx` or `exeris-spring-runtime-data`, not in `exeris-spring-runtime-flow`.
+- Kernel 0.7.0 ships `JdbcFlowSnapshotStore` (Community implementation, `exeris_saga_state`
+  DDL, auto-DDL bootstrap). When the kernel `FlowEngine` is configured with
+  `persistenceEnabled=true`, the bootstrapper (in `ExerisRuntimeLifecycle`) must bind
+  `KernelProviders.FLOW_SNAPSHOT_STORE` before `FlowEngine.start()`. The Spring-side
+  wiring — sequenced for Phase 4B Step 4 closure — lives in `exeris-spring-runtime-tx`
+  or `exeris-spring-runtime-data`, not in `exeris-spring-runtime-flow`, and depends on
+  the Pure Mode persistence autoconfiguration ordering being settled so the kernel
+  `PersistenceEngine` wins over Boot's `DataSourceAutoConfiguration`.
 - `IdempotencyGuard` — if a custom guard is needed, Spring beans may implement `IdempotencyGuard`
   (SPI type) and be provided to the bootstrapper. The flow module exposes a
   `@ConditionalOnBean(IdempotencyGuard.class)` hook that binds a found bean into
@@ -377,7 +380,7 @@ Web mode does not affect `ExerisFlowAutoConfiguration` activation.
 | `registerChoreographyMapper` throws `UnsupportedOperationException` in Community by default | `ExerisFlowChoreographyBridge` checks `FlowEngineCapabilities.choreographySupport()` before calling; logs warning if unsupported |
 | Step lambdas closing over Spring beans create lifecycle coupling | Document clearly: Spring bean must outlive the flow engine; `SmartLifecycle` stop order must drain in-flight flows before Spring context closes |
 | `FlowContext` is an SPI interface; Enterprise uses Flyweight pattern | Spring step beans must never cache `FlowContext` beyond the single `execute()` call; enforce via documentation and architecture guard test |
-| `FlowSnapshotStore` backed by persistence requires Phase 3 complete | Gate `persistenceEnabled=true` flows behind `exeris.runtime.flow.snapshot-persistence.enabled=false` default; permit only after Phase 3 production-ready |
+| Spring-side `FlowSnapshotStore` binding depends on Pure Mode persistence autoconfig winning over Boot's `DataSourceAutoConfiguration` | Keep `persistenceEnabled=false` default in `0.5.0-preview`; flip the default only after Phase 4B Step 4 closure verifies the binding under the autoconfig ordering and Spring-side wiring tests pass |
 
 ---
 
