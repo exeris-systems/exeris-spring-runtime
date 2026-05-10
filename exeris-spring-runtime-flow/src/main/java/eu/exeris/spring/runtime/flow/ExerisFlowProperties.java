@@ -19,9 +19,11 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * <ul>
  *   <li>{@link #enabled()} — master switch for the flow module; gates
  *       {@code ExerisFlowAutoConfiguration} via {@code @ConditionalOnProperty}.</li>
- *   <li>{@link #persistenceEnabled()} — gates durable snapshot persistence (deliberately
- *       held back in {@code 0.5.0-preview} until an Exeris-owned {@code FlowSnapshotStore}
- *       lands; see Phase 4B plan).</li>
+ *   <li>{@link #persistenceEnabled()} — gates durable snapshot persistence. Held back
+ *       at {@code false} in {@code 0.5.0-preview}: kernel 0.7.0 ships a Community
+ *       {@code JdbcFlowSnapshotStore}, but the Spring-side wiring that binds it through
+ *       {@code KernelProviders.FLOW_SNAPSHOT_STORE} is sequenced for Phase 4B Step 4
+ *       closure (see Phase 4B plan).</li>
  *   <li>{@link #choreographyEnabled()} — gates event-driven flow triggers via the
  *       choreography bridge (Step 3); additionally requires
  *       {@code FlowEngineCapabilities.choreographySupport()} on the kernel side.</li>

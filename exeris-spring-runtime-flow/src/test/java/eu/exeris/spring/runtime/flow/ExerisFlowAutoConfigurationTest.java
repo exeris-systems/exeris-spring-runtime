@@ -106,7 +106,7 @@ class ExerisFlowAutoConfigurationTest {
                     ExerisFlowProperties props = context.getBean(ExerisFlowProperties.class);
                     assertThat(props.enabled()).isTrue();
                     assertThat(props.persistenceEnabled())
-                            .as("persistenceEnabled is held back until an Exeris-owned FlowSnapshotStore lands")
+                            .as("persistenceEnabled stays false in 0.5.0-preview; bridge wiring sequenced for Phase 4B Step 4 closure")
                             .isFalse();
                     assertThat(props.choreographyEnabled())
                             .as("choreographyEnabled is opt-in and additionally requires kernel choreographySupport()")
