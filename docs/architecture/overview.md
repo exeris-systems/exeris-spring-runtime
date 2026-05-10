@@ -1,9 +1,9 @@
 # Architecture Overview
 
 **Repository:** `exeris-spring-runtime`  
-**Version:** 0.5.0-SNAPSHOT  
-**Status:** Phase 0 — Architecture Spike  
-**Kernel target:** `exeris-kernel` 0.5.0-SNAPSHOT (TRL-3, Java 26)
+**Version:** 0.5.0-SNAPSHOT (en route to `0.5.0-preview` release train — events + flow/saga preview)  
+**Status:** Phase 4B Step 2 closed (declarative + imperative flow surface). Phases 0 / 1 / 2 / 3 / 4A all closed; Phase 4B Step 3 (choreography bridge) and Step 4 (closure) outstanding. See `docs/roadmap-1.0-trl9.md` for the full release-train view.  
+**Kernel target:** `exeris-kernel` 0.6.0 (Java 26 with `--enable-preview`)
 
 ---
 
