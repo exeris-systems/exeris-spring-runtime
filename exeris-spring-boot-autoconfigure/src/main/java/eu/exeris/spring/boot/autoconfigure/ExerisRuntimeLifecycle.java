@@ -124,6 +124,9 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
             shutdownTriggered.set(false);
         }
 
+        // MIXED — selector wires the kernel at bootstrap, upstream of any web-mode
+        // selection. The same selector value applies whether the application runs in
+        // Pure Mode or Compatibility Mode; restricting subsystems is mode-orthogonal.
         KernelBootstrap.Builder bootstrapBuilder = KernelBootstrap.builder()
                 .classLoader(Thread.currentThread().getContextClassLoader());
         List<String> subsystems = properties.subsystems();
@@ -133,7 +136,7 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
             LOG.log(Level.INFO,
                     "Exeris kernel bootstrap restricted to {0} subsystem(s) via "
                             + "exeris.runtime.subsystems: {1}. Unlisted subsystems will not "
-                            + "be started; depending Spring beans (e.g. event/flow bridges) "
+                            + "be started; dependent Spring beans (e.g. event/flow bridges) "
                             + "must tolerate their absence via the existing supplier seams.",
                     subsystems.size(), subsystems);
         }

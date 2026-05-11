@@ -270,6 +270,16 @@ class ExerisBootstrapIntegrationTest {
      * lifecycle starts cleanly AND that excluded subsystems (events, flow) really did
      * not start — i.e. the property propagated to the kernel selector, not just to the
      * Spring binder.
+     *
+     * <p><b>Coverage limitation:</b> the {@code getEventEngine().isEmpty()} /
+     * {@code getFlowEngine().isEmpty()} assertions are indirect — they would also pass
+     * if the {@code EventProvider} / {@code FlowProvider} were simply absent from the
+     * test classpath (they're present via {@code exeris-kernel-community}, but the
+     * assertion doesn't depend on that being true). The primary evidence that the
+     * selector reached the orchestrator is the kernel-side log line emitted by
+     * {@code SubsystemOrchestrator}: {@code "Selector=[memory, crypto], FailurePolicy=FAIL_FAST"}.
+     * That log line is the machine-readable proof; this test is the smoke check that
+     * the lifecycle still starts cleanly when the selector restricts the subsystem set.
      */
     @Test
     void subsystemsProperty_restrictsKernelBootToSelectedSubsystems() throws Exception {
@@ -603,6 +613,7 @@ class ExerisBootstrapIntegrationTest {
     static class LifecycleHandlerConfig {
 
         @Bean
+        @SuppressWarnings("unused") // discovered reflectively by Spring as a @Bean method
         HttpHandler lifecycleTestHandler() {
             return LifecycleHandlerConfig::ignoreExchange;
         }

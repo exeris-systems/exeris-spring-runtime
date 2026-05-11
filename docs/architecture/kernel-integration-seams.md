@@ -188,6 +188,10 @@ that implement kernel SPI contracts.
 
 **Kernel SPI:** `eu.exeris.kernel.spi.bootstrap.BootstrapSelector`
 
+**Mode:** MIXED — selector applies at bootstrap, upstream of web-mode selection. The
+same selector value is honoured whether the application runs in Pure Mode or
+Compatibility Mode.
+
 The kernel exposes `BootstrapSelector` — a record with `all()`, `none()`, and
 `forNames(String...)` factories — for restricting the active subsystem set. The
 Spring property `exeris.runtime.subsystems` is bound to a `List<String>` in
