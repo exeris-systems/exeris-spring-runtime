@@ -130,12 +130,22 @@ public final class ExerisFlowTemplate {
 
     /**
      * Builds an initial {@link FlowContext} for the named flow with a freshly minted
-     * UUID instance id, {@code state = CREATED}, {@code currentStep = 0}, and timeout
-     * inherited from the compiled plan.
+     * UUID instance id, {@code state = CREATED}, {@code currentStep = 0}, and a sentinel
+     * {@code timeoutNanos = 0L} that defers absolute-deadline computation to the kernel.
      *
      * <p>The returned context is the seed handed to {@link #schedule(String, FlowContext)}
      * (or another scheduler operation). Kernel-side state advances internally; callers
      * MUST treat the returned record as immutable.
+     *
+     * <h2>Why {@code timeoutNanos = 0L}</h2>
+     * <p>The kernel SPI defines {@code FlowContext.timeoutNanos()} as an <em>absolute</em>
+     * monotonic deadline computed as {@code System.nanoTime() + plan.timeoutDurationNanos()},
+     * not a duration. Passing the plan's duration directly here would be read as a
+     * deadline already in the past (because {@code System.nanoTime()} after JVM startup
+     * dwarfs any reasonable duration), and the kernel scheduler would time the flow out
+     * before invoking its first step. The kernel-side {@code RuntimeFlowInstance.fromContext}
+     * specifically treats {@code timeoutNanos <= 0} as "scheduler please compute the
+     * deadline from the plan", which is exactly what a freshly seeded context needs.
      *
      * @throws IllegalArgumentException if no plan is registered under {@code definitionName}
      */
@@ -148,7 +158,7 @@ public final class ExerisFlowTemplate {
                 plan.definitionName(),
                 0,
                 FlowState.CREATED,
-                plan.timeoutDurationNanos());
+                0L);
     }
 
     // =========================================================================
