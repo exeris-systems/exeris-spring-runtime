@@ -6,6 +6,10 @@
  */
 package eu.exeris.spring.boot.autoconfigure;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.ConstructorBinding;
 import org.springframework.boot.context.properties.bind.DefaultValue;
@@ -35,6 +39,25 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * no-arg constructor for direct instantiation outside Spring. The {@code @DefaultValue}
  * annotations declare the authoritative defaults for each component.
  *
+ * <h2>Subsystem Selection</h2>
+ * <p>{@link #subsystems()} maps to the kernel's
+ * {@code BootstrapSelector} SPI. When empty (the default), the kernel boots its full
+ * subsystem set ({@code BootstrapSelector.all()}); when non-empty, only the named
+ * subsystems are started, via {@code BootstrapSelector.forNames(...)}. Typical names
+ * exposed by the community kernel include {@code memory}, {@code crypto},
+ * {@code persistence}, {@code events}, {@code graph}, {@code transport}, {@code http},
+ * and {@code flow}. The Spring layer passes values through verbatim; the kernel
+ * fails-fast on unknown names. Names are trimmed and blanks are dropped at
+ * binding time; ordering is preserved for predictable startup logging. Example:
+ * <pre>{@code
+ *   # Headless batch worker
+ *   exeris.runtime.subsystems[0]=memory
+ *   exeris.runtime.subsystems[1]=crypto
+ *   exeris.runtime.subsystems[2]=persistence
+ *   exeris.runtime.subsystems[3]=events
+ *   exeris.runtime.subsystems[4]=flow
+ * }</pre>
+ *
  * @since 0.1.0
  */
 @ConfigurationProperties(prefix = "exeris.runtime")
@@ -44,7 +67,8 @@ public record ExerisRuntimeProperties(
         @DefaultValue("true") boolean autoStart,
         WebProperties web,
         LifecycleProperties lifecycle,
-        ShutdownProperties shutdown
+        ShutdownProperties shutdown,
+        List<String> subsystems
 
 ) {
 
@@ -52,6 +76,11 @@ public record ExerisRuntimeProperties(
      * Canonical constructor anchor for Spring Boot's {@code @ConfigurationProperties} binder.
      * Required because a convenience no-arg constructor is also present; without this
      * annotation Spring Boot would prefer the no-arg constructor and ignore property overrides.
+     *
+     * <p>{@code subsystems} is normalised to an immutable list of trimmed, non-blank
+     * names — preserving caller ordering for predictable logging. An empty list
+     * (default) selects the kernel's default subsystem set; a non-empty list selects
+     * exactly the named subsystems via {@code BootstrapSelector.forNames(...)}.
      */
     @ConstructorBinding
     public ExerisRuntimeProperties {
@@ -64,6 +93,7 @@ public record ExerisRuntimeProperties(
             if (shutdown == null) {
                 shutdown = new ShutdownProperties();
             }
+            subsystems = normaliseSubsystems(subsystems);
         }
 
     /**
@@ -75,7 +105,38 @@ public record ExerisRuntimeProperties(
      * Correct for tests and environments requiring manual lifecycle control.
      */
     public ExerisRuntimeProperties() {
-        this(true, false, new WebProperties(), new LifecycleProperties(), new ShutdownProperties());
+        this(true, false, new WebProperties(), new LifecycleProperties(), new ShutdownProperties(),
+                Collections.emptyList());
+    }
+
+    /**
+     * Backward-compatible positional constructor without the {@code subsystems} component
+     * — defaults to an empty subsystem list, which selects the kernel's full subsystem set.
+     * Kept to avoid churning test code in other modules that construct properties directly.
+     */
+    public ExerisRuntimeProperties(boolean enabled,
+                                    boolean autoStart,
+                                    WebProperties web,
+                                    LifecycleProperties lifecycle,
+                                    ShutdownProperties shutdown) {
+        this(enabled, autoStart, web, lifecycle, shutdown, Collections.emptyList());
+    }
+
+    private static List<String> normaliseSubsystems(List<String> input) {
+        if (input == null || input.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<String> normalised = new ArrayList<>(input.size());
+        for (String name : input) {
+            if (name == null) {
+                continue;
+            }
+            String trimmed = name.trim();
+            if (!trimmed.isEmpty()) {
+                normalised.add(trimmed);
+            }
+        }
+        return Collections.unmodifiableList(normalised);
     }
 
     public record WebProperties(@DefaultValue("pure") Mode mode) {

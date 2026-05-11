@@ -184,6 +184,53 @@ kernel DAG (e.g., a Spring-managed event bus as an `EventProvider`). This uses
 `ServiceLoader` canonically — Spring does not replace discovery but may supply beans
 that implement kernel SPI contracts.
 
+### Sub-seam 4a: Subsystem selection (`BootstrapSelector`)
+
+**Kernel SPI:** `eu.exeris.kernel.spi.bootstrap.BootstrapSelector`
+
+**Mode:** MIXED — selector applies at bootstrap, upstream of web-mode selection. The
+same selector value is honoured whether the application runs in Pure Mode or
+Compatibility Mode.
+
+The kernel exposes `BootstrapSelector` — a record with `all()`, `none()`, and
+`forNames(String...)` factories — for restricting the active subsystem set. The
+Spring property `exeris.runtime.subsystems` is bound to a `List<String>` in
+`ExerisRuntimeProperties` and propagated to `KernelBootstrap.Builder.selector(...)` by
+`ExerisRuntimeLifecycle`:
+
+| Property value | Selector effect | Kernel behaviour |
+|:---|:---|:---|
+| Unset or empty list (default) | `.selector(...)` not called → builder default | All community subsystems boot (memory, crypto, persistence, events, graph, transport, http, flow) |
+| Non-empty list (`memory,crypto,persistence,events,flow`) | `BootstrapSelector.forNames(...)` | Only the named subsystems boot; unlisted subsystems are not started |
+
+Property binding (Spring Boot relaxed): both `exeris.runtime.subsystems=memory,crypto`
+and indexed `exeris.runtime.subsystems[0]=memory` / `[1]=crypto` are honoured. Names
+are trimmed and blank entries are dropped at binding time; ordering is preserved so
+startup logs read predictably. The kernel fails-fast on unknown names — the Spring
+layer is a transparent pass-through and does not validate against the community
+subsystem name set.
+
+When a non-empty list is bound, `ExerisRuntimeLifecycle` logs an INFO line at startup
+naming the requested subset, so operators can correlate the deployment shape with the
+actual boot output (`SubsystemOrchestrator` already echoes `Selector=[...]` in its
+startup log line as a second corroborating signal).
+
+Typical deployment shapes:
+- **Headless batch worker:** `subsystems=memory,crypto,persistence,events,flow` (no
+  `transport`/`http` → no listening port; the lifecycle still boots cleanly).
+- **HTTP-only worker:** `subsystems=memory,crypto,transport,http` (no `persistence`,
+  no `events`/`flow` → no DB connection, no kernel event bus; the Spring
+  events/flow bridges' tolerant posture handles the absent engines via their existing
+  supplier seams).
+- **Full default:** unset → all community subsystems.
+
+Depending Spring beans (the events bridge, the flow bridge, the choreography bridge)
+must already tolerate engine absence via their `EventEngineSupplier` /
+`FlowEngineSupplier` seams; selecting a restricted set is the use case these tolerant
+postures exist for. Strict-posture beans (`require-engine=true`) will fail loud at
+startup if their underlying subsystem is not in the selection — exactly the same
+behaviour as a missing provider on the classpath.
+
 ---
 
 ## Seam 5: Context Propagation
