@@ -17,6 +17,9 @@ import org.springframework.context.annotation.Bean;
 
 import eu.exeris.kernel.spi.flow.FlowEngine;
 import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
+import eu.exeris.spring.runtime.events.EventEngineSupplier;
+import eu.exeris.spring.runtime.events.ExerisEventAutoConfiguration;
+import eu.exeris.spring.runtime.events.ExerisEventPublisher;
 
 /**
  * Autoconfiguration for the Exeris Flow / Saga bridge module (Phase 4B).
@@ -38,8 +41,15 @@ import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
  *       {@code exeris.runtime.flow.require-engine=false} (test/dev only).</li>
  * </ul>
  *
- * <p>Step 3 will add {@code ExerisFlowChoreographyBridge} — opt-in event-driven flow
- * trigger, gated additionally on {@code FlowEngineCapabilities.choreographySupport()}.
+ * <h2>Step 3 — choreography bridge (opt-in)</h2>
+ * <ul>
+ *   <li>{@link ExerisFlowChoreographyBridge} — discovers
+ *       {@link ExerisFlowChoreographyMapper} beans and registers each one with the kernel
+ *       {@link FlowEngine} via {@code registerChoreographyMapper}. Activation requires
+ *       {@code exeris.runtime.flow.choreography-enabled=true}, an active events module
+ *       (via {@link ExerisEventPublisher}-bean presence), and the kernel engine reporting
+ *       {@code FlowEngineCapabilities.choreographySupport()=true}.</li>
+ * </ul>
  *
  * <h2>What This Does NOT Do</h2>
  * <p>Does not own transport, web handling, transactions, or persistence. Does not wire
@@ -50,7 +60,7 @@ import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
  *
  * @since 0.1.0
  */
-@AutoConfiguration
+@AutoConfiguration(after = ExerisEventAutoConfiguration.class)
 @ConditionalOnClass(FlowEngine.class)
 @ConditionalOnBean(ExerisRuntimeLifecycle.class)
 @ConditionalOnProperty(prefix = "exeris.runtime.flow", name = "enabled", havingValue = "true", matchIfMissing = false)
@@ -76,5 +86,31 @@ public class ExerisFlowAutoConfiguration {
                                                                         ExerisFlowTemplate template,
                                                                         ExerisFlowProperties properties) {
         return new ExerisFlowDefinitionRegistrar(applicationContext, engineSupplier, template, properties);
+    }
+
+    /**
+     * Choreography bridge bean (Step 3). Activated only when:
+     * <ul>
+     *   <li>{@code exeris.runtime.flow.choreography-enabled=true} (opt-in; default {@code false}),</li>
+     *   <li>an {@link ExerisEventPublisher} bean is present (the events module is active and
+     *       {@code exeris.runtime.events.enabled=true} resolved successfully),</li>
+     *   <li>no user-supplied {@link ExerisFlowChoreographyBridge} bean already exists.</li>
+     * </ul>
+     *
+     * <p>The kernel-side capability ({@code FlowEngineCapabilities.choreographySupport()}) is
+     * checked at lifecycle {@code start()} rather than as a bean condition: capabilities
+     * cannot be probed until the kernel has booted, but bean wiring runs during refresh.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(ExerisEventPublisher.class)
+    @ConditionalOnProperty(prefix = "exeris.runtime.flow", name = "choreography-enabled",
+            havingValue = "true", matchIfMissing = false)
+    public ExerisFlowChoreographyBridge exerisFlowChoreographyBridge(ApplicationContext applicationContext,
+                                                                      FlowEngineSupplier flowEngineSupplier,
+                                                                      EventEngineSupplier eventEngineSupplier,
+                                                                      ExerisFlowProperties properties) {
+        return new ExerisFlowChoreographyBridge(
+                applicationContext, flowEngineSupplier, eventEngineSupplier, properties);
     }
 }

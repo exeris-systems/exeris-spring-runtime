@@ -38,19 +38,28 @@
             template's plan registry; tolerates a missing engine when
             exeris.runtime.flow.require-engine=false (test/dev only).
 
-        Step 3 will add ExerisFlowChoreographyBridge (opt-in event-driven flow
-        trigger, gated additionally on FlowEngineCapabilities.choreographySupport()).
+        Step 3 (current): ExerisFlowChoreographyBridge — opt-in event-driven flow
+        trigger that discovers ExerisFlowChoreographyMapper beans and registers them
+        with the kernel via FlowEngine#registerChoreographyMapper. Activation gated
+        additionally on exeris.runtime.flow.choreography-enabled = true,
+        ExerisEventPublisher bean present (events module active), and
+        FlowEngineCapabilities.choreographySupport() = true on the bound engine.
 
         Activation:
           exeris.runtime.flow.enabled = true (matchIfMissing = false)
+          exeris.runtime.flow.choreography-enabled = true (Step 3, opt-in)
 
         Hard rules (Phase 4B invariants — to be locked in at closure):
           - @Async is NOT a workaround for missing flow capability.
-          - Durable snapshot persistence (FlowSnapshotStore) is NOT shipped in
-            0.5.0-preview; persistenceEnabled defaults false. Held back until an
-            Exeris-owned FlowSnapshotStore lands in tx or data module.
+          - Durable snapshot persistence (FlowSnapshotStore) is NOT enabled by default
+            in 0.5.0-preview; persistenceEnabled defaults false. Kernel 0.7.0 shipped
+            JdbcFlowSnapshotStore (Community); the Spring-side bridge that binds it
+            through KernelProviders.FLOW_SNAPSHOT_STORE is sequenced for Step 4 closure.
           - Step lambdas closing over Spring beans must not invert lifecycle
             ownership — flow lifecycle stays kernel-owned.
+          - Choreography mapper beans receive only an EventDescriptor (routing
+            metadata) — no payload, no scheduler reference. Implementations stay
+            implementation-blind to the broker.
           - No HTTP / web / persistence concerns in this module.
 
         See docs/phases/phase-4-events-flow.md (Section 4B) for the full delivery plan.
@@ -69,6 +78,16 @@
         <dependency>
             <groupId>eu.exeris</groupId>
             <artifactId>exeris-spring-boot-autoconfigure</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- events — Step 3 (choreography bridge) reads the kernel EventBus through
+             EventEngineSupplier from the events module, and gates activation on the
+             ExerisEventPublisher bean. flow → events is the documented direction
+             (see phase-4-events-flow.md §4B); the reverse (events → flow) is banned. -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-spring-runtime-events</artifactId>
             <version>${project.version}</version>
         </dependency>
 

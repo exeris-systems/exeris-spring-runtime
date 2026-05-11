@@ -15,6 +15,7 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import eu.exeris.kernel.spi.flow.FlowChoreographyMapper;
 import eu.exeris.kernel.spi.flow.model.FlowStepAction;
 
 /**
@@ -133,6 +134,36 @@ class FlowModuleBoundaryTest {
         ArchRule rule = classes()
                 .that().implement(ExerisFlowDefinition.class)
                 .or().implement(FlowStepAction.class)
+                .should().onlyDependOnClassesThat().resideOutsideOfPackages(
+                        "jakarta.servlet..",
+                        "javax.servlet..",
+                        "eu.exeris.kernel.spi.http..",
+                        "org.springframework.web..",
+                        "org.springframework.transaction..",
+                        "javax.sql..",
+                        "java.sql..",
+                        "jakarta.persistence..",
+                        "org.hibernate..")
+                .allowEmptyShould(true);
+        rule.check(flowModuleClasses);
+    }
+
+    /**
+     * Step 3 closure-boundary guard: choreography mappers run on the kernel bus
+     * dispatch path, which is event-routing infrastructure. They must not pull
+     * HTTP / transport / persistence types — payload-based logic belongs in
+     * event-listener methods (events module), and Wake/Start decisions should
+     * resolve plans through {@link ExerisFlowTemplate}, not by direct persistence
+     * access.
+     *
+     * <p>Vacuous today (no production mappers ship in this module); enforced as a
+     * forward-compatibility guard.
+     */
+    @Test
+    void choreographyMapperImplementorsDoNotImportRequestPathOrTxPackages() {
+        ArchRule rule = classes()
+                .that().implement(ExerisFlowChoreographyMapper.class)
+                .or().implement(FlowChoreographyMapper.class)
                 .should().onlyDependOnClassesThat().resideOutsideOfPackages(
                         "jakarta.servlet..",
                         "javax.servlet..",
