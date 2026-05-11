@@ -2,12 +2,12 @@
 
 **Status:**
 - **4A (Events) — Closed (2026-05-09)** as `0.5.0-preview`-track preview module (default-off). Implementation landed in PR #11; closure docs (this revision + [`phase-4a-events-invariants.md`](phase-4a-events-invariants.md)) ship in the Phase 4A closure PR. Module: `exeris-spring-runtime-events` (646 LOC main / 7 test files / **30/30 tests green** — the runtime integration test's port-bind flake was fixed in the closure PR by binding to an ephemeral port).
-- **4B (Flow/Saga) — Planned (1.0 preview)**, target `0.5.0-preview` release train. No scaffolds yet.
+- **4B (Flow/Saga) — Closed (2026-05-11)** as `0.5.0-preview`-track preview module (default-off via `exeris.runtime.flow.enabled`). All four steps merged: Step 1 (PR #17), Step 2 (PR #18), Step 3 (PR #23), Step 4 (PR #TBD with kernel 0.8.0 + ADR-022). Durable saga state via `JdbcFlowSnapshotStore` is now load-bearing — `exeris.runtime.flow.persistence-enabled=true` is the default once `enabled=true` is set, and the kernel auto-selects JDBC when a `PersistenceEngine` is bound.
 - **4C (Graph) — Post-1.0**, candidate for the `1.1.x` train
 
 **Depends on:**
 - 4A: only `KernelProviders.EVENT_ENGINE` slot binding required; persistence is not on the critical path
-- 4B: Phase 3 substantially complete (tx context propagation operational). **Durable snapshot persistence is NOT enabled by default in `0.5.0-preview`.** 4B preview ships with `persistenceEnabled=false` — flows live in process memory and are lost on restart. Kernel 0.7.0 added a Community `JdbcFlowSnapshotStore` (with `exeris_saga_state` DDL and auto-DDL bootstrap), so the kernel-side prerequisite is satisfied. The Spring-side bridge that binds it through `KernelProviders.FLOW_SNAPSHOT_STORE` is sequenced for **Phase 4B Step 4 closure** and depends on the Pure Mode persistence autoconfiguration ordering being settled. The activation flag is `exeris.runtime.flow.persistence-enabled` (kebab-cased; record field `persistenceEnabled` on `ExerisFlowProperties`); applications that need durable parked-flow recovery must wait for Step 4.
+- 4B: **Durable snapshot persistence is enabled by default in `0.5.0-preview` once `exeris.runtime.flow.enabled=true` is set.** The kernel 0.8.0 + ADR-022 closure wires `JdbcFlowSnapshotStore` automatically when a JDBC `PersistenceEngine` is bound (community kernel auto-selects between `JdbcFlowSnapshotStore` and the in-memory `CommunityFlowSnapshotStore`). Parked flows now survive a JVM restart end-to-end. The activation flag is `exeris.runtime.flow.persistence-enabled` (kebab-cased; record field `persistenceEnabled` on `ExerisFlowProperties`), defaulting to `true`; applications that explicitly do not want any snapshot writes (pure fire-and-forget flows) can disable it. The Spring-side bridge between the property and the kernel config key (`flow.persistenceEnabled`) is implemented in `ExerisSpringConfigProvider.flowKernelKeyAlias`.
 - 4C: kernel Graph SPI lab tests, ADR for graph backend dialect selection
 
 **Milestone:** M4 (split into M4-A/B for 1.0 preview, M4-C for post-1.0)
@@ -225,7 +225,7 @@ hot path.
 - **Step 1 — Closed (PR #17, 2026-05-09):** module skeleton, `FlowEngineSupplier`, `ExerisFlowProperties`, `ExerisFlowAutoConfiguration` (engine supplier only), `FlowModuleBoundaryTest` (incl. mechanical `@Async` ban), `PureModeClasspathGuardTest`. Lifecycle seam — `ExerisRuntimeLifecycle.getFlowEngine()` — landed in the same PR.
 - **Step 2 — Closed (PR #TBD, 2026-05-09):** declarative + imperative invocation surface. `ExerisFlowDefinition` interface, `ExerisFlowTemplate` (schedule / park / wake / lookupParked / stats / plan registry), `ExerisFlowDefinitionRegistrar` (boot-time compile + registry population, tolerant/strict posture mirroring events module via `exeris.runtime.flow.require-engine`). Runtime IT proves lifecycle capture + first `requireEngine()` consumer call site against the live community kernel. Step-closure architecture guard added to `FlowModuleBoundaryTest`.
 - **Step 3 — Closed (PR #TBD, 2026-05-10):** `ExerisFlowChoreographyBridge` — opt-in event-driven flow trigger. New `ExerisFlowChoreographyMapper` interface (extends kernel `FlowChoreographyMapper`, adds `eventTypeNames()` for discovery). Bridge runs at `SmartLifecycle` phase `Integer.MAX_VALUE - 98` (one slot after the Step-2 registrars at -99) and registers each mapper with the kernel via `FlowEngine.registerChoreographyMapper(mapper, eventTypeNames, eventBus)`. Three activation gates, in order: opt-in property `exeris.runtime.flow.choreography-enabled=true`, presence of an `ExerisEventPublisher` bean (events module active), and capability gate `FlowEngineCapabilities.choreographySupport()=true` checked at lifecycle start (always-loud failure when violated — the user explicitly opted in). Tolerant/strict posture for missing engine mirrors the Step-2 registrar (`exeris.runtime.flow.require-engine`). Runtime IT exercises real event-bus dispatch into a registered mapper. Choreography ladder + summary-table rows added to `docs/architecture/kernel-integration-seams.md`.
-- **Step 4 — Planned:** Phase 4B closure — invariants doc, master-doc closure section, full lifecycle (schedule → park → wake → complete) runtime IT.
+- **Step 4 — Closed (PR #TBD, 2026-05-11):** Phase 4B closure. Kernel bump 0.7.0 → 0.8.0-SNAPSHOT (ADR-022 wires `JdbcFlowSnapshotStore` properly via the Community-internal `CommunityBootstrapServices` registry — `CommunityFlowSubsystem.initialize()` now selects JDBC when a `PersistenceEngine` is bound, in-memory otherwise). Spring-side: (a) `flow.*` kernel config key alias in `ExerisSpringConfigProvider` so `exeris.runtime.flow.persistence-enabled` reaches the kernel as `flow.persistenceEnabled` (camelCase + kebab-case forms both honoured); (b) `ExerisFlowProperties.persistenceEnabled` default flipped `false → true` — kernel falls back to in-memory when no JDBC engine bound, so the default is safe even without persistence wired; (c) cross-restart runtime IT (`parkedFlowSnapshotsSurviveLifecycleRestartViaJdbcStore`) — schedules a flow that parks itself, stops lifecycle A, asserts the snapshot row in `exeris_saga_state`, starts lifecycle B against the same H2 DB, asserts `template.lookupParked(...)` rehydrates the parked context through `FLOW_SNAPSHOT_STORE`. Invariants locked in [`phase-4-invariants.md`](phase-4-invariants.md).
 
 ### Goal
 
@@ -366,14 +366,19 @@ method signatures.
 
 Both are optional kernel SPI components. The Spring integration layer does not implement either.
 
-- Kernel 0.7.0 ships `JdbcFlowSnapshotStore` (Community implementation, `exeris_saga_state`
-  DDL, auto-DDL bootstrap). When the kernel `FlowEngine` is configured with
-  `persistenceEnabled=true`, the bootstrapper (in `ExerisRuntimeLifecycle`) must bind
-  `KernelProviders.FLOW_SNAPSHOT_STORE` before `FlowEngine.start()`. The Spring-side
-  wiring — sequenced for Phase 4B Step 4 closure — lives in `exeris-spring-runtime-tx`
-  or `exeris-spring-runtime-data`, not in `exeris-spring-runtime-flow`, and depends on
-  the Pure Mode persistence autoconfiguration ordering being settled so the kernel
-  `PersistenceEngine` wins over Boot's `DataSourceAutoConfiguration`.
+- Kernel 0.8.0 + [ADR-022](https://github.com/exeris-systems/exeris-kernel/blob/development/0.8.0/docs/adr/ADR-022-persistence-spi-extension-instant-binders.md)
+  wire `JdbcFlowSnapshotStore` automatically inside `CommunityFlowSubsystem.initialize()`
+  via the Community-internal `CommunityBootstrapServices` registry: the persistence
+  subsystem registers its `PersistenceEngine` during the SERVICES phase, the flow
+  subsystem reads it during the RUNTIME phase, and `FLOW_SNAPSHOT_STORE` is bound
+  through `providerBindings()`. No Spring-side `FLOW_SNAPSHOT_STORE` binding is needed
+  in `tx` or `data` — the Spring side only needs to (i) propagate
+  `exeris.runtime.flow.persistence-enabled=true` to the kernel as `flow.persistenceEnabled`,
+  done by `ExerisSpringConfigProvider.flowKernelKeyAlias`; and (ii) configure a JDBC
+  `PersistenceEngine` via `exeris.runtime.persistence.jdbc-url`, which the existing
+  kernel community persistence subsystem already consumes. When no JDBC engine is bound,
+  the kernel falls back to the in-memory `CommunityFlowSnapshotStore` — so the property
+  default of `true` is safe even without persistence wired.
 - `IdempotencyGuard` — if a custom guard is needed, Spring beans may implement `IdempotencyGuard`
   (SPI type) and be provided to the bootstrapper. The flow module exposes a
   `@ConditionalOnBean(IdempotencyGuard.class)` hook that binds a found bean into
@@ -393,7 +398,7 @@ Web mode does not affect `ExerisFlowAutoConfiguration` activation.
 | `registerChoreographyMapper` throws `UnsupportedOperationException` on engines without choreography support | `ExerisFlowChoreographyBridge` checks `FlowEngineCapabilities.choreographySupport()` at lifecycle start. If mappers are declared and the gate is false, the bridge throws `IllegalStateException` (always-loud — opt-in flag was set, so silent skip is wrong) |
 | Step lambdas closing over Spring beans create lifecycle coupling | Document clearly: Spring bean must outlive the flow engine; `SmartLifecycle` stop order must drain in-flight flows before Spring context closes |
 | `FlowContext` is an SPI interface; Enterprise uses Flyweight pattern | Spring step beans must never cache `FlowContext` beyond the single `execute()` call; enforce via documentation and architecture guard test |
-| Spring-side `FlowSnapshotStore` binding depends on Pure Mode persistence autoconfig winning over Boot's `DataSourceAutoConfiguration` | Keep `persistenceEnabled=false` default in `0.5.0-preview`; flip the default only after Phase 4B Step 4 closure verifies the binding under the autoconfig ordering and Spring-side wiring tests pass |
+| `FlowSnapshotStore` binding silently demotes parked flows to in-memory state — surfaced and resolved during Phase 4B Step 4 scoping | Closed via kernel 0.8.0 + ADR-022 (`CommunityFlowSubsystem.initialize()` selects JDBC store when a `PersistenceEngine` is available, falls back to in-memory otherwise) + Spring-side `flowKernelKeyAlias` in `ExerisSpringConfigProvider` so `exeris.runtime.flow.persistence-enabled` reaches the kernel as `flow.persistenceEnabled`. Cross-restart runtime IT (`parkedFlowSnapshotsSurviveLifecycleRestartViaJdbcStore`) locks the contract. |
 
 ---
 

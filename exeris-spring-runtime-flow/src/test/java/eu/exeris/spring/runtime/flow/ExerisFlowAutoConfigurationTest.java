@@ -98,19 +98,24 @@ class ExerisFlowAutoConfigurationTest {
     }
 
     @Test
-    void optionalFlagsDefaultFalseEvenWhenEnabled() {
+    void optionalFlagDefaultsAfterMasterSwitchEnabled() {
         // The master switch (enabled=true) is required to materialise ExerisFlowProperties
         // as a bean — that's the autoconfig's gate. Once active, the optional sub-feature
-        // flags must still default to false: persistence is held back for 0.5.0-preview,
-        // and choreography requires both this flag AND kernel choreographySupport().
+        // flags follow the documented defaults:
+        //   - persistenceEnabled defaults to TRUE in 0.5.0-preview (kernel 0.8.0 + ADR-022)
+        //     — kernel falls back to in-memory when no JDBC engine bound, so the default
+        //     is safe even without persistence wired
+        //   - choreographyEnabled stays opt-in (additionally requires kernel choreographySupport())
         contextRunner
                 .withPropertyValues("exeris.runtime.flow.enabled=true")
                 .run(context -> {
                     ExerisFlowProperties props = context.getBean(ExerisFlowProperties.class);
                     assertThat(props.enabled()).isTrue();
                     assertThat(props.persistenceEnabled())
-                            .as("persistenceEnabled stays false in 0.5.0-preview; bridge wiring sequenced for Phase 4B Step 4 closure")
-                            .isFalse();
+                            .as("persistenceEnabled defaults to true (kernel 0.8.0 ADR-022 wires "
+                                    + "JdbcFlowSnapshotStore when a JDBC engine is bound; falls back "
+                                    + "to in-memory otherwise)")
+                            .isTrue();
                     assertThat(props.choreographyEnabled())
                             .as("choreographyEnabled is opt-in and additionally requires kernel choreographySupport()")
                             .isFalse();

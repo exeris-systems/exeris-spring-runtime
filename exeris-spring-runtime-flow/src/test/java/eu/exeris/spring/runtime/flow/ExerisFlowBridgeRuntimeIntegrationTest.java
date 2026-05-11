@@ -6,6 +6,11 @@
  */
 package eu.exeris.spring.runtime.flow;
 
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -156,7 +161,175 @@ class ExerisFlowBridgeRuntimeIntegrationTest {
         }
     }
 
+    /**
+     * Step 4 closure runtime IT — proves the kernel 0.8.0 + ADR-022 wiring is reachable
+     * from the Spring side end-to-end:
+     * <ol>
+     *   <li>Lifecycle A schedules a flow whose first step returns {@code PARK}; the kernel
+     *       persists a {@code state = PARKED} row in {@code exeris_saga_state} via
+     *       {@code JdbcFlowSnapshotStore}.</li>
+     *   <li>Lifecycle A stops; the H2 in-memory database stays alive for the JVM
+     *       ({@code DB_CLOSE_DELAY=-1}) so the row survives.</li>
+     *   <li>We assert directly against the DB that the row exists with the expected
+     *       composite-PK + {@code state = 'PARKED'} — that's the unambiguous machine
+     *       check that {@code exeris.runtime.flow.persistence-enabled=true} actually
+     *       reaches the kernel via {@code flowKernelKeyAlias} and the kernel wires
+     *       {@code JdbcFlowSnapshotStore} instead of the in-memory fallback.</li>
+     *   <li>Lifecycle B starts against the same DB. The kernel rehydrates parked snapshots
+     *       on demand; the Spring template's {@code lookupParked(idMost, idLeast)} call
+     *       drives the rehydration path through {@code KernelProviders.FLOW_SNAPSHOT_STORE}.</li>
+     * </ol>
+     *
+     * <p>The plan is re-registered on lifecycle B under the same name — the kernel matches
+     * plans by {@code definitionName}, and a fresh lifecycle starts with an empty plan
+     * registry. This re-registration step is the Spring-side contract documented in
+     * {@code phase-4-invariants.md}: durable saga recovery requires that applications
+     * register the same plan definitions on every lifecycle restart.
+     *
+     * <p>This is the canonical Phase 4B Step 4 deliverable — the IT mentioned in the
+     * master phase doc as the closure gate before {@code 0.5.0-preview} ships durable
+     * saga state by default.
+     */
+    @Test
+    void parkedFlowSnapshotsSurviveLifecycleRestartViaJdbcStore() throws InterruptedException, SQLException {
+        String jdbcUrl = "jdbc:h2:mem:exeris_flow_persistence_restart_it;DB_CLOSE_DELAY=-1";
+
+        // ===== Lifecycle A — schedule, let the flow park, stop =====
+        long instanceIdMost;
+        long instanceIdLeast;
+        {
+            ExerisRuntimeLifecycle lifecycleA = newPersistenceLifecycle(jdbcUrl);
+            lifecycleA.start();
+            try {
+                FlowEngine engineA = lifecycleA.getFlowEngine().orElseThrow();
+                ExerisFlowTemplate templateA = new ExerisFlowTemplate(lifecycleA::getFlowEngine);
+
+                CountDownLatch step0Entered = new CountDownLatch(1);
+                ExerisFlowDefinition def = parkAndResumeDefinition(step0Entered, new CountDownLatch(1));
+
+                FlowDefinition built = def.define(engineA.plans().newDefinition(def.name()));
+                templateA.registerPlan(def.name(), engineA.plans().compile(built));
+
+                FlowContext seed = templateA.schedule(def.name());
+                instanceIdMost = seed.instanceIdMost();
+                instanceIdLeast = seed.instanceIdLeast();
+
+                assertThat(step0Entered.await(AWAIT_DISPATCH_SECONDS, TimeUnit.SECONDS))
+                        .as("Step 0 must run and return PARK within %d seconds", AWAIT_DISPATCH_SECONDS)
+                        .isTrue();
+                // Give the kernel a moment to commit the parked snapshot — kernel writes
+                // are synchronous on the step-return path but the H2 commit is async on
+                // a separate IO thread; 250ms is generous slack for an in-memory backend.
+                Thread.sleep(250);
+            } finally {
+                lifecycleA.stop();
+            }
+        }
+
+        // ===== Direct DB assertion — the parked row must be persisted =====
+        try (Connection conn = DriverManager.getConnection(jdbcUrl, "sa", "")) {
+            // First confirm the table even exists (rules out migration not running)
+            try (PreparedStatement metaStmt = conn.prepareStatement(
+                     "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES "
+                             + "WHERE UPPER(TABLE_NAME) = 'EXERIS_SAGA_STATE'");
+                 ResultSet metaRs = metaStmt.executeQuery()) {
+                assertThat(metaRs.next()).isTrue();
+                assertThat(metaRs.getInt(1))
+                        .as("exeris_saga_state table must exist after lifecycle A (kernel "
+                                + "Flyway migration V0.7.0__create_saga_state.sql must have run)")
+                        .isEqualTo(1);
+            }
+            try (PreparedStatement stmt = conn.prepareStatement(
+                     "SELECT state, definition_name FROM exeris_saga_state "
+                             + "WHERE instance_id_most = ? AND instance_id_least = ?")) {
+                stmt.setLong(1, instanceIdMost);
+                stmt.setLong(2, instanceIdLeast);
+                try (ResultSet rs = stmt.executeQuery()) {
+                    assertThat(rs.next())
+                            .as("exeris_saga_state must contain a row for the parked flow — "
+                                    + "this is the load-bearing proof that "
+                                    + "exeris.runtime.flow.persistence-enabled=true reaches the "
+                                    + "kernel via the flow.* key alias AND that the kernel "
+                                    + "wired JdbcFlowSnapshotStore instead of the in-memory fallback")
+                            .isTrue();
+                    assertThat(rs.getString("state"))
+                            .as("Snapshot state column must be PARKED")
+                            .isEqualTo("PARKED");
+                    assertThat(rs.getString("definition_name"))
+                            .isEqualTo("pause-and-resume");
+                    assertThat(rs.next()).as("Exactly one row expected for this instance").isFalse();
+                }
+            }
+        }
+
+        // ===== Lifecycle B — rehydrate parked flow from JDBC store =====
+        ExerisRuntimeLifecycle lifecycleB = newPersistenceLifecycle(jdbcUrl);
+        lifecycleB.start();
+        try {
+            FlowEngine engineB = lifecycleB.getFlowEngine().orElseThrow();
+            ExerisFlowTemplate templateB = new ExerisFlowTemplate(lifecycleB::getFlowEngine);
+
+            // Re-register the same plan under the same name — kernel matches by definitionName
+            // and lifecycle B starts with an empty plan registry. This is the Spring-side
+            // contract for durable recovery: applications register plans on every start.
+            ExerisFlowDefinition def = parkAndResumeDefinition(new CountDownLatch(1), new CountDownLatch(1));
+            FlowDefinition built = def.define(engineB.plans().newDefinition(def.name()));
+            templateB.registerPlan(def.name(), engineB.plans().compile(built));
+
+            Optional<FlowContext> rehydrated = templateB.lookupParked(instanceIdMost, instanceIdLeast);
+            assertThat(rehydrated)
+                    .as("Parked snapshot must be discoverable on lifecycle B via the kernel's "
+                            + "FlowSnapshotStore — this proves end-to-end durable recovery "
+                            + "across a Spring lifecycle restart")
+                    .isPresent();
+            assertThat(rehydrated.get().definitionName()).isEqualTo("pause-and-resume");
+            assertThat(rehydrated.get().instanceIdMost()).isEqualTo(instanceIdMost);
+            assertThat(rehydrated.get().instanceIdLeast()).isEqualTo(instanceIdLeast);
+        } finally {
+            lifecycleB.stop();
+        }
+    }
+
+    /**
+     * Two-step pause-and-resume flow. Step 0 latches and parks; step 1 latches and completes.
+     * Both latches are inputs so the same definition can be reused across lifecycles with
+     * fresh observers.
+     */
+    private static ExerisFlowDefinition parkAndResumeDefinition(CountDownLatch step0Entered,
+                                                                  CountDownLatch step1Ran) {
+        return new ExerisFlowDefinition() {
+            @Override
+            public String name() {
+                return "pause-and-resume";
+            }
+
+            @Override
+            public FlowDefinition define(FlowDefinitionBuilder b) {
+                return b
+                        .step("park-self", ctx -> {
+                            step0Entered.countDown();
+                            return FlowOutcome.PARK;
+                        }, null)
+                        .step("resume", ctx -> {
+                            step1Ran.countDown();
+                            return FlowOutcome.COMPLETE;
+                        }, null)
+                        .transition(0, 1)
+                        .timeoutDuration(60_000_000_000L)
+                        .build();
+            }
+        };
+    }
+
     private static ExerisRuntimeLifecycle newLifecycle() {
+        return newLifecycleWith("jdbc:h2:mem:exeris_flow_runtime_it;DB_CLOSE_DELAY=-1", false);
+    }
+
+    private static ExerisRuntimeLifecycle newPersistenceLifecycle(String jdbcUrl) {
+        return newLifecycleWith(jdbcUrl, true);
+    }
+
+    private static ExerisRuntimeLifecycle newLifecycleWith(String jdbcUrl, boolean runMigrations) {
         ExerisRuntimeProperties properties = new ExerisRuntimeProperties(
                 true,
                 false,
@@ -165,15 +338,18 @@ class ExerisFlowBridgeRuntimeIntegrationTest {
                 new ExerisRuntimeProperties.ShutdownProperties(true, 30)
         );
         // H2 in-memory + ephemeral HTTP port — same shape as the events bridge IT.
-        // The flow bridge does not depend on persistence or HTTP, but the kernel boot
-        // DAG initialises both unconditionally; we keep them out of the way.
+        // The flow bridge does not depend on HTTP, but the kernel boot DAG initialises
+        // it unconditionally; we keep it out of the way.
         MockEnvironment env = new MockEnvironment()
                 .withProperty("exeris.runtime.network.port", "0")
-                .withProperty("exeris.runtime.persistence.jdbc-url",
-                        "jdbc:h2:mem:exeris_flow_runtime_it;DB_CLOSE_DELAY=-1")
+                .withProperty("exeris.runtime.persistence.jdbc-url", jdbcUrl)
                 .withProperty("exeris.runtime.persistence.username", "sa")
                 .withProperty("exeris.runtime.persistence.password", "")
-                .withProperty("exeris.runtime.persistence.run-migrations", "false");
+                .withProperty("exeris.runtime.persistence.run-migrations", Boolean.toString(runMigrations))
+                // Step 4 closure: flow module is opt-in, persistence default is now true (ADR-022).
+                // Setting it explicitly here in case the test default changes again later.
+                .withProperty("exeris.runtime.flow.enabled", "true")
+                .withProperty("exeris.runtime.flow.persistence-enabled", Boolean.toString(runMigrations));
         return new ExerisRuntimeLifecycle(
                 properties,
                 new ExerisSpringConfigProvider(env),
