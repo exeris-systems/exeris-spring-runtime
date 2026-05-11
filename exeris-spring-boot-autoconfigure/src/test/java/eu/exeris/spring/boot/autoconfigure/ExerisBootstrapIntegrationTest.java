@@ -84,6 +84,54 @@ class ExerisBootstrapIntegrationTest {
     }
 
     @Test
+    void subsystemsPropertyIsEmptyByDefault() {
+        try (var ctx = createContext(Map.of("exeris.runtime.auto-start", "false"))) {
+            ExerisRuntimeProperties props = ctx.getBean(ExerisRuntimeProperties.class);
+            assertThat(props.subsystems())
+                    .as("Default: empty list → kernel boots its full subsystem set")
+                    .isEmpty();
+        }
+    }
+
+    @Test
+    void subsystemsPropertyBindsCommaSeparatedList() {
+        try (var ctx = createContext(Map.of(
+                "exeris.runtime.auto-start", "false",
+                "exeris.runtime.subsystems", "memory,crypto,http"))) {
+            ExerisRuntimeProperties props = ctx.getBean(ExerisRuntimeProperties.class);
+            assertThat(props.subsystems())
+                    .as("Comma-separated property binds to ordered list (Spring Boot relaxed binding)")
+                    .containsExactly("memory", "crypto", "http");
+        }
+    }
+
+    @Test
+    void subsystemsPropertyBindsIndexedListSyntax() {
+        try (var ctx = createContext(Map.of(
+                "exeris.runtime.auto-start", "false",
+                "exeris.runtime.subsystems[0]", "memory",
+                "exeris.runtime.subsystems[1]", "crypto",
+                "exeris.runtime.subsystems[2]", "flow"))) {
+            ExerisRuntimeProperties props = ctx.getBean(ExerisRuntimeProperties.class);
+            assertThat(props.subsystems())
+                    .as("Indexed property syntax binds in declared index order")
+                    .containsExactly("memory", "crypto", "flow");
+        }
+    }
+
+    @Test
+    void subsystemsPropertyTrimsWhitespaceAndDropsBlankEntries() {
+        try (var ctx = createContext(Map.of(
+                "exeris.runtime.auto-start", "false",
+                "exeris.runtime.subsystems", "  memory , , crypto ,   "))) {
+            ExerisRuntimeProperties props = ctx.getBean(ExerisRuntimeProperties.class);
+            assertThat(props.subsystems())
+                    .as("Whitespace trimmed; empty entries dropped; ordering preserved")
+                    .containsExactly("memory", "crypto");
+        }
+    }
+
+    @Test
     void noServletOrReactiveRuntimeOnClasspath() {
         assertThat(isClassPresent("org.apache.catalina.startup.Tomcat"))
                 .as("Tomcat must not be on the classpath")
@@ -209,6 +257,50 @@ class ExerisBootstrapIntegrationTest {
                     lifecycle.stop();
                     assertThatCode(() -> startFuture.get(10, TimeUnit.SECONDS)).doesNotThrowAnyException();
                     shutdownExecutor(executor);
+                }
+            } catch (Exception ex) {
+                throw new RuntimeException(ex);
+            }
+        });
+    }
+
+    /**
+     * Runtime IT for the {@code exeris.runtime.subsystems} → {@code BootstrapSelector}
+     * wire-up. Boots the kernel with a minimal foundational subset and verifies the
+     * lifecycle starts cleanly AND that excluded subsystems (events, flow) really did
+     * not start — i.e. the property propagated to the kernel selector, not just to the
+     * Spring binder.
+     */
+    @Test
+    void subsystemsProperty_restrictsKernelBootToSelectedSubsystems() throws Exception {
+        int port = 0;
+        withKernelHttpSystemProperties(port, () -> {
+            try (var ctx = createContext(
+                    Map.of(
+                            "exeris.runtime.auto-start", "false",
+                            "exeris.runtime.network.port", Integer.toString(port),
+                            "exeris.runtime.persistence.jdbc-url",
+                                    "jdbc:h2:mem:exeris_subsystem_selector_it;DB_CLOSE_DELAY=-1",
+                            "exeris.runtime.persistence.username", "sa",
+                            "exeris.runtime.persistence.password", "",
+                            "exeris.runtime.persistence.run-migrations", "false",
+                            "exeris.runtime.subsystems", "memory,crypto"
+                    ),
+                    LifecycleHandlerConfig.class)) {
+                ExerisRuntimeLifecycle lifecycle = ctx.getBean(ExerisRuntimeLifecycle.class);
+                lifecycle.start();
+                try {
+                    assertThat(lifecycle.isRunning())
+                            .as("Lifecycle must start cleanly even when subsystems is restricted")
+                            .isTrue();
+                    assertThat(lifecycle.getEventEngine())
+                            .as("events subsystem was not selected → no EventEngine bound")
+                            .isEmpty();
+                    assertThat(lifecycle.getFlowEngine())
+                            .as("flow subsystem was not selected → no FlowEngine bound")
+                            .isEmpty();
+                } finally {
+                    lifecycle.stop();
                 }
             } catch (Exception ex) {
                 throw new RuntimeException(ex);

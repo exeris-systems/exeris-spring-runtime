@@ -6,7 +6,10 @@
  */
 package eu.exeris.spring.boot.autoconfigure;
 
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
 import java.lang.reflect.InvocationTargetException;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -17,6 +20,7 @@ import org.springframework.context.SmartLifecycle;
 import org.springframework.lang.NonNull;
 
 import eu.exeris.kernel.core.bootstrap.KernelBootstrap;
+import eu.exeris.kernel.spi.bootstrap.BootstrapSelector;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.events.EventEngine;
 import eu.exeris.kernel.spi.flow.FlowEngine;
@@ -70,6 +74,8 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
 
     private static final int PHASE = Integer.MAX_VALUE - 100;
 
+    private static final Logger LOG = System.getLogger(ExerisRuntimeLifecycle.class.getName());
+
     private final ExerisRuntimeProperties properties;
     private final ExerisSpringConfigProvider configProvider;
     private final Optional<HttpHandler> httpHandler;
@@ -118,9 +124,20 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
             shutdownTriggered.set(false);
         }
 
-        KernelBootstrap kernelBootstrap = KernelBootstrap.builder()
-                .classLoader(Thread.currentThread().getContextClassLoader())
-                .build();
+        KernelBootstrap.Builder bootstrapBuilder = KernelBootstrap.builder()
+                .classLoader(Thread.currentThread().getContextClassLoader());
+        List<String> subsystems = properties.subsystems();
+        if (!subsystems.isEmpty()) {
+            BootstrapSelector selector = BootstrapSelector.forNames(subsystems.toArray(String[]::new));
+            bootstrapBuilder.selector(selector);
+            LOG.log(Level.INFO,
+                    "Exeris kernel bootstrap restricted to {0} subsystem(s) via "
+                            + "exeris.runtime.subsystems: {1}. Unlisted subsystems will not "
+                            + "be started; depending Spring beans (e.g. event/flow bridges) "
+                            + "must tolerate their absence via the existing supplier seams.",
+                    subsystems.size(), subsystems);
+        }
+        KernelBootstrap kernelBootstrap = bootstrapBuilder.build();
         CountDownLatch bootReady = new CountDownLatch(1);
         CountDownLatch releaseSignal = new CountDownLatch(1);
         AtomicReference<Exception> bootFailure = new AtomicReference<>();
