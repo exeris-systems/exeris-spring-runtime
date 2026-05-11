@@ -57,6 +57,8 @@ import eu.exeris.kernel.spi.flow.model.FlowState;
  */
 public final class ExerisFlowTemplate {
 
+    private static final String CONTEXT_PARAM = "context";
+
     private final FlowEngineSupplier engineSupplier;
     private final ConcurrentMap<String, FlowExecutionPlan> plans = new ConcurrentHashMap<>();
 
@@ -186,7 +188,7 @@ public final class ExerisFlowTemplate {
      * @throws IllegalStateException    if the kernel {@link FlowEngine} is not bound
      */
     public void schedule(String definitionName, FlowContext context) {
-        Objects.requireNonNull(context, "context");
+        Objects.requireNonNull(context, CONTEXT_PARAM);
         FlowExecutionPlan plan = planFor(definitionName);
         scheduler().schedule(plan, context);
     }
@@ -196,7 +198,7 @@ public final class ExerisFlowTemplate {
      * double-park attempts internally; callers do not need to track state manually.
      */
     public void park(FlowContext context) {
-        Objects.requireNonNull(context, "context");
+        Objects.requireNonNull(context, CONTEXT_PARAM);
         scheduler().park(context);
     }
 
@@ -204,7 +206,7 @@ public final class ExerisFlowTemplate {
      * Wakes a previously parked flow instance.
      */
     public void wake(FlowContext context) {
-        Objects.requireNonNull(context, "context");
+        Objects.requireNonNull(context, CONTEXT_PARAM);
         scheduler().wake(context);
     }
 

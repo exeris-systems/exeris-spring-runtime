@@ -15,9 +15,11 @@ import eu.exeris.kernel.spi.flow.model.FlowState;
  *
  * <p>Carries the initial values handed to {@code FlowScheduler.schedule(plan, context)}:
  * a freshly minted instance UUID (split into most/least 64-bit halves), the plan's
- * definition name, {@code currentStep = 0}, {@code state = CREATED}, and the timeout
- * inherited from the compiled plan. Kernel-side state advances independently as the
- * flow progresses — this record is the seed the engine is given on submission.
+ * definition name, {@code currentStep = 0}, {@code state = CREATED}, and
+ * {@code timeoutNanos = 0L} — the sentinel value that tells the kernel scheduler to
+ * compute the absolute deadline from the plan's configured duration at scheduling
+ * time. Kernel-side state advances independently as the flow progresses — this record
+ * is the seed the engine is given on submission.
  *
  * <p>Package-private on purpose. Callers that need a custom context (resume by external
  * instance id, custom timeout) implement {@link FlowContext} directly against the SPI.
