@@ -154,6 +154,43 @@ Adding partial / speculative bridges before downstream demand is explicitly forb
 by this invariant. Phase 3.x lands the missing pieces with concrete shape driven by
 real requirements; until then, the absence is documented, not papered over.
 
+## 11. When opted in, the Exeris JDBC adapter wins over Spring Boot's `DataSourceAutoConfiguration`
+
+This invariant is additive to invariant #1 (opt-in activation). It governs what happens
+**after** the application sets `exeris.runtime.data.compat-datasource.enabled=true`.
+
+`ExerisDataAutoConfiguration` must:
+
+- Declare
+  `@AutoConfiguration(beforeName = "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration")`
+  so the Exeris adapter is evaluated and its bean is registered before Spring Boot's
+  default `DataSource` autoconfiguration runs.
+- Register `ExerisDataSource` with `@ConditionalOnMissingBean(DataSource.class)` so any
+  application-supplied `DataSource` bean takes precedence — the property opt-in
+  expresses intent; an explicit user bean expresses stronger intent.
+- Mark the `exerisDataSource` bean `@Primary` as belt-and-braces against unusual wiring
+  orders where two `DataSource` beans co-reside.
+
+Rationale: the opt-in property is a runtime-ownership claim. Without explicit ordering,
+Spring Boot's `DataSourceAutoConfiguration` could land a Hikari-backed `DataSource`
+ahead of the Exeris adapter — and the resulting application would have "opted into the
+Exeris bridge" while in fact being served by Hikari. That inverts the ownership model
+the opt-in claims to establish.
+
+The `beforeName` string form is required because `spring-jdbc` is intentionally absent
+from this module's compile classpath (ADR-017 §4.3); a class-literal reference would
+not load.
+
+Downstream migration review surfaced the precedence ambiguity in 0.5.0-SNAPSHOT, where
+opting in did not in fact guarantee Exeris-owned `DataSource` precedence over Spring
+Boot's default. This invariant locks in the fix and is the precedence contract callers
+can rely on.
+
+- **Guards:** `ExerisDataAutoConfigurationTest` —
+  `autoConfigurationDeclaresOrderingBeforeDataSourceAutoConfiguration`,
+  `exerisDataSourceBeanIsMarkedPrimary`,
+  `exerisAdapterStandsDownWhenUserProvidesOwnDataSource`.
+
 ---
 
 ## How invariants are enforced
@@ -170,6 +207,7 @@ real requirements; until then, the absence is documented, not papered over.
 | HikariCP banned | `PureModeClasspathGuardTest` × 5 modules |
 | `server.port` is read-only fallback | `ExerisBootstrapIntegrationTest` exercises both `exeris.runtime.network.port` and `server.port` paths |
 | Phase 3B deferred, no half-impl | Documented in this file + master Phase 3 doc; absence is the contract |
+| Exeris adapter wins over Spring Boot `DataSourceAutoConfiguration` when opted in | `ExerisDataAutoConfigurationTest` — three cases covering the annotation declaration, the `@Primary` marker, and stand-down on user-supplied `DataSource` (see invariant #11 for the named test methods) |
 
 These tests must stay green. A failure indicates a real architectural regression;
 the test is not the bug.
