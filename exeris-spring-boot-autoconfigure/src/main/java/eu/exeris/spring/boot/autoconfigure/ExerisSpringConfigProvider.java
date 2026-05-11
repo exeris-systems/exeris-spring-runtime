@@ -231,10 +231,18 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
             return Optional.of(direct);
         }
         if (type == String.class) {
-            return legacyHttpStringAlias(key, environment).map(type::cast);
+            Optional<String> legacy = legacyHttpStringAlias(key, environment);
+            if (legacy.isPresent()) {
+                return legacy.map(type::cast);
+            }
+            return flowKernelKeyAlias(key, environment, type);
         }
         if (type == Integer.class) {
-            return legacyHttpIntAlias(key, environment).map(type::cast);
+            Optional<Integer> legacy = legacyHttpIntAlias(key, environment);
+            if (legacy.isPresent()) {
+                return legacy.map(type::cast);
+            }
+            return flowKernelKeyAlias(key, environment, type);
         }
         return flowKernelKeyAlias(key, environment, type);
     }

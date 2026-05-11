@@ -217,10 +217,14 @@ class ExerisFlowBridgeRuntimeIntegrationTest {
                 assertThat(step0Entered.await(AWAIT_DISPATCH_SECONDS, TimeUnit.SECONDS))
                         .as("Step 0 must run and return PARK within %d seconds", AWAIT_DISPATCH_SECONDS)
                         .isTrue();
-                // Give the kernel a moment to commit the parked snapshot — kernel writes
-                // are synchronous on the step-return path but the H2 commit is async on
-                // a separate IO thread; 250ms is generous slack for an in-memory backend.
-                Thread.sleep(250);
+                // Wait for the kernel's async JDBC commit. The step-return path is
+                // synchronous, but the H2 commit runs on a separate IO thread. Poll the
+                // saga_state row up to 5 seconds rather than a blind Thread.sleep — fast
+                // path completes in milliseconds on an unloaded machine; bounded wait
+                // keeps the test stable under CI load / TSAN slowdown without inflating
+                // happy-path time.
+                awaitParkedSnapshot(jdbcUrl, seed.instanceIdMost(), seed.instanceIdLeast(),
+                        AWAIT_DISPATCH_SECONDS);
             } finally {
                 lifecycleA.stop();
             }
@@ -319,6 +323,37 @@ class ExerisFlowBridgeRuntimeIntegrationTest {
                         .build();
             }
         };
+    }
+
+    /**
+     * Polls the {@code exeris_saga_state} table at 50 ms intervals up to
+     * {@code timeoutSeconds} until a {@code PARKED} row for the given instance id
+     * appears. Replaces the blind {@code Thread.sleep(250)} that was racing against
+     * the kernel's async H2 commit thread — bounded wait stays stable under CI load
+     * without inflating happy-path runtime.
+     */
+    private static void awaitParkedSnapshot(String jdbcUrl, long instanceIdMost, long instanceIdLeast,
+                                             long timeoutSeconds) throws InterruptedException, SQLException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
+        while (System.nanoTime() < deadline) {
+            try (Connection conn = DriverManager.getConnection(jdbcUrl, "sa", "");
+                 PreparedStatement stmt = conn.prepareStatement(
+                         "SELECT COUNT(*) FROM exeris_saga_state "
+                                 + "WHERE instance_id_most = ? AND instance_id_least = ? AND state = 'PARKED'")) {
+                stmt.setLong(1, instanceIdMost);
+                stmt.setLong(2, instanceIdLeast);
+                try (ResultSet rs = stmt.executeQuery()) {
+                    if (rs.next() && rs.getInt(1) > 0) {
+                        return;
+                    }
+                }
+            } catch (SQLException _) {
+                // Table may not exist yet on the first poll iteration if migrations
+                // ran concurrently with the first step. Swallow and retry; the deadline
+                // bounds the overall wait.
+            }
+            Thread.sleep(50);
+        }
     }
 
     private static ExerisRuntimeLifecycle newLifecycle() {
