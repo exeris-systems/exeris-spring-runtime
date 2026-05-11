@@ -51,9 +51,11 @@ import org.springframework.lang.Nullable;
  * configuration could let Spring Boot's default {@code DataSourceAutoConfiguration}
  * win over the Exeris adapter even when the opt-in property was set — which
  * contradicted the Phase 3 / ADR-017 intent that opting in means the Exeris adapter
- * is the runtime-owned bridge. The {@code @AutoConfigureBefore} name reference is
- * used (rather than a class literal) so this module does not require {@code spring-jdbc}
- * on its compile classpath; the opt-in property remains the only activation switch.
+ * is the runtime-owned bridge. The {@code beforeName} attribute of
+ * {@link AutoConfiguration @AutoConfiguration} (Spring Boot 3.x) is used with the FQN
+ * string rather than a class literal so this module does not require
+ * {@code spring-jdbc} on its compile classpath; the opt-in property remains the only
+ * activation switch.
  */
 @AutoConfiguration(beforeName = "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration")
 @ConditionalOnClass(ExerisDataSource.class)

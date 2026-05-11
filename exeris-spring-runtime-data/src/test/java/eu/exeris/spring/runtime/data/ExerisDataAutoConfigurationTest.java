@@ -113,6 +113,7 @@ class ExerisDataAutoConfigurationTest {
     static class UserDataSourceConfig {
 
         @Bean
+        @SuppressWarnings("unused") // discovered reflectively by Spring as a @Bean method
         DataSource userDataSource() {
             return new StubDataSource();
         }

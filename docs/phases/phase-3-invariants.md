@@ -207,7 +207,7 @@ can rely on.
 | HikariCP banned | `PureModeClasspathGuardTest` × 5 modules |
 | `server.port` is read-only fallback | `ExerisBootstrapIntegrationTest` exercises both `exeris.runtime.network.port` and `server.port` paths |
 | Phase 3B deferred, no half-impl | Documented in this file + master Phase 3 doc; absence is the contract |
-| Exeris adapter wins over Spring Boot `DataSourceAutoConfiguration` when opted in | `ExerisDataAutoConfigurationTest` (`autoConfigurationDeclaresOrderingBeforeDataSourceAutoConfiguration`, `exerisDataSourceBeanIsMarkedPrimary`, `exerisAdapterStandsDownWhenUserProvidesOwnDataSource`) |
+| Exeris adapter wins over Spring Boot `DataSourceAutoConfiguration` when opted in | `ExerisDataAutoConfigurationTest` — three cases covering the annotation declaration, the `@Primary` marker, and stand-down on user-supplied `DataSource` (see invariant #11 for the named test methods) |
 
 These tests must stay green. A failure indicates a real architectural regression;
 the test is not the bug.
