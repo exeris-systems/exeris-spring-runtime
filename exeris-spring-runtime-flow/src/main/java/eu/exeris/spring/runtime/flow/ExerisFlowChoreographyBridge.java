@@ -96,8 +96,18 @@ public final class ExerisFlowChoreographyBridge implements SmartInitializingSing
     private final ExerisFlowProperties properties;
     private final Object lifecycleLock = new Object();
 
-    private final List<ExerisFlowChoreographyMapper> mappers = new ArrayList<>();
+    private final List<MapperEntry> mapperEntries = new ArrayList<>();
     private volatile boolean running = false;
+
+    /**
+     * Frozen pairing of a mapper with the event-type names it declared at collection time.
+     *
+     * <p>Snapshotting the set at {@code afterSingletonsInstantiated()} ensures the kernel
+     * sees exactly the names that were validated as non-empty — a mutable or lazily
+     * computed {@code eventTypeNames()} implementation cannot drift between validation
+     * and registration.
+     */
+    private record MapperEntry(ExerisFlowChoreographyMapper mapper, Set<String> eventTypeNames) {}
 
     public ExerisFlowChoreographyBridge(ApplicationContext applicationContext,
                                         FlowEngineSupplier flowEngineSupplier,
@@ -111,7 +121,7 @@ public final class ExerisFlowChoreographyBridge implements SmartInitializingSing
 
     @Override
     public void afterSingletonsInstantiated() {
-        mappers.clear();
+        mapperEntries.clear();
         Map<String, ExerisFlowChoreographyMapper> beans =
                 applicationContext.getBeansOfType(ExerisFlowChoreographyMapper.class);
         for (Map.Entry<String, ExerisFlowChoreographyMapper> entry : beans.entrySet()) {
@@ -123,7 +133,7 @@ public final class ExerisFlowChoreographyBridge implements SmartInitializingSing
                                 + "' declares no event type names. eventTypeNames() must "
                                 + "return at least one name.");
             }
-            mappers.add(mapper);
+            mapperEntries.add(new MapperEntry(mapper, Set.copyOf(types)));
         }
     }
 
@@ -133,7 +143,7 @@ public final class ExerisFlowChoreographyBridge implements SmartInitializingSing
             if (running) {
                 return;
             }
-            if (mappers.isEmpty()) {
+            if (mapperEntries.isEmpty()) {
                 running = true;
                 return;
             }
@@ -143,7 +153,7 @@ public final class ExerisFlowChoreographyBridge implements SmartInitializingSing
                 if (properties.requireEngine()) {
                     throw new IllegalStateException(
                             "Exeris flow choreography bridge cannot start: "
-                                    + mappers.size() + " ExerisFlowChoreographyMapper bean(s) declared "
+                                    + mapperEntries.size() + " ExerisFlowChoreographyMapper bean(s) declared "
                                     + "but " + (flow.isEmpty() ? "FlowEngine" : "EventEngine")
                                     + " is not bound. Confirm the kernel has a FlowProvider and an "
                                     + "EventProvider on the classpath, exeris.runtime.events.enabled=true "
@@ -156,7 +166,7 @@ public final class ExerisFlowChoreographyBridge implements SmartInitializingSing
                                 + " — {0} ExerisFlowChoreographyMapper bean(s) will not be subscribed. "
                                 + "exeris.runtime.flow.require-engine=false has been set; this is "
                                 + "intended for test/dev only.",
-                        mappers.size());
+                        mapperEntries.size());
                 running = true;
                 return;
             }
@@ -166,13 +176,13 @@ public final class ExerisFlowChoreographyBridge implements SmartInitializingSing
                         "Exeris flow choreography bridge cannot start: kernel FlowEngine "
                                 + "(provider=" + flowEngine.capabilities().providerId()
                                 + ") reports choreographySupport=false but "
-                                + mappers.size() + " ExerisFlowChoreographyMapper bean(s) are declared. "
+                                + mapperEntries.size() + " ExerisFlowChoreographyMapper bean(s) are declared. "
                                 + "Either disable choreography (exeris.runtime.flow.choreography-enabled=false) "
                                 + "or run on a tier that supports it.");
             }
             EventBus bus = events.get().bus();
-            for (ExerisFlowChoreographyMapper mapper : mappers) {
-                flowEngine.registerChoreographyMapper(mapper, mapper.eventTypeNames(), bus);
+            for (MapperEntry entry : mapperEntries) {
+                flowEngine.registerChoreographyMapper(entry.mapper(), entry.eventTypeNames(), bus);
             }
             running = true;
         }
@@ -185,8 +195,10 @@ public final class ExerisFlowChoreographyBridge implements SmartInitializingSing
                 return;
             }
             // Kernel engine.close() cancels subscription tokens it owns as part of
-            // ExerisRuntimeLifecycle.stop(). We just clear local state so a subsequent
-            // start() re-runs registration cleanly against a freshly bound engine.
+            // ExerisRuntimeLifecycle.stop(). We reset only the running flag — mapper
+            // discovery is refreshed by the next afterSingletonsInstantiated() call when
+            // the context refreshes; the existing mapperEntries snapshot stays usable for
+            // a stop()→start() cycle against the same engine without re-discovery.
             running = false;
         }
     }
@@ -202,6 +214,6 @@ public final class ExerisFlowChoreographyBridge implements SmartInitializingSing
     }
 
     int registeredMapperCount() {
-        return mappers.size();
+        return mapperEntries.size();
     }
 }

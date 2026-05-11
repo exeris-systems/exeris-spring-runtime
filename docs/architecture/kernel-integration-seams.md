@@ -11,19 +11,22 @@ repository must read this document first.
 
 ## Overview
 
-The Exeris kernel exposes integration through six primary SPI categories.
-Each one has a corresponding integration strategy in this repository.
+The Exeris kernel exposes integration through nine primary SPI categories
+(Seams 1–9 below). Each one has a corresponding integration strategy in this repository.
 
 ```
-Kernel SPI               →    Integration Layer               →    Spring Side
-─────────────────────────────────────────────────────────────────────────────────
-HttpHandler              →    ExerisHttpDispatcher            →    Spring bean handler
-HttpExchange             →    ExerisServerRequest/Response    →    HandlerMethod args (Phase 2)
-ConfigProvider           →    ExerisSpringConfigProvider      →    Spring Environment
-SubsystemProvider        →    SpringSubsystemBridge           →    ApplicationContext lifecycle
-KernelProviders          →    ExerisContextHolder             →    ScopedValue propagation
-TelemetryProvider        →    ExerisActuatorTelemetryBridge   →    Micrometer MeterRegistry
-PersistenceProvider      →    ExerisPersistenceAdapter        →    DataSource / @Transactional
+Kernel SPI               →    Integration Layer                  →    Spring Side
+─────────────────────────────────────────────────────────────────────────────────────
+HttpHandler              →    ExerisHttpDispatcher               →    Spring bean handler
+HttpExchange             →    ExerisServerRequest/Response       →    HandlerMethod args (Phase 2)
+ConfigProvider           →    ExerisSpringConfigProvider         →    Spring Environment
+SubsystemProvider        →    SpringSubsystemBridge              →    ApplicationContext lifecycle
+KernelProviders          →    ExerisContextHolder                →    ScopedValue propagation
+TelemetryProvider        →    ExerisActuatorTelemetryBridge      →    Micrometer MeterRegistry
+EventEngine / EventBus   →    ExerisEventPublisher/Registrar     →    @ExerisEventListener beans
+FlowEngine               →    ExerisFlowTemplate/Registrar       →    @ExerisFlowDefinition beans
+FlowChoreographyMapper   →    ExerisFlowChoreographyBridge       →    ExerisFlowChoreographyMapper beans
+PersistenceProvider      →    ExerisPersistenceAdapter           →    DataSource / @Transactional
 ```
 
 ---

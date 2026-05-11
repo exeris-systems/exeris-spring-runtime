@@ -14,6 +14,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.HashMap;
@@ -190,11 +191,45 @@ class ExerisFlowChoreographyBridgeTest {
         bridge.afterSingletonsInstantiated();
         bridge.start();
         assertThat(bridge.isRunning()).isTrue();
+        // Drain the verified-on-start interactions before asserting stop touches nothing.
+        verify(flow).capabilities();
+        verify(flow).registerChoreographyMapper(any(), any(), any());
 
         bridge.stop();
         assertThat(bridge.isRunning()).isFalse();
-        // No further interactions with the engine — the kernel owns subscription teardown
-        // through engine.close() during ExerisRuntimeLifecycle.stop().
+        // The kernel owns subscription teardown through engine.close() during
+        // ExerisRuntimeLifecycle.stop() — this bridge must never call back into the
+        // engine on its own stop() path.
+        verifyNoMoreInteractions(flow);
+    }
+
+    @Test
+    void stopThenStartReRegistersMappersAgainstTheSameEngine() {
+        ExerisFlowChoreographyMapper alpha = mapper(Set.of("UserCreated"));
+        ApplicationContext ctx = ctxWithMappers(Map.of("alpha", alpha));
+        FlowEngine flow = mockFlow(/* choreography */ true);
+        EventEngine events = mock(EventEngine.class);
+        EventBus bus = mock(EventBus.class);
+        when(events.bus()).thenReturn(bus);
+
+        ExerisFlowChoreographyBridge bridge = bridge(ctx, Optional.of(flow), Optional.of(events),
+                strict());
+
+        bridge.afterSingletonsInstantiated();
+        bridge.start();
+        assertThat(bridge.isRunning()).isTrue();
+
+        bridge.stop();
+        assertThat(bridge.isRunning()).isFalse();
+
+        // Second start() — kernel engine.close() during shutdown owns prior token cleanup,
+        // so re-registering is the contract this bean documents. The mapperEntries snapshot
+        // must survive the running-flag reset, so no second afterSingletonsInstantiated()
+        // call is needed for the same context.
+        bridge.start();
+        assertThat(bridge.isRunning()).isTrue();
+        assertThat(bridge.registeredMapperCount()).isOne();
+        verify(flow, times(2)).registerChoreographyMapper(eq(alpha), eq(Set.of("UserCreated")), eq(bus));
     }
 
     @Test
