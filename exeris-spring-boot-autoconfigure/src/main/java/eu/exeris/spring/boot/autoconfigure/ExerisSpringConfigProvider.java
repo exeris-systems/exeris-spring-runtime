@@ -174,7 +174,11 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
         if (direct != null) {
             return Optional.of(direct);
         }
-        return legacyHttpStringAlias(key, environment);
+        Optional<String> legacy = legacyHttpStringAlias(key, environment);
+        if (legacy.isPresent()) {
+            return legacy;
+        }
+        return flowKernelKeyAlias(key, environment, String.class);
     }
 
     @Override
@@ -186,19 +190,35 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
         if (direct != null) {
             return Optional.of(direct);
         }
-        return legacyHttpIntAlias(key, environment);
+        Optional<Integer> legacy = legacyHttpIntAlias(key, environment);
+        if (legacy.isPresent()) {
+            return legacy;
+        }
+        return flowKernelKeyAlias(key, environment, Integer.class);
     }
 
     @Override
     public Optional<Long> getLong(String key) {
-        return environment == null ? Optional.empty()
-            : Optional.ofNullable(environment.getProperty(key, Long.class));
+        if (environment == null) {
+            return Optional.empty();
+        }
+        Long direct = environment.getProperty(key, Long.class);
+        if (direct != null) {
+            return Optional.of(direct);
+        }
+        return flowKernelKeyAlias(key, environment, Long.class);
     }
 
     @Override
     public Optional<Boolean> getBoolean(String key) {
-        return environment == null ? Optional.empty()
-            : Optional.ofNullable(environment.getProperty(key, Boolean.class));
+        if (environment == null) {
+            return Optional.empty();
+        }
+        Boolean direct = environment.getProperty(key, Boolean.class);
+        if (direct != null) {
+            return Optional.of(direct);
+        }
+        return flowKernelKeyAlias(key, environment, Boolean.class);
     }
 
     @Override
@@ -211,12 +231,20 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
             return Optional.of(direct);
         }
         if (type == String.class) {
-            return legacyHttpStringAlias(key, environment).map(type::cast);
+            Optional<String> legacy = legacyHttpStringAlias(key, environment);
+            if (legacy.isPresent()) {
+                return legacy.map(type::cast);
+            }
+            return flowKernelKeyAlias(key, environment, type);
         }
         if (type == Integer.class) {
-            return legacyHttpIntAlias(key, environment).map(type::cast);
+            Optional<Integer> legacy = legacyHttpIntAlias(key, environment);
+            if (legacy.isPresent()) {
+                return legacy.map(type::cast);
+            }
+            return flowKernelKeyAlias(key, environment, type);
         }
-        return Optional.empty();
+        return flowKernelKeyAlias(key, environment, type);
     }
 
     @Override
@@ -307,5 +335,66 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
             }
         }
         return null;
+    }
+
+    /**
+     * Bridges kernel-side {@code flow.X} configuration lookups to the Spring property
+     * surface under {@code exeris.runtime.flow.*}. Returns {@link Optional#empty()} for
+     * keys that don't start with the {@code flow.} prefix.
+     *
+     * <p>The kernel's {@code CommunityFlowSubsystem.buildFlowConfig()} reads keys such as
+     * {@code flow.persistenceEnabled}, {@code flow.maxConcurrentFlows}, etc. directly from
+     * the {@link eu.exeris.kernel.spi.config.ConfigProvider} (camelCase, no namespace
+     * prefix). Spring application properties live under {@code exeris.runtime.flow.*}.
+     * This alias adds the prefix so kernel lookups resolve to the Spring values.
+     *
+     * <p>The alias attempts both naming conventions because Spring's relaxed binding is
+     * only applied automatically when {@code ConfigurationPropertySources} is attached
+     * to the {@link Environment} — true in a full Spring Boot context, but NOT true for
+     * a bare {@code MockEnvironment} (used in some integration tests). To stay robust
+     * across both shapes we try camelCase first ({@code exeris.runtime.flow.persistenceEnabled}),
+     * then kebab-case ({@code exeris.runtime.flow.persistence-enabled}) — whichever is
+     * present wins.
+     *
+     * <p>Without this bridge, setting {@code exeris.runtime.flow.persistence-enabled=true}
+     * in Spring config has no effect on the kernel's flow subsystem (the lookup misses,
+     * the kernel falls back to {@code FlowEngineConfig.defaults()}, and saga state stays
+     * in-memory). This is the second half of the Phase 4B Step 4 closure pair with
+     * kernel ADR-022 (which fixed the kernel-side wiring of {@code JdbcFlowSnapshotStore}).
+     */
+    private static <T> Optional<T> flowKernelKeyAlias(String key, Environment environment, Class<T> type) {
+        if (!key.startsWith("flow.")) {
+            return Optional.empty();
+        }
+        String suffix = key.substring("flow.".length());
+        T direct = environment.getProperty("exeris.runtime.flow." + suffix, type);
+        if (direct != null) {
+            return Optional.of(direct);
+        }
+        String kebab = camelToKebab(suffix);
+        if (!kebab.equals(suffix)) {
+            T kebabValue = environment.getProperty("exeris.runtime.flow." + kebab, type);
+            if (kebabValue != null) {
+                return Optional.of(kebabValue);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Converts {@code camelCaseName} → {@code camel-case-name}. Pure ASCII; no Unicode
+     * letter-class handling needed for kernel config key suffixes (all known suffixes
+     * are pure ASCII identifiers).
+     */
+    private static String camelToKebab(String camel) {
+        StringBuilder sb = new StringBuilder(camel.length() + 4);
+        for (int i = 0; i < camel.length(); i++) {
+            char c = camel.charAt(i);
+            if (i > 0 && Character.isUpperCase(c)) {
+                sb.append('-');
+            }
+            sb.append(Character.toLowerCase(c));
+        }
+        return sb.toString();
     }
 }
