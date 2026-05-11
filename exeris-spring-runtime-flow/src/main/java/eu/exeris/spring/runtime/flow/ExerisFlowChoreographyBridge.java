@@ -67,8 +67,11 @@ import eu.exeris.spring.runtime.events.EventEngineSupplier;
  * <h2>Subscription teardown</h2>
  * <p>{@link #stop()} does not unsubscribe — the kernel engine's {@code close()} cancels
  * all tokens it owns when {@code ExerisRuntimeLifecycle} stops, which happens after this
- * bean's {@code stop()} per Spring's reverse-phase shutdown. Local state is cleared so a
- * subsequent {@code start()} re-runs registration cleanly.
+ * bean's {@code stop()} per Spring's reverse-phase shutdown. Only the {@code running}
+ * flag is reset; the {@code mapperEntries} snapshot is intentionally retained so a
+ * subsequent {@code start()} can re-run registration cleanly against the same engine
+ * without a fresh discovery pass. Discovery is re-done from scratch only on the next
+ * {@code afterSingletonsInstantiated()} (i.e., context refresh).
  *
  * @since 0.5.0
  * @see ExerisFlowChoreographyMapper
