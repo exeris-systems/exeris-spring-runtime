@@ -72,7 +72,7 @@ class ExerisFlowTemplateTest {
     }
 
     @Test
-    void newContextProducesFreshUuidStateCreatedAndPlanTimeout() {
+    void newContextProducesFreshUuidStateCreatedAndZeroTimeoutSentinel() {
         ExerisFlowTemplate template = new ExerisFlowTemplate(missingEngineSupplier());
         template.registerPlan(FLOW_NAME, stubPlan(FLOW_NAME));
 
@@ -82,7 +82,19 @@ class ExerisFlowTemplateTest {
         assertThat(c1.definitionName()).isEqualTo(FLOW_NAME);
         assertThat(c1.state()).isEqualTo(FlowState.CREATED);
         assertThat(c1.currentStep()).isZero();
-        assertThat(c1.timeoutNanos()).isEqualTo(PLAN_TIMEOUT_NANOS);
+        // Regression guard: timeoutNanos MUST be the 0L "kernel please compute the
+        // deadline" sentinel — not plan.timeoutDurationNanos() (a duration). The kernel
+        // SPI treats FlowContext.timeoutNanos > 0 as an absolute monotonic deadline; if
+        // the template passes a duration here the deadline ends up in the past (since
+        // System.nanoTime() after JVM startup far exceeds any reasonable duration) and
+        // the scheduler times the flow out before its first step runs. See the runtime IT
+        // ExerisFlowBridgeRuntimeIntegrationTest#templateSchedulesAndExecutesSingleStepFlowAgainstRealKernelEngine
+        // for the end-to-end coverage; this assertion is the fast unit-level guard.
+        assertThat(c1.timeoutNanos())
+                .as("newContext must defer absolute-deadline computation to the kernel "
+                        + "by emitting timeoutNanos = 0L; passing a duration here would be "
+                        + "misread as a past deadline and skip step execution")
+                .isZero();
         // Distinct UUIDs across calls — single template instance must not return a singleton context.
         assertThat(c1.instanceIdMost() == c2.instanceIdMost()
                 && c1.instanceIdLeast() == c2.instanceIdLeast()).isFalse();
