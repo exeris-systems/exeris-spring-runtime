@@ -4,13 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-`exeris-spring-runtime` is a **host-runtime integration layer**, not a Spring Boot starter. The governing principle:
+`exeris-spring-runtime` is an **independent Tier 1 product** in the Exeris ecosystem — a host-runtime integration layer, not a Spring Boot starter. The governing principle:
 
 > Spring is the application framework. Exeris is the runtime owner.
 
 Spring owns DI, config binding, bean lifecycle. Exeris owns transport ingress, request lifecycle, backpressure, off-heap memory, provider discovery (`ServiceLoader`), and the telemetry hot path. Any change that quietly inverts this ownership (servlet/Netty/Reactor on the request path, IoC replacing `ServiceLoader`, JDBC-first persistence) is an architectural defect, not a style issue.
 
-The kernel (`exeris-kernel-spi`, `exeris-kernel-core`) is consumed as binary dependencies and **must remain Spring-free**. This is "The Wall."
+**Who consumes this repo.** Exactly two consumers (see `~/exeris-systems/exeris-docs/high-level-architecture.md` §7 + §9):
+
+1. **Customers with existing Spring applications** doing brownfield migration onto the Exeris kernel — the primary commercial path. This is the structural showcase that **Exeris is a runtime, not a framework**: it can host Spring code on top of the same kernel that powers the platform's kernel-direct SKUs.
+2. **BudgetHQ** — the singular Spring-on-Exeris Family product (`~/exeris-systems/budgetHQ/`), deliberately structured to dogfood the Spring-on-Exeris combination as a shippable product under real customer load. All future Family products will be pure-Exeris on SDK + tooling; BudgetHQ's dogfooding role for Spring Runtime is filled once.
+
+**Who does NOT consume this repo.** The Exeris platform itself does not depend on `exeris-spring-runtime`: the kernel, the Tier 2 capability ecosystem (`exeris-caps-*`), and all first-party Tier 3 Platform SKUs (Gateway-family AND Service Boundary-family — API Gateway, Edge Proxy, Bot Blocker, IDP, PIM, OMS, Headless CMS) run kernel-direct. Their HTTP surface is generated from `@ExerisDomain` + `@Action` via the codegen pipeline in `exeris-tooling` (ADR-015), never via Spring `@RestController`. No cap `@Requires` `exeris-spring-runtime` and no SKU manifest layers it in.
+
+The kernel (`exeris-kernel-spi`, `exeris-kernel-core`) is consumed as binary dependencies and **must remain Spring-free**. This is "The Wall." The cap-tier Wall (per HLA §4) extends the same rule to every `exeris-caps-*` repository — no cap may reach into Spring internals, which keeps cap manifests reusable across both kernel-direct and Spring-Runtime-hosted deployments without manifest changes.
 
 ## Build & test
 
@@ -69,7 +76,7 @@ Read `docs/architecture/kernel-integration-seams.md` before touching any of thes
 | `TelemetrySink` → Micrometer | `ExerisActuatorTelemetryBridge` (`MeterBinder`) | `actuator` |
 | `PersistenceEngine` / `ConnectionFactory` | `ExerisPlatformTransactionManager`, `ExerisDataSource` (compat-only JDBC adapter) | `tx` / `data` |
 
-Bootstrap order is invariant: Spring `refresh()` → `ExerisRuntimeLifecycle.start()` → `KernelBootstrap.bootstrap()` (`ServiceLoader` discovers providers, DAG initialises, `KERNEL READY`) → handlers register → `HttpServerEngine` binds. Shutdown reverses exactly. The kernel's own bootstrap DAG is `Config → Memory → Exceptions → {Security, Persistence} → {Graph, Transport} → {Events, Flow} → READY`.
+Bootstrap order is invariant: Spring `refresh()` → `ExerisRuntimeLifecycle.start()` → `KernelBootstrap.bootstrap()` (`ServiceLoader` discovers providers, DAG initialises, `KERNEL READY`) → handlers register → `HttpServerEngine` binds. Shutdown reverses exactly. The kernel's own bootstrap DAG (canonical, per `~/exeris-systems/exeris-kernel/docs/subsystems/bootstrap.md`) is `FOUNDATION: Memory (sequential) → SERVICES: Crypto & Persistence & Graph & Transport (parallel via StructuredTaskScope) → RUNTIME: Events & Flow & HTTP (parallel) → KERNEL READY`. `Config` is resolved by `KernelBootstrap` via `ServiceLoader<ConfigProvider>` before the orchestrator runs and is not a Subsystem in the DAG; `Exceptions` is not a Subsystem layer; `Security` is an L1 Citadel concept (ADR-012), not a boot-DAG node.
 
 ## Hot-path discipline
 

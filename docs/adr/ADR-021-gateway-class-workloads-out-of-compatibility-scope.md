@@ -80,11 +80,36 @@ A downstream migration review (2026-05-09) classified Spring Cloud Gateway MVC a
 
 The ADR's contribution is **the architectural rationale** that turns a Spring Cloud Gateway dependency-add from "test-failing PR" into "ADR-violating PR". Reviewers and routine ADR scanners cite ADR-021 by number when blocking such PRs.
 
+## Architectural Home Update (2026-05-13 amendment)
+
+When this ADR was authored (2026-05-09), the only positive answer to "where do gateway-class workloads belong, then?" was the Phase 5 `exeris-spring-runtime-gateway` artefact — a Spring Runtime artefact, scoped to customers staying on the Spring path. The 2026-05-12 whitepaper/HLA restructure established a **three-tier architecture** that supplies a more direct answer for the platform itself:
+
+**The platform-side architectural home for gateway-class workloads is the Tier 3 Gateway-family Platform SKUs**, each composed of Tier 2 capabilities and running on Tier 1 kernel-direct (no Spring Runtime in the data plane):
+
+| Tier 3 SKU | Composition (Tier 2 caps) | Tier 1 substrate |
+|:---|:---|:---|
+| `exeris-sku-api-gateway` | `exeris-caps-gateway-core` + Layer 2 building blocks (route-registry, upstream-pool, policy-chain, backend-health, admin-control-plane) + Layer 3 policies (rate-limiting, jwt-validation, tls-termination, request-routing, circuit-breaker, cors-policy, observability-bridge) | `exeris-kernel-community` (or `exeris-kernel-enterprise` for `io_uring` + HTTP/3 + QUIC TLS) |
+| `exeris-sku-edge-proxy` | `gateway-core` + routing/TLS/failover subset | Same Tier 1 substrate, with Enterprise driver recommended for edge deployments |
+| `exeris-sku-bot-blocker` | `gateway-core` + `tls-termination` + `policy-chain` + `bot-fingerprinting` (enterprise-private) + `waf-rules` + `rate-limiting` | Same; depends on a JA3/JA4 kernel proposal modifying `CoreSslHandles` (on the kernel roadmap) |
+
+Authoritative sources for the three-tier structure: `~/exeris-systems/exeris-docs/high-level-architecture.md` §§2.2, 3.3, 5; `~/exeris-systems/exeris-docs/b2b-technical-whitepaper.md` §3.3. The Capability Composition Model that binds Tier 2 → Tier 3 SKUs is captured in `exeris-docs/adr/ADR-024-capability-composition-model.md`; the license taxonomy that scopes which caps participate at which price point is captured in `exeris-docs/adr/ADR-023-capability-licensing-taxonomy.md`.
+
+**Distinction between `exeris-spring-runtime-gateway` (Phase 5) and the Tier 3 Gateway-family SKUs.** Both address gateway workloads, but they serve different consumers and remain separately scoped:
+
+- **Tier 3 Gateway-family SKUs** are platform-owned products that run kernel-direct (no Spring). They are the architectural home for customers who do not have a hard Spring Cloud Gateway dependency and want native Exeris performance characteristics. They do not promise Spring Cloud Gateway DSL compatibility.
+- **`exeris-spring-runtime-gateway`** (Phase 5, this repository) is the Spring-Runtime-side artefact for customers who do stay on the Spring path — providing Exeris-Pure-Mode routing primitives, filter chain, and HTTP forwarder for workloads that need to remain co-located with Spring beans and Spring-style configuration. It is **not** a competitor to the Tier 3 Gateway SKUs; it is the brownfield-customer answer for the same workload class, scoped to the same `exeris-spring-runtime` consumers as the rest of this repo (see updated `CLAUDE.md` §"Who consumes this repo").
+
+The original obligations of this ADR (gateway workloads stay out of Compatibility Mode; Spring Cloud Gateway dependencies fail Pure Mode guards) remain unchanged. The amendment adds the positive direction without altering the negatives.
+
 ## References
 
 - ADR-006 — Spring-Free Kernel Boundary (The Wall): `exeris-docs/adr/ADR-006 Spring-Free Kernel Boundary.md`
 - ADR-010 — Host Runtime Model: `docs/adr/ADR-010 Host Runtime Model.md`
 - ADR-011 — Pure Mode vs Compatibility Mode: `docs/adr/ADR-011-pure-mode-vs-compatibility-mode.md`
+- ADR-023 — Capability Licensing Taxonomy (platform): `exeris-docs/adr/ADR-023-capability-licensing-taxonomy.md`
+- ADR-024 — Capability Composition Model (platform): `exeris-docs/adr/ADR-024-capability-composition-model.md`
 - Phase 0 Invariants: `docs/phases/phase-0-invariants.md`
 - Phase 1 Invariants: `docs/phases/phase-1-invariants.md`
 - Phase 5 Edge Gateway (planned): `docs/phases/phase-5-edge-gateway.md`
+- HLA (three-tier architecture): `~/exeris-systems/exeris-docs/high-level-architecture.md` §§2.2, 3.3, 5
+- B2B Whitepaper (Tier 3 SKU inventory): `~/exeris-systems/exeris-docs/b2b-technical-whitepaper.md` §3.3
