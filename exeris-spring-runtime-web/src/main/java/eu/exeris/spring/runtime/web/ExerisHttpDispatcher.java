@@ -19,6 +19,7 @@ import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.telemetry.TelemetrySink;
+import eu.exeris.spring.runtime.web.scope.RequestScopeBinder;
 
 /**
  * The primary bridge between the Exeris HTTP runtime and Spring application handlers.
@@ -65,24 +66,39 @@ public final class ExerisHttpDispatcher implements HttpHandler {
     private final ExerisRouteRegistry routeRegistry;
     private final ExerisErrorMapper errorMapper;
     private final Supplier<List<TelemetrySink>> fallbackSinksSupplier;
+    private final RequestScopeBinder scopeBinder;
 
     public ExerisHttpDispatcher(ExerisRouteRegistry routeRegistry,
                                  ExerisErrorMapper errorMapper) {
-        this(routeRegistry, errorMapper, (Supplier<List<TelemetrySink>>) null);
+        this(routeRegistry, errorMapper, (Supplier<List<TelemetrySink>>) null, RequestScopeBinder.noop());
     }
 
     public ExerisHttpDispatcher(ExerisRouteRegistry routeRegistry,
                                  ExerisErrorMapper errorMapper,
                                  List<TelemetrySink> fallbackSinks) {
-        this(routeRegistry, errorMapper, () -> fallbackSinks);
+        this(routeRegistry, errorMapper, () -> fallbackSinks, RequestScopeBinder.noop());
     }
 
     public ExerisHttpDispatcher(ExerisRouteRegistry routeRegistry,
                                  ExerisErrorMapper errorMapper,
                                  Supplier<List<TelemetrySink>> fallbackSinksSupplier) {
+        this(routeRegistry, errorMapper, fallbackSinksSupplier, RequestScopeBinder.noop());
+    }
+
+    /**
+     * Phase 3B-α constructor (per ADR-029). Injects a {@link RequestScopeBinder} that the
+     * dispatcher calls around {@link #dispatch(HttpExchange)} to optionally bind a
+     * {@link eu.exeris.spring.runtime.web.scope.RequestScope}. When the binder is
+     * {@link RequestScopeBinder#noop()} (default and disabled-path) it is a pass-through.
+     */
+    public ExerisHttpDispatcher(ExerisRouteRegistry routeRegistry,
+                                 ExerisErrorMapper errorMapper,
+                                 Supplier<List<TelemetrySink>> fallbackSinksSupplier,
+                                 RequestScopeBinder scopeBinder) {
         this.routeRegistry = Objects.requireNonNull(routeRegistry, "routeRegistry must not be null");
         this.errorMapper = Objects.requireNonNull(errorMapper, "errorMapper must not be null");
         this.fallbackSinksSupplier = memoizeFallbackSinks(fallbackSinksSupplier);
+        this.scopeBinder = Objects.requireNonNull(scopeBinder, "scopeBinder must not be null");
     }
 
     @Override
@@ -90,19 +106,31 @@ public final class ExerisHttpDispatcher implements HttpHandler {
         Objects.requireNonNull(exchange, "exchange must not be null");
 
         if (KernelProviders.TELEMETRY_SINKS.isBound()) {
-            dispatch(exchange);
+            dispatchWithScope(exchange);
             return;
         }
 
         List<TelemetrySink> fallbackSinks = resolveFallbackSinks();
         if (fallbackSinks.isEmpty()) {
-            dispatch(exchange);
+            dispatchWithScope(exchange);
             return;
         }
 
         logFallbackBindingWarningOnce();
         ScopedValue.where(KernelProviders.TELEMETRY_SINKS, fallbackSinks)
-                .run(() -> dispatch(exchange));
+                .run(() -> dispatchWithScope(exchange));
+    }
+
+    /**
+     * Bind the Phase 3B-α request scope via the configured {@link RequestScopeBinder} and then
+     * dispatch. With the default {@link RequestScopeBinder#noop()} this collapses to a direct
+     * {@link #dispatch(HttpExchange)} call (zero overhead). With a resolving binder it wraps the
+     * dispatch in {@code ExerisRequestScope.runWith(...)}.
+     */
+    private void dispatchWithScope(HttpExchange exchange) {
+        var kernelRequest = exchange.request();
+        var request = new ExerisServerRequest(kernelRequest);
+        scopeBinder.bind(request, () -> dispatch(exchange, request));
     }
 
     private List<TelemetrySink> resolveFallbackSinks() {
@@ -118,9 +146,8 @@ public final class ExerisHttpDispatcher implements HttpHandler {
         }
     }
 
-    private void dispatch(HttpExchange exchange) {
+    private void dispatch(HttpExchange exchange, ExerisServerRequest request) {
         var kernelRequest = exchange.request();
-        var request = new ExerisServerRequest(kernelRequest);
         HttpVersion version = kernelRequest.version();
         try {
             var handler = routeRegistry.resolve(request.method(), request.path());

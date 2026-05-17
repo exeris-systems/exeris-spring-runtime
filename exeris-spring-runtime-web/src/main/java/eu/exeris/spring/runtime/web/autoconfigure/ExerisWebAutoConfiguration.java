@@ -19,6 +19,7 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 
@@ -30,6 +31,9 @@ import eu.exeris.spring.runtime.web.ExerisHttpDispatcher;
 import eu.exeris.spring.runtime.web.ExerisRequestHandler;
 import eu.exeris.spring.runtime.web.ExerisRoute;
 import eu.exeris.spring.runtime.web.ExerisRouteRegistry;
+import eu.exeris.spring.runtime.web.scope.ExerisContextScopeProperties;
+import eu.exeris.spring.runtime.web.scope.RequestScopeBinder;
+import eu.exeris.spring.runtime.web.scope.RequestScopeResolver;
 
 /**
  * Auto-configuration for Exeris Pure Mode web routing and dispatcher bridge.
@@ -41,6 +45,7 @@ import eu.exeris.spring.runtime.web.ExerisRouteRegistry;
         name = "mode",
         havingValue = "pure",
         matchIfMissing = true)
+@EnableConfigurationProperties(ExerisContextScopeProperties.class)
 public class ExerisWebAutoConfiguration {
 
     private static final System.Logger LOGGER = System.getLogger(ExerisWebAutoConfiguration.class.getName());
@@ -76,14 +81,47 @@ public class ExerisWebAutoConfiguration {
         return buildFallbackSinksSupplier(telemetryProviders);
     }
 
+    /**
+     * Phase 3B-α (ADR-029): build the {@link RequestScopeBinder} that the dispatcher uses to
+     * optionally bind a request scope around each {@code HttpHandler.handle} invocation.
+     *
+     * <p>Wiring decision matrix:
+     * <ul>
+     *   <li>Property disabled ({@code exeris.runtime.context.scope.enabled=false}, default) →
+     *       {@link RequestScopeBinder#noop()}, zero-cost pass-through.</li>
+     *   <li>Property enabled + no {@link RequestScopeResolver} bean → noop binder (the scope
+     *       cannot be built without an application-side resolver; logged at INFO once).</li>
+     *   <li>Property enabled + resolver bean present → resolving binder.</li>
+     * </ul>
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @SuppressWarnings("unused")
+    RequestScopeBinder exerisRequestScopeBinder(ExerisContextScopeProperties properties,
+                                                 ObjectProvider<RequestScopeResolver> resolverProvider) {
+        if (!properties.enabled()) {
+            return RequestScopeBinder.noop();
+        }
+        RequestScopeResolver resolver = resolverProvider.getIfAvailable();
+        if (resolver == null) {
+            LOGGER.log(System.Logger.Level.INFO,
+                    "exeris.runtime.context.scope.enabled=true but no RequestScopeResolver bean is present; "
+                            + "the request scope will not be bound. Provide a @Bean RequestScopeResolver to "
+                            + "build a RequestScope from each incoming request (typically from headers).");
+            return RequestScopeBinder.noop();
+        }
+        return RequestScopeBinder.resolving(resolver);
+    }
+
     @Bean
     @ConditionalOnMissingBean
     @SuppressWarnings("unused")
     ExerisHttpDispatcher exerisHttpDispatcher(ExerisRouteRegistry routeRegistry,
                                                ExerisErrorMapper errorMapper,
                                                @Qualifier(FALLBACK_TELEMETRY_SINKS_BEAN_NAME)
-                                               Supplier<List<TelemetrySink>> fallbackTelemetrySinks) {
-        return new ExerisHttpDispatcher(routeRegistry, errorMapper, fallbackTelemetrySinks);
+                                               Supplier<List<TelemetrySink>> fallbackTelemetrySinks,
+                                               RequestScopeBinder scopeBinder) {
+        return new ExerisHttpDispatcher(routeRegistry, errorMapper, fallbackTelemetrySinks, scopeBinder);
     }
 
     /**
