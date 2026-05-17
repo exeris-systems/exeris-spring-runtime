@@ -42,7 +42,7 @@ This ADR answers: **does 1.0 commit to supporting Spring Boot 4 as a nominal ver
 
 ## 🏁 The Decision
 
-**The 1.0 release supports Spring Boot 3.5+ and Spring Boot 4.x as nominal versions. From 0.7.0-preview onward, the reactor builds and tests under a dual matrix (SB3 and SB4); CI matrix failure on either line blocks merge.**
+**The 1.0 release supports Spring Boot 3.5+ and Spring Boot 4.x as nominal versions. From 0.8.0-preview onward, the reactor builds and tests under a dual matrix (SB3 and SB4); CI matrix failure on either line blocks merge.**
 
 The 1.0 support statement reads, in normalized form: *"`exeris-spring-runtime` 1.0 is supported on Spring Boot 3.5.x and Spring Boot 4.x. JVM baseline is JDK 26 with `--enable-preview`. Servlet containers (Tomcat/Jetty/Undertow), Netty, and Reactor remain out of scope on Pure Mode classpath under both matrices."*
 
@@ -88,14 +88,14 @@ All forms carry `@eu.exeris.spring.boot.autoconfigure.compat.SbCompat("<type-or-
 - **[+] Support statement is honest by construction.** The dual-matrix CI invariant means "SB4 is supported" is not a forward-looking claim — it is a present-tense CI fact every PR demonstrates. No future regression can silently break SB4 support without a red build.
 - **[+] The cost matches the consumed surface.** Because the repository consumes the framework-stable core (DI, configuration, lifecycle, model types) and excludes the volatile layers (embedded transport, reactive stack), the bridging cost is bounded. Compat shims, if needed, are narrow and named.
 - **[+] Pure Mode discipline transfers cleanly.** The classpath guards that keep SB3 honest are the same guards that keep SB4 honest. The Wall doesn't move; only the import scopes change.
-- **[+] Phase 5 (`exeris-spring-runtime-gateway`, 0.6.0-preview) is the cleanest validation surface.** A greenfield module added immediately before this ADR's enforcement period is the lowest-risk place to validate dual-matrix behaviour — no SB3-only legacy in that module to retrofit.
+- **[+] Phase 4C Spring-side seam (`exeris-spring-runtime-graph`, 0.7.0-preview) and Phase 5 (`exeris-spring-runtime-gateway`, 0.9.0-preview) are clean validation surfaces.** Greenfield modules added in trains adjacent to this ADR's enforcement period are the lowest-risk places to validate dual-matrix behaviour — no SB3-only legacy in those modules to retrofit.
 
 ### ⚠️ Trade-offs
 
 - **[-] CI time roughly doubles for the matrix axes that run both.** The full reactor + integration tests run twice per push. Mitigation: only the reactor build and the runtime-integration tests need to run on both axes; unit tests scoped to non-Spring code (kernel SPI types, codec internals) can be filtered if CI cost becomes meaningful. Default: run both axes in full to keep the matrix invariant load-bearing.
 - **[-] Compat shims add a small surface that the SB3 path doesn't need.** The shims live in `compat.sb4.*` sub-packages, follow the same discipline as `compat.*` from ADR-011 (clearly marked, isolated from Pure Mode imports), and have an explicit removal date (when the SB3 matrix is dropped post-1.0.x). The cost is bounded by the count of types that actually relocate, which (per the consumed-surface analysis above) is small.
 - **[-] Spring Security version coupling is decoupled and remains a per-customer concern.** A customer on SB4 + Security 7 may encounter compat issues on the Phase 2c filter that this ADR explicitly does not guarantee. Mitigation: an additional ADR scopes Security compat if/when a meaningful gap surfaces; until then, the support statement names Security as a separate axis.
-- **[-] The 1.0 timeline absorbs an additional preview train.** Inserting 0.7.0-preview between 0.6.0 (Phase 5) and 0.9.0-rc1 delays rc1 by one train. The roadmap absorbs this explicitly rather than collapsing SB4 into 0.6.0 — the cross-cutting nature of dual-matrix validation is better served by a dedicated train with a single graduation criterion than by mixing with Phase 5 module-skeleton work.
+- **[-] The 1.0 timeline absorbs an additional preview train.** Inserting 0.8.0-preview between 0.7.0-preview (Phase 4C Spring-side seam) and 0.9.0-preview (Phase 5 + Phase 3B-β) delays rc1 by one train. The roadmap absorbs this explicitly rather than collapsing SB4 into an adjacent train — the cross-cutting nature of dual-matrix validation is better served by a dedicated train with a single graduation criterion than by mixing with module-skeleton work.
 
 ### 📋 What is NOT in scope
 
@@ -115,11 +115,11 @@ All forms carry `@eu.exeris.spring.boot.autoconfigure.compat.SbCompat("<type-or-
 - ADR-017 — JDBC Compatibility Scope for `ExerisDataSource`: `docs/adr/ADR-017-jdbc-compact-scope.md` — adjacent compatibility-scope ADR (different surface, same discipline)
 - ADR-021 — Gateway-Class Workloads Out of Compatibility Scope: `docs/adr/ADR-021-gateway-class-workloads-out-of-compatibility-scope.md` — banned coordinates that survive under both matrices
 - ADR-026 — Spring `ApplicationEventPublisher` / Exeris `EventBus` separation: `docs/adr/ADR-026-eventbus-applicationeventpublisher-boundary.md` — invariant that survives the SB4 line unchanged. (Content lives in PR #29 of `exeris-spring-runtime`, parallel to this PR. The file path resolves once PR #29 merges; this PR and PR #29 land together as the 2026-05-17 docs batch. If the reviewer reads this ADR on `main` before PR #29 is merged, the reference path is the expected destination.)
-- `docs/roadmap-1.0-trl9.md` — 0.7.0-preview train row anchors this ADR in the release plan
+- `docs/roadmap-1.0-trl9.md` — 0.8.0-preview train row anchors this ADR in the release plan (train slot moved from 0.7.0 to 0.8.0 in the 2026-05-17 resequence)
 
 ## Engineering Protocol
 
-The ADR is forward-looking — implementation work falls in the 0.7.0-preview train. Three concrete deliverables (each can be a separate PR; they do not need to land in one):
+The ADR is forward-looking — implementation work falls in the 0.8.0-preview train. Three concrete deliverables (each can be a separate PR; they do not need to land in one):
 
 1. **Reactor profile addition.** Root POM `<profiles>` block adds `matrix-sb3` (default, current behaviour) and `matrix-sb4` (imports `spring-boot-dependencies` 4.0.x). The `spring.boot.version` property remains, but is the SB3 line; an `spring.boot.sb4.version` property pins the SB4 line. No source changes required for this PR — it only proves the reactor builds under both BOMs with the existing source.
 2. **CI matrix axis.** `.github/workflows/ci.yml` adds the `spring-boot-line: [sb3, sb4]` matrix axis to the build job. Both axes run `mvn -Pmatrix-${{ matrix.spring-boot-line }} -s .github/maven-settings.xml clean install` (no space after `-P`). The job becomes blocking on both axes. If SB4 build fails on the first run, an additional PR (or PRs) introduces bridges per obligation 4 — bridge package depends on which path the bridge serves (Pure Mode → `bridge.sb4.*`; Compatibility Mode → `compat.sb4.*`; ≤ 1-class divergence → inline). Never weakens the Pure Mode classpath guards.
