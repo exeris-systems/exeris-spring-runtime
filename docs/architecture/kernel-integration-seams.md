@@ -26,6 +26,7 @@ TelemetryProvider        →    ExerisActuatorTelemetryBridge      →    Microm
 EventEngine / EventBus   →    ExerisEventPublisher/Registrar     →    @ExerisEventListener beans
 FlowEngine               →    ExerisFlowTemplate/Registrar       →    @ExerisFlowDefinition beans
 FlowChoreographyMapper   →    ExerisFlowChoreographyBridge       →    ExerisFlowChoreographyMapper beans
+GraphEngine / GraphSession →  ExerisGraphTemplate                →    @ExerisGraphQuery beans
 PersistenceProvider      →    ExerisPersistenceAdapter           →    DataSource / @Transactional
 ```
 

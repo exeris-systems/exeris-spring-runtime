@@ -38,6 +38,7 @@
         <module>exeris-spring-runtime-actuator</module>
         <module>exeris-spring-runtime-events</module>
         <module>exeris-spring-runtime-flow</module>
+        <module>exeris-spring-runtime-graph</module>
     </modules>
 
     <properties>
