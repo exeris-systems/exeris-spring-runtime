@@ -16,7 +16,7 @@ Phase 3B was originally three concerns folded into one row in the roadmap: (a) r
 
 A 2026-05-17 downstream observability review changed two facts:
 
-1. **In-flight migration demand for (a) and (b).** A downstream service migration identified that tenant isolation and correlation-ID propagation need to be load-bearing during the migration, not after — the application uses `StructuredTaskScope` to fan out kernel calls (persistence + event publication + downstream HTTP) and the tenant ID must propagate without `ThreadLocal` (banned on hot paths by `WallIntegrityTest`).
+1. **In-flight migration demand for (a) and (b).** A downstream service migration identified that tenant isolation and correlation-ID propagation need to be load-bearing during the migration, not after — the application uses `StructuredTaskScope` to fan out kernel calls (persistence + event publication + downstream HTTP) and the tenant ID must propagate without `ThreadLocal` (banned on hot paths by the `CLAUDE.md` §"Pure Mode vs Compatibility Mode" narrative rule; obligation 4 below turns that rule into a per-package ArchUnit guard for the scope package).
 2. **Kernel-gating distinction surfaced for (c).** `exeris-kernel/docs/v0.8-sprint-and-implementation-map.md` Sprint 0.12 commits to W3C `traceparent` + `TraceContext` carrier via `ScopedValue`; the OTLP sink path (`PrometheusOtlpTelemetrySink`) is in the kernel v0.8/v0.9 gap section without sprint commitment. Distributed tracing therefore depends on kernel work that has a known wait period (for β) and an uncertain wait period (for γ).
 
 The two facts together point at a split:
