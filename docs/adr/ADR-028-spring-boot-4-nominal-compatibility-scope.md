@@ -1,4 +1,4 @@
-# ADR-027: Spring Boot 4 Nominal Compatibility Scope for 1.0
+# ADR-028: Spring Boot 4 Nominal Compatibility Scope for 1.0
 
 | Attribute       | Value                                                                                                                                                                                                                                    |
 |:----------------|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -93,7 +93,7 @@ All forms carry `@eu.exeris.spring.boot.autoconfigure.compat.SbCompat("<type-or-
 ### ⚠️ Trade-offs
 
 - **[-] CI time roughly doubles for the matrix axes that run both.** The full reactor + integration tests run twice per push. Mitigation: only the reactor build and the runtime-integration tests need to run on both axes; unit tests scoped to non-Spring code (kernel SPI types, codec internals) can be filtered if CI cost becomes meaningful. Default: run both axes in full to keep the matrix invariant load-bearing.
-- **[-] Compat shims add a small surface that the SB3 path doesn't need.** The shims live in `compat.sb4.*` sub-packages, follow the same discipline as `compat.*` from ADR-011 (clearly marked, isolated from Pure Mode imports), and have an explicit removal date (when the SB3 matrix is dropped post-1.0.x). The cost is bounded by the count of types that actually relocate, which (per the consumed-surface analysis above) is small.
+- **[-] SB4 bridges add a small surface that the SB3 path doesn't need.** Per the three-tier taxonomy in obligation 4: Pure Mode SB4 bridges live in `bridge.sb4.*` (Pure-Mode-visible), Compatibility Mode SB4 shims live in `compat.sb4.*` (governed by `CompatibilityIsolationGuardTest`), and ≤ 1-class divergences live inline (sealed-interface SPI or narrow reflection). All carry the `@SbCompat` marker and have an explicit removal date (when the SB3 matrix is dropped post-1.0.x). The cost is bounded by the count of types that actually relocate, which (per the consumed-surface analysis above) is small.
 - **[-] Spring Security version coupling is decoupled and remains a per-customer concern.** A customer on SB4 + Security 7 may encounter compat issues on the Phase 2c filter that this ADR explicitly does not guarantee. Mitigation: an additional ADR scopes Security compat if/when a meaningful gap surfaces; until then, the support statement names Security as a separate axis.
 - **[-] The 1.0 timeline absorbs an additional preview train.** Inserting 0.8.0-preview between 0.7.0-preview (Phase 4C Spring-side seam) and 0.9.0-preview (Phase 5 + Phase 3B-β) delays rc1 by one train. The roadmap absorbs this explicitly rather than collapsing SB4 into an adjacent train — the cross-cutting nature of dual-matrix validation is better served by a dedicated train with a single graduation criterion than by mixing with module-skeleton work.
 
@@ -114,7 +114,7 @@ All forms carry `@eu.exeris.spring.boot.autoconfigure.compat.SbCompat("<type-or-
 - ADR-011 — Pure Mode vs Compatibility Mode: `docs/adr/ADR-011-pure-mode-vs-compatibility-mode.md` — the mode taxonomy that compat shims under this ADR must respect
 - ADR-017 — JDBC Compatibility Scope for `ExerisDataSource`: `docs/adr/ADR-017-jdbc-compact-scope.md` — adjacent compatibility-scope ADR (different surface, same discipline)
 - ADR-021 — Gateway-Class Workloads Out of Compatibility Scope: `docs/adr/ADR-021-gateway-class-workloads-out-of-compatibility-scope.md` — banned coordinates that survive under both matrices
-- ADR-026 — Spring `ApplicationEventPublisher` / Exeris `EventBus` separation: `docs/adr/ADR-026-eventbus-applicationeventpublisher-boundary.md` — invariant that survives the SB4 line unchanged. (Content lives in PR #29 of `exeris-spring-runtime`, parallel to this PR. The file path resolves once PR #29 merges; this PR and PR #29 land together as the 2026-05-17 docs batch. If the reviewer reads this ADR on `main` before PR #29 is merged, the reference path is the expected destination.)
+- ADR-027 — Spring `ApplicationEventPublisher` / Exeris `EventBus` separation: `docs/adr/ADR-027-eventbus-applicationeventpublisher-boundary.md` — invariant that survives the SB4 line unchanged. (Content lives in PR #29 of `exeris-spring-runtime`, parallel to this PR. The file path resolves once PR #29 merges; this PR and PR #29 land together as the 2026-05-17 docs batch. If the reviewer reads this ADR on `main` before PR #29 is merged, the reference path is the expected destination.)
 - `docs/roadmap-1.0-trl9.md` — 0.8.0-preview train row anchors this ADR in the release plan (train slot moved from 0.7.0 to 0.8.0 in the 2026-05-17 resequence)
 
 ## Engineering Protocol
@@ -130,4 +130,4 @@ The ADR is forward-looking — implementation work falls in the 0.8.0-preview tr
    - All forms carry `@eu.exeris.spring.boot.autoconfigure.compat.SbCompat("<type-or-behaviour>")` — the annotation is created in `exeris-spring-boot-autoconfigure` in the first PR that needs it. No "equivalent comment" fallback; enforcement requires the concrete annotation class.
    - Named removal point: bridges are removed when the SB3 matrix is dropped post-1.0.x. Each bridge PR cites this ADR in its description.
 
-A future PR that proposes adding a coordinate banned by obligation 5 on either matrix is an ADR-027-violating PR; the reviewer cites this ADR by number when blocking. A future PR that removes the SB4 matrix axis is an ADR-027-violating PR until and unless this ADR is superseded.
+A future PR that proposes adding a coordinate banned by obligation 5 on either matrix is an ADR-028-violating PR; the reviewer cites this ADR by number when blocking. A future PR that removes the SB4 matrix axis is an ADR-028-violating PR until and unless this ADR is superseded.
