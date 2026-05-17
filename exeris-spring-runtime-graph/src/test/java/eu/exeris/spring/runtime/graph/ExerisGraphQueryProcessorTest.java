@@ -71,6 +71,38 @@ class ExerisGraphQueryProcessorTest {
     }
 
     @Test
+    void nonPublicMethod_failsFastAtPostProcessing() {
+        // Previously the processor used Class.getMethods() (returns only public methods), so
+        // the !isPublic() guard in validate() was unreachable — a protected/package-private/
+        // private method annotated with @ExerisGraphQuery would skip validation entirely and
+        // surface UnsupportedOperationException at runtime. This test pins the fail-fast
+        // ADR-030 obligation 4 explicitly requires.
+        var template = buildTemplate(mock(GraphSession.class));
+        var processor = new ExerisGraphQueryProcessor(template);
+
+        assertThatThrownBy(() ->
+                processor.postProcessAfterInitialization(new NonPublicAnnotatedBean(), "bad"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("must be public");
+    }
+
+    @Test
+    void finalClassWithAnnotatedMethod_failsFastWithOperatorReadableMessage() {
+        // Spring AOP class-based proxying (CGLIB) requires a non-final class. We detect this
+        // condition explicitly to surface an operator-readable diagnostic instead of an opaque
+        // CGLIB error at proxy creation.
+        var template = buildTemplate(mock(GraphSession.class));
+        var processor = new ExerisGraphQueryProcessor(template);
+
+        assertThatThrownBy(() ->
+                processor.postProcessAfterInitialization(new FinalAnnotatedBean(), "bad"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("is final")
+                .hasMessageContaining("Spring AOP")
+                .hasMessageContaining("@ExerisGraphQuery");
+    }
+
+    @Test
     void listUuidReturnType_routesToTraverseBfs() {
         GraphSession session = mock(GraphSession.class);
         UUID a = UUID.randomUUID();
@@ -140,6 +172,20 @@ class ExerisGraphQueryProcessorTest {
         @ExerisGraphQuery
         public List<UUID> wrongParams(String name, int depth) {
             throw new UnsupportedOperationException("never invoked — validation should reject");
+        }
+    }
+
+    public static class NonPublicAnnotatedBean {
+        @ExerisGraphQuery
+        protected List<UUID> findNeighbours(GraphTraversal traversal) {
+            throw new UnsupportedOperationException("never invoked — validation should reject");
+        }
+    }
+
+    public static final class FinalAnnotatedBean {
+        @ExerisGraphQuery
+        public List<UUID> findNeighbours(GraphTraversal traversal) {
+            throw new UnsupportedOperationException("never invoked — CGLIB cannot proxy final classes");
         }
     }
 }

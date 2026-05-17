@@ -62,10 +62,16 @@ public final class ExerisGraphQueryProcessor implements BeanPostProcessor {
     public Object postProcessAfterInitialization(Object bean, String beanName) {
         Class<?> targetClass = bean.getClass();
         boolean hasAnyAnnotated = false;
-        for (Method method : targetClass.getMethods()) {
-            if (method.isAnnotationPresent(ExerisGraphQuery.class)) {
-                validate(method, beanName);
-                hasAnyAnnotated = true;
+        // Walk the class hierarchy with getDeclaredMethods() so non-public annotated methods
+        // surface for validation (and fail-fast). getMethods() returns only public methods, which
+        // would make the !isPublic() guard in validate() unreachable (ADR-030 obligation 4
+        // explicitly requires the fail-fast on non-public methods).
+        for (Class<?> klass = targetClass; klass != null && klass != Object.class; klass = klass.getSuperclass()) {
+            for (Method method : klass.getDeclaredMethods()) {
+                if (method.isAnnotationPresent(ExerisGraphQuery.class)) {
+                    validate(method, beanName);
+                    hasAnyAnnotated = true;
+                }
             }
         }
         if (!hasAnyAnnotated) {
@@ -101,12 +107,24 @@ public final class ExerisGraphQueryProcessor implements BeanPostProcessor {
     }
 
     private Object wrap(Object bean, String beanName) {
+        Class<?> targetClass = bean.getClass();
+        if (Modifier.isFinal(targetClass.getModifiers())) {
+            // CGLIB subclass proxying (setProxyTargetClass(true)) requires a non-final class.
+            // Failing here at post-processing time gives an operator-readable diagnostic; the
+            // alternative is a low-level CGLIB error at first proxy invocation.
+            throw new IllegalStateException(
+                    "Bean '" + beanName + "' (class " + targetClass.getName() + ") declares "
+                            + "@ExerisGraphQuery methods but is final; Spring AOP class-based "
+                            + "proxying (CGLIB) requires a non-final class. Remove the final "
+                            + "modifier, or extract the @ExerisGraphQuery methods into a "
+                            + "non-final companion bean.");
+        }
         ProxyFactory factory = new ProxyFactory(bean);
         factory.setProxyTargetClass(true);
         factory.addAdvisor(new DefaultPointcutAdvisor(
                 AnnotationMatchingPointcut.forMethodAnnotation(ExerisGraphQuery.class),
                 new GraphQueryInterceptor(template, beanName)));
-        return factory.getProxy(bean.getClass().getClassLoader());
+        return factory.getProxy(targetClass.getClassLoader());
     }
 
     private static final class GraphQueryInterceptor implements MethodInterceptor {

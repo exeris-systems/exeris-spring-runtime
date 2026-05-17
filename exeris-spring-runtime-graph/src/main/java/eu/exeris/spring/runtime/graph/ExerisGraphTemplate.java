@@ -112,6 +112,34 @@ public final class ExerisGraphTemplate {
      * }</pre>
      * The template does not retain a reference to the returned buffer and does not transfer
      * ownership to any other party.
+     *
+     * <h2>Session-close-before-return semantics</h2>
+     *
+     * <p>This method is a <strong>fully-materialised</strong> operation. The control flow is:
+     *
+     * <ol>
+     *   <li>{@link #execute} opens a {@link GraphSession}.</li>
+     *   <li>{@link GraphSession#streamBfsJson} fully populates the {@link LoanedBuffer}
+     *       inside the callback.</li>
+     *   <li>The {@code try}-with-resources around the session in {@link #execute} closes the
+     *       session in its implicit {@code finally} block.</li>
+     *   <li>{@code streamBfsJson} returns the buffer to the caller — <em>after</em> session
+     *       close.</li>
+     * </ol>
+     *
+     * <p>The buffer's validity after session close is guaranteed by the kernel SPI contract:
+     * {@link LoanedBuffer} is an independently-owned off-heap slab; the session owns the DB
+     * connection (and its cursor state), not the buffer's backing memory. {@code session.close()}
+     * therefore does not reclaim the buffer.
+     *
+     * <p><strong>Lazy / cursor-based streaming requires a different API shape.</strong> A future
+     * kernel implementation that materialises results lazily (e.g. a {@code bfsCursor()}
+     * variant where the buffer is only partially populated and rows arrive on demand) cannot use
+     * this wrapper — closing the session before the caller reads the buffer would invalidate
+     * cursor state. When the kernel ships {@code GraphSession.bfsCursor()} (currently "Planned"
+     * per {@code exeris-kernel/docs/subsystems/graph.md:149}), the Spring-side seam will add a
+     * separate {@code streamBfsJsonCursor()}-style method that keeps the session open across
+     * batch reads.
      */
     public LoanedBuffer streamBfsJson(GraphTraversal traversal) {
         Objects.requireNonNull(traversal, "traversal must not be null");
