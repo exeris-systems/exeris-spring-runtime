@@ -86,9 +86,14 @@ public final class ExerisStructuredScope<T, R> implements AutoCloseable {
     }
 
     /**
-     * Convenience policy: await all subtasks, returning a list of subtask handles (callers
-     * inspect each {@link Subtask#state()} / {@link Subtask#get()} themselves). Useful when
-     * partial success is acceptable.
+     * All-success policy: await all subtasks; if any fails, {@link #join()} throws. If all
+     * succeed, {@link #join()} returns the {@link List} of their result values (not the
+     * subtask handles).
+     *
+     * <p>This is the strictest of the three policies — there is no graceful partial-failure
+     * path here. Use {@link #failFast()} when result-value aggregation isn't needed; reach for
+     * a hand-rolled {@link Joiner} on top of {@code StructuredTaskScope.open(...)} if you need
+     * true partial-success aggregation.
      */
     public static <T> ExerisStructuredScope<T, List<T>> allSuccessful() {
         return new ExerisStructuredScope<>(
@@ -128,6 +133,9 @@ public final class ExerisStructuredScope<T, R> implements AutoCloseable {
         return Optional.ofNullable(captured);
     }
 
+    // The {@code (U) task.call()} casts below are unchecked because {@code Callable<? extends U>}
+    // erases its bound; the cast is safe because {@code ? extends U} is assignable to {@code U}.
+    @SuppressWarnings("unchecked")
     private <U> Callable<U> rebinding(Callable<? extends U> task) {
         if (captured == null) {
             return () -> (U) task.call();

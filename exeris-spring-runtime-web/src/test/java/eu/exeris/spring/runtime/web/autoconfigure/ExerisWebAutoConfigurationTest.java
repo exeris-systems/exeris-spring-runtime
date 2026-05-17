@@ -37,6 +37,12 @@ import eu.exeris.spring.runtime.web.ExerisRoute;
 import eu.exeris.spring.runtime.web.ExerisRouteRegistry;
 import eu.exeris.spring.runtime.web.ExerisServerRequest;
 import eu.exeris.spring.runtime.web.ExerisServerResponse;
+import eu.exeris.spring.runtime.web.scope.ExerisRequestScope;
+import eu.exeris.spring.runtime.web.scope.RequestScope;
+import eu.exeris.spring.runtime.web.scope.RequestScopeBinder;
+import eu.exeris.spring.runtime.web.scope.RequestScopeResolver;
+
+import java.util.UUID;
 
 class ExerisWebAutoConfigurationTest {
 
@@ -141,6 +147,151 @@ class ExerisWebAutoConfigurationTest {
             assertThat(supplierCalls).hasValue(1);
         }
     }
+
+    // ---- Phase 3B-α: RequestScopeBinder three-state autoconfig matrix (ADR-029) ----
+
+    /**
+     * State 1: property disabled (default). Binder bean must be {@link RequestScopeBinder#noop()}'s
+     * lambda — dispatch path is a zero-cost pass-through, request scope is unbound during handler.
+     */
+    @Test
+    void pureMode_requestScopeBinder_defaultsToNoopWhenPropertyDisabled() throws Exception {
+        try (var context = createContext(
+                Map.of("exeris.runtime.web.mode", "pure"),
+                ScopeAwareHandlerConfig.class)) {
+            ExerisHttpDispatcher dispatcher = context.getBean(ExerisHttpDispatcher.class);
+            ScopeAwareHandler handler = context.getBean(ScopeAwareHandler.class);
+
+            assertThat(context.getBeanNamesForType(RequestScopeBinder.class)).hasSize(1);
+
+            dispatcher.handle(TestExchange.get(HttpMethod.GET, "/scope", anyHttpVersion()).proxy());
+
+            assertThat(handler.observedScopeBound())
+                    .as("disabled property → ExerisRequestScope is unbound during handler invocation")
+                    .isFalse();
+        }
+    }
+
+    /**
+     * State 2: property enabled but no {@link RequestScopeResolver} bean. Binder must fall back
+     * to noop (logged INFO once); request scope still unbound during handler.
+     */
+    @Test
+    void pureMode_requestScopeBinder_remainsNoopWhenEnabledButResolverAbsent() throws Exception {
+        try (var context = createContext(
+                Map.of(
+                        "exeris.runtime.web.mode", "pure",
+                        "exeris.runtime.context.scope.enabled", "true"),
+                ScopeAwareHandlerConfig.class)) {
+            ExerisHttpDispatcher dispatcher = context.getBean(ExerisHttpDispatcher.class);
+            ScopeAwareHandler handler = context.getBean(ScopeAwareHandler.class);
+
+            assertThat(context.getBeanNamesForType(RequestScopeResolver.class))
+                    .as("no resolver bean registered for this state")
+                    .isEmpty();
+            assertThat(context.getBeanNamesForType(RequestScopeBinder.class)).hasSize(1);
+
+            dispatcher.handle(TestExchange.get(HttpMethod.GET, "/scope", anyHttpVersion()).proxy());
+
+            assertThat(handler.observedScopeBound())
+                    .as("enabled property + missing resolver → scope still unbound (noop fallback)")
+                    .isFalse();
+        }
+    }
+
+    /**
+     * State 3: property enabled + {@link RequestScopeResolver} bean present. Binder is the
+     * resolving variant; request scope is bound during handler invocation with the values the
+     * resolver produced from the request.
+     */
+    @Test
+    void pureMode_requestScopeBinder_resolvesWhenEnabledAndResolverPresent() throws Exception {
+        try (var context = createContext(
+                Map.of(
+                        "exeris.runtime.web.mode", "pure",
+                        "exeris.runtime.context.scope.enabled", "true"),
+                ScopeAwareHandlerConfig.class,
+                FixedTenantResolverConfig.class)) {
+            ExerisHttpDispatcher dispatcher = context.getBean(ExerisHttpDispatcher.class);
+            ScopeAwareHandler handler = context.getBean(ScopeAwareHandler.class);
+            FixedTenantResolverConfig.Resolver resolver = context.getBean(FixedTenantResolverConfig.Resolver.class);
+
+            dispatcher.handle(TestExchange.get(HttpMethod.GET, "/scope", anyHttpVersion()).proxy());
+
+            assertThat(handler.observedScopeBound())
+                    .as("enabled property + resolver bean → scope bound during handler invocation")
+                    .isTrue();
+            assertThat(handler.observedTenant())
+                    .as("handler sees the tenant produced by the resolver")
+                    .isEqualTo(resolver.tenant());
+            assertThat(resolver.invocations())
+                    .as("resolver is called exactly once per dispatch")
+                    .isEqualTo(1);
+        }
+    }
+
+    @Configuration
+    static class ScopeAwareHandlerConfig {
+
+        @Bean
+        @SuppressWarnings("unused")
+        ScopeAwareHandler scopeAwareHandler() {
+            return new ScopeAwareHandler();
+        }
+    }
+
+    @Configuration
+    static class FixedTenantResolverConfig {
+
+        @Bean
+        @SuppressWarnings("unused")
+        Resolver fixedTenantResolver() {
+            return new Resolver();
+        }
+
+        static final class Resolver implements RequestScopeResolver {
+            private final UUID tenant = UUID.randomUUID();
+            private final AtomicInteger invocations = new AtomicInteger();
+
+            @Override
+            public RequestScope resolve(ExerisServerRequest request) {
+                invocations.incrementAndGet();
+                return new RequestScope(tenant, "corr-fixed", null);
+            }
+
+            UUID tenant() {
+                return tenant;
+            }
+
+            int invocations() {
+                return invocations.get();
+            }
+        }
+    }
+
+    @ExerisRoute(method = HttpMethod.GET, path = "/scope")
+    static class ScopeAwareHandler implements ExerisRequestHandler {
+
+        private final AtomicReference<Boolean> scopeBound = new AtomicReference<>(false);
+        private final AtomicReference<UUID> observedTenant = new AtomicReference<>();
+
+        @Override
+        public ExerisServerResponse handle(ExerisServerRequest request) {
+            scopeBound.set(ExerisRequestScope.current().isPresent());
+            observedTenant.set(ExerisRequestScope.tenantId().orElse(null));
+            return ExerisServerResponse.ok().body("scope");
+        }
+
+        boolean observedScopeBound() {
+            return Boolean.TRUE.equals(scopeBound.get());
+        }
+
+        UUID observedTenant() {
+            return observedTenant.get();
+        }
+    }
+
+    // ---- end Phase 3B-α matrix ----
 
     @SuppressWarnings("null")
     private AnnotationConfigApplicationContext createContext(Map<String, Object> properties, Class<?>... extraConfigs) {

@@ -7,6 +7,7 @@
 package eu.exeris.spring.runtime.web.scope;
 
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import eu.exeris.spring.runtime.web.ExerisServerRequest;
 
@@ -45,15 +46,30 @@ public interface RequestScopeBinder {
     /**
      * Resolving binder: builds a {@link RequestScope} from the request via {@code resolver},
      * then runs {@code action} inside {@link ExerisRequestScope#runWith(RequestScope, Runnable)}.
-     * If the resolver returns {@code null} (it should not), falls back to {@link RequestScope#empty()}.
+     * If the resolver returns {@code null} (its contract forbids this), falls back to
+     * {@link RequestScope#empty()} and logs a WARN exactly once so the bug surfaces in operator
+     * logs without flooding them.
      */
     static RequestScopeBinder resolving(RequestScopeResolver resolver) {
         Objects.requireNonNull(resolver, "resolver");
+        AtomicBoolean nullReturnWarned = new AtomicBoolean(false);
+        System.Logger logger = System.getLogger(RequestScopeBinder.class.getName());
         return (request, action) -> {
             Objects.requireNonNull(request, "request");
             Objects.requireNonNull(action, "action");
             RequestScope scope = resolver.resolve(request);
-            ExerisRequestScope.runWith(scope == null ? RequestScope.empty() : scope, action);
+            if (scope == null) {
+                if (nullReturnWarned.compareAndSet(false, true)) {
+                    logger.log(System.Logger.Level.WARNING,
+                            "RequestScopeResolver " + resolver.getClass().getName()
+                                    + " returned null from resolve(...); its contract forbids this. "
+                                    + "Falling back to RequestScope.empty() and proceeding. "
+                                    + "Subsequent null returns from this resolver will be silently substituted "
+                                    + "(WARN logged once per JVM to avoid flooding operator logs).");
+                }
+                scope = RequestScope.empty();
+            }
+            ExerisRequestScope.runWith(scope, action);
         };
     }
 }

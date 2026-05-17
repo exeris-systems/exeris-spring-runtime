@@ -122,6 +122,75 @@ class ExerisStructuredScopeIntegrationTest {
     }
 
     /**
+     * {@link ExerisStructuredScope#firstSuccess()} — {@code join()} returns the value of the
+     * first successful fork. Tenant propagation works the same as for {@link
+     * ExerisStructuredScope#failFast()}.
+     */
+    @Test
+    void firstSuccessPropagatesTenantAndReturnsValue() throws Exception {
+        UUID tenant = UUID.randomUUID();
+        RequestScope outer = new RequestScope(tenant, "corr-first-success", null);
+        AtomicReference<UUID> innerTenant = new AtomicReference<>();
+
+        ExerisRequestScope.runWith(outer, () -> {
+            try (var scope = ExerisStructuredScope.<String>firstSuccess()) {
+                scope.fork(() -> {
+                    Thread.sleep(50);
+                    return "slower";
+                });
+                scope.fork(() -> {
+                    innerTenant.set(ExerisRequestScope.tenantId().orElse(null));
+                    return "faster";
+                });
+                String result = scope.join();
+                assertThat(result).isIn("faster", "slower");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
+            }
+        });
+
+        assertThat(innerTenant.get())
+                .as("tenant set on outer must be observable from inside any fork")
+                .isEqualTo(tenant);
+    }
+
+    /**
+     * {@link ExerisStructuredScope#allSuccessful()} — {@code join()} returns the list of result
+     * values when every fork succeeds. Tenant propagation works the same.
+     */
+    @Test
+    void allSuccessfulReturnsListOfResultsAndPropagatesTenant() throws Exception {
+        UUID tenant = UUID.randomUUID();
+        RequestScope outer = new RequestScope(tenant, "corr-all-successful", null);
+        AtomicReference<UUID> innerTenantA = new AtomicReference<>();
+        AtomicReference<UUID> innerTenantB = new AtomicReference<>();
+
+        ExerisRequestScope.runWith(outer, () -> {
+            try (var scope = ExerisStructuredScope.<String>allSuccessful()) {
+                scope.fork(() -> {
+                    innerTenantA.set(ExerisRequestScope.tenantId().orElse(null));
+                    return "result-A";
+                });
+                scope.fork(() -> {
+                    innerTenantB.set(ExerisRequestScope.tenantId().orElse(null));
+                    return "result-B";
+                });
+                java.util.List<String> results = scope.join();
+                assertThat(results)
+                        .as("allSuccessful().join() must return the list of subtask result values")
+                        .containsExactlyInAnyOrder("result-A", "result-B");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
+            }
+        });
+
+        assertThat(innerTenantA.get()).isEqualTo(tenant);
+        assertThat(innerTenantB.get()).isEqualTo(tenant);
+    }
+
+    /**
      * Outside an active outer scope, the wrapper still forwards forks but with no rebinding.
      * Subtasks see an unbound {@link ExerisRequestScope}.
      */

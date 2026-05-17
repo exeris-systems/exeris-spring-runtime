@@ -97,9 +97,19 @@ public final class ExerisRequestScope {
     }
 
     /**
-     * Package-private accessor for the {@code ScopedValue} carrier. The structured-concurrency
-     * wrapper in {@code eu.exeris.spring.runtime.web.scope.concurrent} reads this to rebind the
-     * scope inside each forked virtual thread; production code should not need this.
+     * Public accessor for the {@code ScopedValue} carrier, intended for use by the
+     * structured-concurrency sub-package
+     * ({@code eu.exeris.spring.runtime.web.scope.concurrent}) — which lives in a sibling
+     * package and would otherwise need reflection to bridge the carrier across the package
+     * boundary. The method is necessarily {@code public} because Java does not propagate
+     * package-private visibility to sub-packages.
+     *
+     * <p>Production application code should use the typed accessor methods on this class
+     * ({@link #current()}, {@link #tenantId()}, {@link #correlationId()},
+     * {@link #attribute(String, Class)}) rather than reading the carrier directly. Reaching
+     * for the carrier is an internal-wiring concern; if you find yourself calling
+     * {@code carrier()} from application code, the typed surface is missing an accessor —
+     * file an issue rather than working around it.
      */
     public static ScopedValue<RequestScope> carrier() {
         return SCOPE;
