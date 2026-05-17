@@ -42,12 +42,24 @@ This ADR answers: **what does `exeris-spring-runtime-graph` deliver in 0.7.0-pre
 1. **New module `exeris-spring-runtime-graph`.** Maven artefact `eu.exeris:exeris-spring-runtime-graph`, Java package root `eu.exeris.spring.runtime.graph`. Module depends on `exeris-spring-boot-autoconfigure` (lifecycle), `exeris-kernel-spi` (Graph SPI), and `spring-context` (DI/lifecycle annotations). No dependency on `exeris-kernel-community` or any concrete kernel implementation outside test scope.
 2. **Opt-in via `exeris.runtime.graph.enabled` (default `false`).** Activation must be explicit — applications that do not opt in pay zero cost. The conditional is `@ConditionalOnProperty(prefix = "exeris.runtime.graph", name = "enabled", havingValue = "true")` mirroring the Phase 4A/4B autoconfig discipline. There is no `matchIfMissing=true` and no implicit activation path.
 3. **`ExerisGraphTemplate` Spring facade.** A `@Bean` exposed by the autoconfig that wraps the captured `GraphEngine` and provides session-scoped helpers:
-   - `<T> T execute(Function<GraphSession, T> action)` — opens a session, invokes the callback, closes the session in a `finally` block; the JdbcTemplate-style pattern for callers that want fine-grained control.
+   - `<T> T execute(ExerisGraphSessionCallback<T> action)` — opens a session, invokes the callback, closes the session in a `finally` block; the JdbcTemplate-style pattern for callers that want fine-grained control. `ExerisGraphSessionCallback` is a custom `@FunctionalInterface` (not `java.util.function.Function`) because the callback's `withSession(GraphSession)` declares `throws Exception`, allowing application code to propagate kernel `RuntimeException`s without unchecked-cast boilerplate at every call site while still accommodating any future checked-exception introduction in the kernel SPI.
    - `List<UUID> traverseBfs(GraphTraversal traversal)` — convenience for the most common operation.
-   - `void inTransaction(Consumer<GraphSession> action)` — opens a session, calls `beginTransaction()`, runs the callback, `commit()` on success / `rollback()` on exception.
+   - `LoanedBuffer streamBfsJson(GraphTraversal traversal)` — zero-copy streaming variant. **Ownership contract:** the returned `LoanedBuffer` is owned by the caller, who **must** release it via try-with-resources (`LoanedBuffer` implements `AutoCloseable` per kernel SPI). The template does not retain a reference and does not transfer ownership to any other party. This is the only `LoanedBuffer`-returning method on the template surface; the contract is local and operator-visible at every call site.
+   - `void inTransaction(Consumer<GraphSession> action)` — opens a session, calls `beginTransaction()`, runs the callback, `commit()` on success / `rollback()` on exception. `Consumer<GraphSession>` is sufficient here because the kernel `GraphSession` SPI throws `GraphQueryException` (and all `EX-GRPH-*` codes) as subclasses of `RuntimeException` (`ExerisKernelException extends RuntimeException`); the kernel does not throw checked exceptions from any `GraphSession` method, so the `Consumer` JDK type does not block exception propagation.
    - The template does **not** introduce a new error-code namespace — `EX-GRPH-*` codes from the kernel surface directly to the caller; Spring beans handle them like any other kernel exception.
-4. **`@ExerisGraphQuery` annotation for declarative parameterised MATCH-DSL strings.** A `@Retention(RUNTIME)` method-level annotation whose `value()` is a MATCH-DSL string and whose `dialect()` defaults to the engine's `dialect()`. An `ExerisGraphQueryProcessor` (autoconfig-registered `BeanPostProcessor`) scans Spring beans for annotated methods and routes calls through the template. Parameters are bound by name (`{paramName}` placeholders); the binding is allocation-light. The annotation is **not** a Spring Data repository abstraction — it is a thin declarative wrapper over `GraphSession.streamBfsJson(GraphTraversal)` or `traverseBreadthFirst(GraphTraversal)` depending on the method's return type (`LoanedBuffer` → stream JSON, `List<UUID>` → BFS).
-5. **Lifecycle wiring: capture `GraphEngine` via `ExerisRuntimeLifecycle` (Phase 4A pattern).** The autoconfig captures `KernelProviders.GRAPH_ENGINE` once at kernel-scope entry via the same `holdKernelScopeOpen` Runnable extended for Phase 4A `EventEngine` capture (`ExerisRuntimeLifecycle.getEventEngine()` precedent — see `phase-4a-events-invariants.md` §7). When the captured `GraphEngine` is null (kernel did not provide one or the kernel scope never opened), the autoconfig fails loud at first use of `ExerisGraphTemplate` unless `exeris.runtime.graph.require-engine=false` is set (default `true`, matching Phase 4A).
+4. **`@ExerisGraphQuery` annotation for declarative parameterised MATCH-DSL strings.** A `@Retention(RUNTIME)` method-level annotation whose `value()` is a MATCH-DSL string and whose `dialect()` defaults to the engine's `dialect()`. An `ExerisGraphQueryProcessor` (autoconfig-registered `BeanPostProcessor`) scans Spring beans for annotated methods and routes calls through the template. Parameters are bound by name (`{paramName}` placeholders); the binding is allocation-light. The annotation is **not** a Spring Data repository abstraction — it is a thin declarative wrapper over `GraphSession.streamBfsJson(GraphTraversal)` or `traverseBreadthFirst(GraphTraversal)` depending on the method's return type:
+   - `LoanedBuffer` → stream JSON (caller releases via try-with-resources per obligation 3 ownership contract).
+   - `List<UUID>` → BFS (returns the traversal result directly).
+   - **Any other return type → fail-fast at `BeanPostProcessor` time**, before the application context finishes refreshing. The error message names the offending bean, method, and supported return types. Failing at post-processing time (not runtime invocation) is consistent with the `-parameters`-compilation-flag fail-fast precedent in §"Trade-offs" — build-time errors over runtime surprises is the discipline. The processor also rejects `@ExerisGraphQuery` on non-public methods at the same gate.
+5. **Lifecycle wiring: `GraphEngineSupplier` interface seam backed by lifecycle capture (Phase 4A pattern).** The autoconfig introduces a `GraphEngineSupplier` interface analogous to Phase 4A's `EventEngineSupplier`:
+   ```java
+   public interface GraphEngineSupplier {
+       Optional<GraphEngine> tryGet();
+       default GraphEngine requireEngine() { /* throws IllegalStateException with operator-readable diagnostic */ }
+   }
+   ```
+   The lifecycle capture (an `AtomicReference<GraphEngine>` on `ExerisRuntimeLifecycle`, populated once when `holdKernelScopeOpen` reads `KernelProviders.GRAPH_ENGINE` at kernel-scope entry) is the **storage** layer; the supplier is the **resolution** layer — each `tryGet()` call reads the captured reference. This matches Phase 4A invariant §7 ("resolved per call, never captured at bean construction or autoconfiguration time"): the bean is the supplier, not the engine itself; the engine is read per call from the lifecycle's captured ref. `ExerisGraphTemplate` receives the supplier (not the engine) via constructor injection.
+   When the supplier's `tryGet()` returns empty (kernel did not provide an engine, or the kernel scope never opened), the autoconfig fails loud at first use of `ExerisGraphTemplate` via `requireEngine()` unless `exeris.runtime.graph.require-engine=false` is set (default `true`, matching Phase 4A). With `requireEngine=false`, `ExerisGraphTemplate` is still constructed but every method throws `IllegalStateException` until an engine becomes available — the use case is downstream dev / test environments where the kernel graph provider is intentionally absent.
 6. **Module-boundary architecture guard `GraphModuleBoundaryTest`.** ArchUnit assertions, all merge-blocking:
    - No `jakarta.servlet..` imports.
    - No `io.netty..` or `io.projectreactor..` imports (Pure Mode classpath baseline).
@@ -67,9 +79,19 @@ public interface ExerisGraphSessionCallback<T> {
     T withSession(GraphSession session) throws Exception;
 }
 
+public interface GraphEngineSupplier {
+    Optional<GraphEngine> tryGet();
+    default GraphEngine requireEngine() {
+        return tryGet().orElseThrow(() -> new IllegalStateException(
+                "Exeris kernel GraphEngine is not available — kernel has not booted, "
+                        + "or no GraphProvider was active during bootstrap."));
+    }
+}
+
 public final class ExerisGraphTemplate {
     public <T> T execute(ExerisGraphSessionCallback<T> action);
     public List<UUID> traverseBfs(GraphTraversal traversal);
+    /** Caller owns the returned {@link LoanedBuffer}; release via try-with-resources. */
     public LoanedBuffer streamBfsJson(GraphTraversal traversal);
     public void inTransaction(Consumer<GraphSession> action);
     public GraphDialect dialect();
@@ -133,7 +155,6 @@ The dispatcher seam is **not** in this module — graph operations are independe
 - ADR-022 — Persistence SPI Extension (Instant Binders): `exeris-kernel/docs/adr/ADR-022-persistence-spi-extension-instant-binders.md` — kernel-side persistence ADR; the graph module does not consume the persistence SPI directly (the graph engine owns its own backend connection).
 - ADR-027 — Spring `ApplicationEventPublisher` / Exeris `EventBus` separation: `docs/adr/ADR-027-eventbus-applicationeventpublisher-boundary.md` — adjacent boundary invariant.
 - ADR-029 — Phase 3B-α Scope: `docs/adr/ADR-029-phase-3b-alpha-scope-request-scope-and-structured-concurrency.md` — `ExerisRequestScope.tenantId()` is available from within an `ExerisGraphTemplate` callback, allowing tenant-scoped graph queries; the seam does not couple the two but they compose naturally.
-- ADR-013 — Distributed Saga State Distribution Model: `exeris-kernel/docs/adr/ADR-013-distributed-saga-state-distribution-model.md` — adjacent kernel-side ADR for context; the graph module does not participate in saga state.
 - `exeris-kernel/docs/subsystems/graph.md` — kernel-side authoritative reference for Graph SPI behaviour, TRL claims, and the "Planned — not yet implemented" surface gaps that 4C-Spring-seam inherits.
 - `docs/roadmap-1.0-trl9.md` §"0.7.0-preview" and §"Why 4C promotion is acceptable now" — the resequence-time rationale for promoting 4C from post-1.0 to 1.0 preview.
 
@@ -141,7 +162,12 @@ The dispatcher seam is **not** in this module — graph operations are independe
 
 The ADR is forward-looking — implementation lands in the 0.7.0-preview train. Five concrete deliverables:
 
-1. **Module skeleton + POM.** New `exeris-spring-runtime-graph` Maven module with the dependency edges in obligation 1; root POM `<modules>` entry; BOM entry in `exeris-spring-runtime-bom`.
+1. **Module skeleton + POM + structural doc reconciliation.** New `exeris-spring-runtime-graph` Maven module with the dependency edges in obligation 1; root POM `<modules>` entry; BOM entry in `exeris-spring-runtime-bom`. The same PR **must** also reconcile the structural-contract docs (category-2 per `CLAUDE.md` §"Documentation precedence" — these are load-bearing for reviewers and AI tooling, and silently omitting them would mean the seam is undocumented at the canonical doc layer):
+   - **`docs/architecture/module-boundaries.md`**: add an `exeris-spring-runtime-graph` row to the responsibility matrix, list the allowed dependency edges (`autoconfigure`, `kernel-spi`, `spring-context`; test-only `kernel-community`), and add the row to the cross-module dependency graph.
+   - **`docs/architecture/kernel-integration-seams.md`**: add a Graph seam row to the summary table — kernel SPI side `KernelProviders.GRAPH_ENGINE` / `GraphEngine` / `GraphSession`; Spring-side bridge `ExerisGraphTemplate` + `@ExerisGraphQuery` + `GraphEngineSupplier`; module `graph`.
+   - **`CLAUDE.md` §"Kernel SPI seams (where the bridge happens)"** table: add a `GraphEngine / GraphSession` row mapping to `ExerisGraphTemplate` + `@ExerisGraphQuery` in module `graph`.
+   - **`docs/phases/phase-3-invariants.md`** is **not** affected (Phase 4C does not touch Phase 3 surface); the Phase 3B-α invariant trail already established by ADR-029 stands unchanged.
+   These three doc edits are deliberately scoped to Deliverable 1 (not deferred to a later deliverable) so the seam never lands without its canonical docs trail; the precedent is ADR-029's Engineering Protocol §4 ("Phase 3 invariants reconciliation"), which forced the corresponding doc update into the implementation PR rather than leaving it implicit.
 2. **Autoconfig + properties + lifecycle capture.** `ExerisGraphAutoConfiguration` with `@ConditionalOnProperty` per obligation 2; `ExerisGraphProperties` record per the listing above; `ExerisRuntimeLifecycle` extension to capture `KernelProviders.GRAPH_ENGINE` (mirroring the `EventEngine` capture from PR #11).
 3. **`ExerisGraphTemplate` + `@ExerisGraphQuery` + processor.** Per obligations 3-4. The annotation processor is a `BeanPostProcessor` registered by the autoconfig.
 4. **Architecture guards.** `GraphModuleBoundaryTest` per obligation 6; `PureModeClasspathGuardTest` per obligation 7. Both merge-blocking ArchUnit tests.
