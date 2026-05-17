@@ -35,6 +35,7 @@ import eu.exeris.kernel.spi.graph.GraphEngine;
  *
  * @since 0.7.0
  */
+@FunctionalInterface
 public interface GraphEngineSupplier {
 
     /**

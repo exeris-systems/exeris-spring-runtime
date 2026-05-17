@@ -7,6 +7,7 @@
 package eu.exeris.spring.runtime.graph;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
 /**
@@ -45,4 +46,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 public record ExerisGraphProperties(
         @DefaultValue("false") boolean enabled,
         @DefaultValue("true") boolean requireEngine) {
+
+    @ConstructorBinding
+    public ExerisGraphProperties {
+    }
 }

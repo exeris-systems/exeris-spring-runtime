@@ -15,6 +15,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 
 import eu.exeris.kernel.spi.graph.GraphEngine;
+import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeAutoConfiguration;
 import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
 
 /**
@@ -55,7 +56,7 @@ import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
  * @since 0.7.0
  * @see <a href="../../../../../../../../docs/adr/ADR-030-phase-4c-spring-side-seam-for-kernel-graph-spi.md">ADR-030</a>
  */
-@AutoConfiguration
+@AutoConfiguration(after = ExerisRuntimeAutoConfiguration.class)
 @ConditionalOnClass(GraphEngine.class)
 @ConditionalOnBean(ExerisRuntimeLifecycle.class)
 @ConditionalOnProperty(prefix = "exeris.runtime.graph", name = "enabled", havingValue = "true", matchIfMissing = false)
