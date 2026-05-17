@@ -74,4 +74,29 @@ public class ExerisGraphAutoConfiguration {
     public GraphEngineSupplier exerisGraphEngineSupplier(ExerisRuntimeLifecycle lifecycle) {
         return lifecycle::getGraphEngine;
     }
+
+    /**
+     * JdbcTemplate-shaped facade over the kernel {@link GraphEngine} / {@code GraphSession}
+     * SPI (Step 3 per ADR-030 obligation 3). Consumes both the supplier (for per-call engine
+     * resolution per Phase 4A invariant §7) and the properties record (for
+     * {@code requireEngine} behaviour).
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public ExerisGraphTemplate exerisGraphTemplate(GraphEngineSupplier engineSupplier,
+                                                    ExerisGraphProperties properties) {
+        return new ExerisGraphTemplate(engineSupplier, properties);
+    }
+
+    /**
+     * {@code BeanPostProcessor} that validates {@link ExerisGraphQuery}-annotated methods at
+     * post-processing time and installs a Spring AOP proxy routing annotated calls through
+     * {@link ExerisGraphTemplate} (Step 3 per ADR-030 obligation 4 — fail-fast at
+     * post-processing, never at runtime invocation).
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public ExerisGraphQueryProcessor exerisGraphQueryProcessor(ExerisGraphTemplate template) {
+        return new ExerisGraphQueryProcessor(template);
+    }
 }
