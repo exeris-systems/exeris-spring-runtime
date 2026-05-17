@@ -149,10 +149,13 @@ class GraphModuleBoundaryTest {
 
     /**
      * Graph operations are direct calls on the kernel SPI — no Spring async / task-executor
-     * bridging and no Spring application-event bus.
+     * bridging. Split from the {@code ApplicationEventPublisher} check below so each violation
+     * surfaces independently (matches Phase 4A {@code EventModuleBoundaryTest} +
+     * Phase 4B {@code FlowModuleBoundaryTest} precedent — both modules split the two checks
+     * into separate {@code @Test} methods for diagnostic isolation).
      */
     @Test
-    void doesNotImportSpringAsyncOrApplicationEventPublisher() {
+    void doesNotImportSpringAsyncOrSchedulingOrContextEventPackages() {
         ArchRule rule = noClasses()
                 .should().dependOnClassesThat()
                 .resideInAnyPackage(
@@ -161,11 +164,23 @@ class GraphModuleBoundaryTest {
                         "org.springframework.context.event..")
                 .allowEmptyShould(true);
         rule.check(graphModuleClasses);
-        ArchRule appEventPublisher = noClasses()
+    }
+
+    /**
+     * {@code org.springframework.context.ApplicationEventPublisher} lives in the
+     * {@code context} root package (not the {@code context.event} sub-package), so the
+     * package guard above does not subsume this FQN check. Matches the Phase 4A
+     * {@code EventModuleBoundaryTest#doesNotDependOnSpringApplicationEventPublisher} +
+     * Phase 4B {@code FlowModuleBoundaryTest#doesNotDependOnSpringApplicationEventPublisher}
+     * shape.
+     */
+    @Test
+    void doesNotDependOnSpringApplicationEventPublisher() {
+        ArchRule rule = noClasses()
                 .should().dependOnClassesThat()
                 .haveFullyQualifiedName("org.springframework.context.ApplicationEventPublisher")
                 .allowEmptyShould(true);
-        appEventPublisher.check(graphModuleClasses);
+        rule.check(graphModuleClasses);
     }
 
     /**
