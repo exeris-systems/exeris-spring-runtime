@@ -38,8 +38,8 @@ The Spring-side surface reads, in normalized form: *"An Exeris-hosted Spring app
 
 1. **`ExerisRequestScope` API — `ScopedValue`-backed.** A new package `eu.exeris.spring.runtime.web.scope` ships `ExerisRequestScope` with a small typed API: `ExerisRequestScope.tenantId()`, `correlationId()`, `attribute(String key, Class<T> type)`. Implementation is a single `ScopedValue<RequestScope>` bound around `HttpHandler.handle` invocation when `exeris.runtime.context.scope.enabled=true`. No `ThreadLocal` fallback; `ScopedValue` is the only carrier. Access outside an active scope returns `Optional.empty()` (or throws `IllegalStateException` for required-attribute helpers, with the choice documented per method).
 2. **`ExerisStructuredScope` fan-out API.** A new package `eu.exeris.spring.runtime.web.scope.concurrent` ships `ExerisStructuredScope` — a thin wrapper around `StructuredTaskScope` that captures the current `ExerisRequestScope` and rebinds it inside each forked virtual thread. The wrapper exists to (a) preserve the `ScopedValue` binding across `StructuredTaskScope.ShutdownOnFailure` / `ShutdownOnSuccess` forks without manual `ScopedValue.where(...).call(...)` boilerplate at every call site, and (b) ensure failures inside forks propagate as `IOException` / configured-exception types consistently with the kernel error-code conventions.
-3. **Opt-in via `exeris.runtime.context.scope.enabled` (default `false`).** Activation must be explicit — applications that do not opt in pay zero cost. When disabled, `ExerisRequestScope.current()` returns `Optional.empty()` always and `ExerisStructuredScope` falls through to plain `StructuredTaskScope` without scope rebinding. The property is read at lifecycle start; runtime toggling is not supported.
-4. **No `ThreadLocal` on hot paths.** `WallIntegrityTest` (existing) already bans `ThreadLocal` imports in `exeris-spring-runtime-web/.../web/..`. The new scope package extends the ban: `RequestScopeArchitectureTest#scopePackageMustNotUseThreadLocal` enforces zero `ThreadLocal` field or static references in `eu.exeris.spring.runtime.web.scope..`.
+3. **Opt-in via `exeris.runtime.context.scope.enabled` (default `false`).** Activation must be explicit — applications that do not opt in pay zero cost. When disabled, every `Optional`-returning method on `ExerisRequestScope` (including `current()`, `tenantId()`, `correlationId()`, `attribute(...)`) returns `Optional.empty()` always; the `require*` helpers throw `IllegalStateException`; and `ExerisStructuredScope` falls through to plain `StructuredTaskScope` semantics without scope rebinding. The property is read at lifecycle start; runtime toggling is not supported. **Property namespace rationale:** the prefix is `exeris.runtime.context.scope` rather than `exeris.runtime.web.scope` because the namespace is reserved for the full Phase 3B family — 3B-α (this ADR), 3B-β (W3C `traceparent` propagation, ADR-030), and 3B-γ (OTel span/metric emission, ADR-030) will all bind under `exeris.runtime.context.*`. The package owner of the implementation classes is still `web` (the request lifecycle entry point); the property reflects the cross-cutting scope of the feature family, not the module ownership.
+4. **No `ThreadLocal` in the scope package, enforced by a new guard.** No existing test bans `ThreadLocal` at the package level — `WallIntegrityTest` covers kernel-SPI/Spring independence, autoconfigure→web independence, and the classpath bans (servlet API, Tomcat/Jetty/Undertow, Netty/Reactor), but does **not** ban `ThreadLocal` as a type. The 3B-α implementation PR creates a new `RequestScopeArchitectureTest#scopePackageMustNotUseThreadLocal` (in `exeris-spring-runtime-web/src/test/java/eu/exeris/spring/runtime/web/scope/`) that asserts zero `ThreadLocal` field, parameter, or static reference under `eu.exeris.spring.runtime.web.scope..`. The hot-path narrative in `CLAUDE.md` §"Pure Mode vs Compatibility Mode" already states "`ThreadLocal` is banned on hot paths"; this ADR turns that narrative rule into a per-package ArchUnit guard for the scope package specifically.
 5. **No tracing emission, no OTel bridge, no W3C `traceparent` ingress.** Those belong to 3B-β (ADR-030) and 3B-γ (ADR-030). 3B-α leaves a small `attribute(String, Class<T>)` API on `ExerisRequestScope` that 3B-β/γ will later use to bind `TraceContext` — but the 3B-α package itself does **not** import any tracing types, does **not** read W3C `traceparent` headers, and does **not** depend on Micrometer Tracing, OpenTelemetry API, or any kernel telemetry SPI beyond `TelemetrySink` (already a Phase 1 dependency).
 6. **Tenant isolation across forks is verified.** `ExerisStructuredScopeIntegrationTest#tenantIdPropagatesAcrossForks` and `#tenantIdIsolatesPerOutermostRequest` are merge-blocking. The first asserts that a `tenantId` set in the outer request scope is readable from inside `fork(...)` callbacks; the second asserts that two concurrent requests with different `tenantId` values never see each other's scope.
 7. **No application-side `ThreadLocal`-to-`ScopedValue` migration tooling.** Application owners migrating off existing `ThreadLocal<TenantId>` patterns are responsible for the migration. This ADR scopes the runtime affordance, not the migration path.
@@ -50,26 +50,54 @@ The Spring-side surface reads, in normalized form: *"An Exeris-hosted Spring app
 package eu.exeris.spring.runtime.web.scope;
 
 public final class ExerisRequestScope {
-    public static Optional<UUID> tenantId();
+    public static Optional<RequestScope> current();                       // raw record; mostly diagnostic
+    public static Optional<UUID> tenantId();                              // convenience over current().map(...)
     public static Optional<String> correlationId();
     public static <T> Optional<T> attribute(String key, Class<T> type);
-    public static UUID requireTenantId();        // throws IllegalStateException if absent
+    public static UUID requireTenantId();                                 // throws IllegalStateException if absent
+    public static String requireCorrelationId();                          // throws IllegalStateException if absent
 }
 
 package eu.exeris.spring.runtime.web.scope.concurrent;
 
-public final class ExerisStructuredScope implements AutoCloseable {
-    public static ExerisStructuredScope.ShutdownOnFailure shutdownOnFailure();
-    public static ExerisStructuredScope.ShutdownOnSuccess<T> shutdownOnSuccess();
+/**
+ * Sealed abstract base. Mirrors the JDK {@link StructuredTaskScope} hierarchy:
+ * concrete usable scopes are {@link ShutdownOnFailure} and {@link ShutdownOnSuccess},
+ * which inherit fork/join/joinUntil/close from this class.
+ */
+public abstract sealed class ExerisStructuredScope<T> implements AutoCloseable
+        permits ExerisStructuredScope.ShutdownOnFailure, ExerisStructuredScope.ShutdownOnSuccess {
 
-    public <T> StructuredTaskScope.Subtask<T> fork(Callable<? extends T> task);
-    public ExerisStructuredScope join() throws InterruptedException;
-    public ExerisStructuredScope joinUntil(Instant deadline) throws InterruptedException;
+    public static ShutdownOnFailure shutdownOnFailure();
+    public static <T> ShutdownOnSuccess<T> shutdownOnSuccess();
+
+    // Inherited by both concrete scopes:
+    public <U> StructuredTaskScope.Subtask<U> fork(Callable<? extends U> task);
+    public ExerisStructuredScope<T> join() throws InterruptedException;
+    public ExerisStructuredScope<T> joinUntil(Instant deadline)
+            throws InterruptedException, TimeoutException;
     @Override public void close();
+
+    public static final class ShutdownOnFailure extends ExerisStructuredScope<Void> {
+        public void throwIfFailed() throws ExecutionException;
+        public <X extends Throwable> void throwIfFailed(Function<Throwable, X> mapper) throws X;
+    }
+
+    public static final class ShutdownOnSuccess<T> extends ExerisStructuredScope<T> {
+        public T result() throws ExecutionException;
+        public <X extends Throwable> T result(Function<Throwable, X> mapper) throws X;
+    }
 }
 ```
 
 The wrapper preserves the `ScopedValue<RequestScope>` binding across forks transparently. Inside a `fork(...)` task, `ExerisRequestScope.tenantId()` returns the same value it returned in the enclosing scope without manual rebinding.
+
+**Design notes (resolving review feedback):**
+
+- **Hierarchy follows the JDK pattern.** `ShutdownOnFailure` and `ShutdownOnSuccess` extend `ExerisStructuredScope`; `fork`/`join`/`joinUntil`/`close` are defined on the abstract base and inherited by both. This mirrors `StructuredTaskScope.ShutdownOnFailure` / `ShutdownOnSuccess` from the JDK so users moving between the two APIs see the same shape.
+- **`fork(...)` returns `StructuredTaskScope.Subtask<U>` intentionally.** Wrapping the JDK `Subtask` type would add an allocation per fork without semantic value (the wrapper has nothing to add — `get()`, `state()`, `exception()` are the entire `Subtask` surface and they are correct as-is). The JDK type leak is honest about the implementation cost; documented here so a future reviewer asking "why not `ExerisStructuredScope.Subtask`?" finds the answer.
+- **`joinUntil(Instant)` declares both `InterruptedException` and `TimeoutException`** matching the JDK signature. The wrapper does not absorb `TimeoutException`; callers handle deadline exhaustion the same way they would with raw `StructuredTaskScope`.
+- **`Function<Throwable, X>` exception-mapper overloads** on `throwIfFailed` / `result` exist to bridge fork failures into kernel error-code conventions when needed (the typical pattern: map subtask failure to a domain `KernelException` subtype before propagating). This is the realisation of obligation 2's "ensure failures inside forks propagate as `IOException` / configured-exception types consistently with the kernel error-code conventions" — the mapper is the explicit, allocation-free hook for that mapping.
 
 ## Consequences
 
@@ -100,7 +128,7 @@ The wrapper preserves the `ScopedValue<RequestScope>` binding across forks trans
 
 ## Cross-references
 
-- ADR-006 — Spring-Free Kernel Boundary (The Wall): `exeris-docs/adr/ADR-006-spring-free-kernel-boundary.md` — the `ThreadLocal`-on-hot-path ban that this ADR extends to the scope package
+- ADR-006 — Spring-Free Kernel Boundary (The Wall): `exeris-docs/adr/ADR-006-spring-free-kernel-boundary.md` — the parent ownership invariant; the `ThreadLocal`-on-hot-path ban in `CLAUDE.md` §"Pure Mode vs Compatibility Mode" is a narrative rule that this ADR turns into a per-package ArchUnit guard for the scope package (no existing test currently bans `ThreadLocal` at the type level — the new `RequestScopeArchitectureTest` is the first)
 - ADR-010 — Host Runtime Model: `docs/adr/ADR-010-host-runtime-model.md` — the ownership boundary; `ExerisRequestScope` is a Spring-side affordance over the Exeris-owned request lifecycle
 - ADR-011 — Pure Mode vs Compatibility Mode: `docs/adr/ADR-011-pure-mode-vs-compatibility-mode.md` — the scope package is Pure Mode; `@RequestScope` interop, if added, would be Compatibility Mode
 - ADR-026 — Spring `ApplicationEventPublisher` / Exeris `EventBus` separation: `docs/adr/ADR-026-eventbus-applicationeventpublisher-boundary.md` — adjacent invariant; bus boundary stays unchanged
@@ -111,10 +139,14 @@ The wrapper preserves the `ScopedValue<RequestScope>` binding across forks trans
 
 ## Engineering Protocol
 
-The ADR is forward-looking — implementation lands in the 0.6.0-preview train. Three concrete deliverables:
+The ADR is forward-looking — implementation lands in the 0.6.0-preview train. Four concrete deliverables:
 
-1. **`ExerisRequestScope` + `ExerisStructuredScope` API package.** New package `eu.exeris.spring.runtime.web.scope[.concurrent]`. Hot-path-safe; covered by `RequestScopeArchitectureTest` (no `ThreadLocal`, no `org.springframework.web.context.request..` imports) and `ExerisStructuredScopeIntegrationTest` (tenant propagation across forks, tenant isolation across concurrent requests).
+1. **`ExerisRequestScope` + `ExerisStructuredScope` API package.** New package `eu.exeris.spring.runtime.web.scope[.concurrent]`. Hot-path-safe; covered by `RequestScopeArchitectureTest` (the new merge-blocking guard banning `ThreadLocal` and `org.springframework.web.context.request..` imports under `eu.exeris.spring.runtime.web.scope..`) and `ExerisStructuredScopeIntegrationTest` (tenant propagation across forks, tenant isolation across concurrent requests).
 2. **Lifecycle wiring in `ExerisHttpDispatcher`.** When `exeris.runtime.context.scope.enabled=true`, the dispatcher binds the `ScopedValue<RequestScope>` around `HttpHandler.handle` invocation. Property read once at lifecycle start; runtime toggling unsupported.
 3. **Autoconfig opt-in.** New `@ConfigurationProperties("exeris.runtime.context.scope")` record with `enabled` field; default `false`. `@ConditionalOnProperty` gating on the dispatcher binding so the disabled path is zero-cost.
+4. **Phase 3 invariants reconciliation.** `docs/phases/phase-3-invariants.md` currently records 3B (request scope + tracing) as "deferred to 3.x" (lines 3 and 141 of that file at the time this ADR was drafted). The implementation PR for 3B-α must reconcile this by **one** of:
+   - amending the relevant lines of `phase-3-invariants.md` with a forward-reference to this ADR ("3B-α graduated 2026-05-17 per ADR-028; see `phase-3b-alpha-invariants.md` for 3B-α-specific invariants"); or
+   - creating a new `docs/phases/phase-3b-alpha-invariants.md` that supersedes the deferral row of `phase-3-invariants.md` (preferred — keeps the phase-3 closure record intact and adds the new phase boundary at its own file).
+   Both forms must leave a trail from `phase-3-invariants.md` to the new artefact; a silent contradiction between the two files is not acceptable.
 
 A future PR that introduces `ThreadLocal` field or static in `eu.exeris.spring.runtime.web.scope..` is an ADR-028-violating PR; the reviewer cites this ADR by number when blocking. A future PR that wires Micrometer Tracing, OTel, or W3C `traceparent` into the scope package is **not** an ADR-028 violation — it is an ADR-030 concern; the scope package is the attachment point, and ADR-030 governs what attaches there.
