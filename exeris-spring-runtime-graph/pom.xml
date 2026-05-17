@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>eu.exeris</groupId>
+        <artifactId>exeris-spring-runtime-parent</artifactId>
+        <version>0.5.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>exeris-spring-runtime-graph</artifactId>
+
+    <name>Exeris Spring Runtime :: Graph Integration</name>
+    <description>
+        Spring-side seam for the kernel Graph SPI per ADR-030 (Phase 4C — 1.0 preview,
+        default-off).
+
+        Scope (Phase 4C — kernel-independent in landing, kernel-gated in graduation):
+          - GraphEngineSupplier: deferred accessor pattern (tryGet + default requireEngine)
+            mirroring EventEngineSupplier / FlowEngineSupplier — reads
+            KernelProviders.GRAPH_ENGINE captured by ExerisRuntimeLifecycle.
+          - ExerisGraphProperties: enabled (default false) + requireEngine (default true)
+            two-property matrix matching Phase 4A/4B autoconfig discipline.
+          - ExerisGraphAutoConfiguration: @ConditionalOnProperty(enabled=true) gating;
+            wires the template, supplier, and @ExerisGraphQuery BeanPostProcessor.
+          - ExerisGraphTemplate: JdbcTemplate-shaped facade over kernel GraphSession —
+            execute(ExerisGraphSessionCallback), traverseBfs, streamBfsJson (caller
+            owns the returned LoanedBuffer, releases via try-with-resources),
+            inTransaction(Consumer&lt;GraphSession&gt;), dialect().
+          - @ExerisGraphQuery + ExerisGraphQueryProcessor: declarative parameterised
+            MATCH-DSL strings; BeanPostProcessor routes by method return type
+            (LoanedBuffer → stream JSON; List&lt;UUID&gt; → BFS); unsupported return types
+            fail fast at post-processing time before context refresh completes.
+
+        Activation:
+          exeris.runtime.graph.enabled = true (matchIfMissing = false)
+          exeris.runtime.graph.require-engine = false (opt-in for dev/test where the
+                                                       kernel graph provider is absent)
+
+        Hard rules (Phase 4C invariants — to be locked in at closure):
+          - No Spring Data Neo4j compatibility (org.springframework.data.. banned by
+            GraphModuleBoundaryTest).
+          - No fluent GraphQueryBuilder DSL (kernel ships GraphTraversal record only).
+          - No GraphCursor / unbounded traversal API (kernel "Planned — not yet
+            implemented" per exeris-kernel/docs/subsystems/graph.md:149).
+          - No cross-resource transactions (graph session transactions stay kernel-local;
+            ExerisPlatformTransactionManager from -tx is a different resource).
+          - No multi-engine fan-out (one GraphEngine per ApplicationContext).
+          - LoanedBuffer streamBfsJson caller owns the buffer; template does not retain
+            a reference and does not transfer ownership.
+
+        See docs/adr/ADR-030-phase-4c-spring-side-seam-for-kernel-graph-spi.md for the
+        full ADR; GA graduation is kernel-gated on Community GraphChurnRatioTck green
+        in CI (kernel Sprint 7).
+    </description>
+
+    <dependencies>
+
+        <!-- Kernel SPI — GraphEngine, GraphSession, GraphTraversal, GraphProvider,
+             GraphDialect, KernelProviders. No community internals on the production
+             classpath (test scope only — see below). -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-spi</artifactId>
+        </dependency>
+
+        <!-- autoconfigure — for ExerisRuntimeLifecycle.getGraphEngine() seam, mirroring
+             the EventEngine / FlowEngine capture from Phase 4A/4B. -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-spring-boot-autoconfigure</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- Spring Boot autoconfigure — @AutoConfiguration, @ConditionalOn*. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+
+        <!-- Spring Context — ApplicationContext, BeanPostProcessor, bean lifecycle. -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+        </dependency>
+
+        <!-- Test scope -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Runtime integration test: a real GraphProvider on the test classpath so the
+             kernel bootstrap discovers and binds KernelProviders.GRAPH_ENGINE. Production
+             classpath stays clean — community is test-scope only. Per Phase 4C
+             integration tests (Deliverable 5), the Community PGQ driver against an
+             embedded/Testcontainers PostgreSQL with PGQ extension is the test backend. -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-community</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Phase 1c invariant: every Pure Mode module ships PureModeClasspathGuardTest +
+             a module boundary guard via ArchUnit. -->
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>

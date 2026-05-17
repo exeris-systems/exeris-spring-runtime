@@ -51,6 +51,7 @@ In CI, `GITHUB_TOKEN` is provided automatically by Actions and `PACKAGES_READ_TO
 | `exeris-spring-runtime-tx` | `PlatformTransactionManager` over `PersistenceConnection` | No `ThreadLocal` as tx context carrier; use `ScopedValue`. No `DataSource`/HikariCP ownership. |
 | `exeris-spring-runtime-data` | Optional persistence bridge (high scrutiny) | Each public class needs an ADR/Phase-3 reference comment. No HikariCP, no JPA/Hibernate as a first-class path. |
 | `exeris-spring-runtime-actuator` | Health, info, Micrometer bridge over `TelemetrySink` | Read-only / observability only. Never owns a data-plane path; never redefines `TelemetrySink`. |
+| `exeris-spring-runtime-graph` | Spring-side seam for kernel `GraphEngine` / `GraphSession` (Phase 4C, ADR-030) | Default-off via `exeris.runtime.graph.enabled`. No Spring Data Neo4j (`org.springframework.data..` banned). No fluent DSL builder. No `GraphCursor` until kernel ships it. No cross-resource transactions. Concrete drivers test-scope only. |
 
 Banned dependency edges: `autoconfigure → web/tx/data`, `web → data`, `data → web`, `tx → web`, `actuator → web (data-plane)`. Banned at the kernel boundary: any Spring type inside `eu.exeris.kernel.spi.*` or `eu.exeris.kernel.core.*`.
 
@@ -77,6 +78,7 @@ Read `docs/architecture/kernel-integration-seams.md` before touching any of thes
 | `KernelProviders` (`ScopedValue` slots) | `ExerisContextHolder` | `web` |
 | `TelemetrySink` → Micrometer | `ExerisActuatorTelemetryBridge` (`MeterBinder`) | `actuator` |
 | `PersistenceEngine` / `ConnectionFactory` | `ExerisPlatformTransactionManager`, `ExerisDataSource` (compat-only JDBC adapter) | `tx` / `data` |
+| `GraphEngine` / `GraphSession` (`KernelProviders.GRAPH_ENGINE`) | `ExerisGraphTemplate` + `@ExerisGraphQuery` (Phase 4C — opt-in via `exeris.runtime.graph.enabled`, kernel-gated GA per ADR-030) | `graph` |
 
 Bootstrap order is invariant: Spring `refresh()` → `ExerisRuntimeLifecycle.start()` → `KernelBootstrap.bootstrap()` (`ServiceLoader` discovers providers, DAG initialises, `KERNEL READY`) → handlers register → `HttpServerEngine` binds. Shutdown reverses exactly. The kernel's own bootstrap DAG (canonical, per `~/exeris-systems/exeris-kernel/docs/subsystems/bootstrap.md`) is `FOUNDATION: Memory (sequential) → SERVICES: Crypto & Persistence & Graph & Transport (parallel via StructuredTaskScope) → RUNTIME: Events & Flow & HTTP (parallel) → KERNEL READY`. `Config` is resolved by `KernelBootstrap` via `ServiceLoader<ConfigProvider>` before the orchestrator runs and is not a Subsystem in the DAG; `Exceptions` is not a Subsystem layer; `Security` is an L1 Citadel concept (ADR-012), not a boot-DAG node.
 
