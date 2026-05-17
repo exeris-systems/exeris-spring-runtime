@@ -116,6 +116,22 @@ class ExerisGraphBridgeRuntimeIntegrationTest {
     }
 
     @Test
+    void requireEngineFalse_templateConstructed_methodsStillThrowUntilEngineBinds() {
+        // Per ADR-030 obligation 5 the requireEngine=false path is the "dev/test mode" — the
+        // template is constructed but every method throws IllegalStateException with a
+        // distinct (template-level) message until an engine becomes available. Test 1 covers
+        // the supplier-level diagnostic (requireEngine=true default); this test covers the
+        // template-level diagnostic that resolveEngine() produces when requireEngine=false.
+        context = bootContext(false, false);
+
+        ExerisGraphTemplate template = context.getBean(ExerisGraphTemplate.class);
+        assertThatThrownBy(template::dialect)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("cannot operate without a kernel GraphEngine")
+                .hasMessageContaining("require-engine=false");
+    }
+
+    @Test
     void annotatedMethod_whenEngineCaptured_routedThroughTemplateAndProxy() throws Exception {
         context = bootContext(true);
 
@@ -145,18 +161,34 @@ class ExerisGraphBridgeRuntimeIntegrationTest {
     // ---- boot helpers ----
 
     private AnnotationConfigApplicationContext bootContext(boolean withAnnotatedBean) {
+        return bootContext(withAnnotatedBean, true);
+    }
+
+    /**
+     * Shared boot helper. The lifecycle is wired in but {@link ExerisRuntimeProperties}
+     * defaults {@code autoStart=false}, so {@code refresh()} does not fire the kernel
+     * bootstrap path; the kernel never reads {@code MockEnvironment} (which would be
+     * surfaced via {@link ExerisSpringConfigProvider#prepareBootstrap}). The
+     * {@code @ConditionalOnProperty} on {@link ExerisGraphAutoConfiguration} reads from
+     * {@link AnnotationConfigApplicationContext#getEnvironment} directly — that is the
+     * single property source the IT needs to populate. We pass an empty
+     * {@code MockEnvironment} to {@link ExerisSpringConfigProvider} for completeness
+     * (in case a future test enables auto-start).
+     */
+    private AnnotationConfigApplicationContext bootContext(boolean withAnnotatedBean,
+                                                            boolean requireEngine) {
         var ctx = new AnnotationConfigApplicationContext();
         ExerisRuntimeProperties properties = new ExerisRuntimeProperties();
-        MockEnvironment env = new MockEnvironment()
-                .withProperty("exeris.runtime.graph.enabled", "true");
-        ExerisSpringConfigProvider configProvider = new ExerisSpringConfigProvider(env);
+        ExerisSpringConfigProvider configProvider = new ExerisSpringConfigProvider(new MockEnvironment());
         ExerisRuntimeLifecycle lifecycle = new ExerisRuntimeLifecycle(
                 properties, configProvider, Optional.empty());
         ctx.getBeanFactory().registerSingleton("exerisRuntimeLifecycle", lifecycle);
 
         ctx.getEnvironment().getPropertySources().addFirst(
                 new org.springframework.core.env.MapPropertySource("testProps",
-                        java.util.Map.of("exeris.runtime.graph.enabled", "true")));
+                        java.util.Map.of(
+                                "exeris.runtime.graph.enabled", "true",
+                                "exeris.runtime.graph.require-engine", Boolean.toString(requireEngine))));
         ctx.register(ExerisGraphAutoConfiguration.class);
         if (withAnnotatedBean) {
             ctx.register(AnnotatedBeanConfig.class);
@@ -187,6 +219,14 @@ class ExerisGraphBridgeRuntimeIntegrationTest {
 
     public static class AnnotatedGraphQueryBean {
 
+        /**
+         * The {@code value} string is a documentation label, not a functional MATCH-DSL query.
+         * For Phase 4C Step 3 / ADR-030 obligation 4, the processor routes by return type
+         * ({@code List<UUID>} → {@code template.traverseBfs}) and passes the
+         * {@link GraphTraversal} parameter straight through. The {@code value} string is
+         * reserved for a future kernel-side MATCH-DSL parser; until then, the processor does
+         * not interpret it.
+         */
         @ExerisGraphQuery(value = "BFS — proxied by ExerisGraphQueryProcessor")
         public List<UUID> findNeighbours(GraphTraversal traversal) {
             throw new UnsupportedOperationException(
