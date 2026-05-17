@@ -1,6 +1,6 @@
 # Phase 3 Invariants
 
-**Status:** Locked-in (Phase 3 closed at sub-phases 3A + 3C-L2 + 3D; 3B explicitly deferred to 3.x)
+**Status:** Locked-in (Phase 3 closed at sub-phases 3A + 3C-L2 + 3D; 3B originally deferred to 3.x — **graduated 2026-05-17 per ADR-029 (3B-α) and ADR-031 (3B-β/γ, reserved); see `phase-3b-alpha-invariants.md` for 3B-α-specific invariants**)
 **Source of authority:** ADR-006 (The Wall), ADR-010 (Host Runtime Model),
 ADR-011 (Pure vs Compatibility Mode), [ADR-017](../adr/ADR-017-jdbc-compact-scope.md)
 (JDBC Compatibility Scope for ExerisDataSource), and the master plan
@@ -138,21 +138,36 @@ If Spring Boot were ever to add semantics around `server.port` that imply owners
 (servlet container start, port reservation), the fallback must be removed — not the
 servlet container added.
 
-## 10. Phase 3B (request scope, tracing) is explicitly deferred — no half-implementation
+## 10. Phase 3B graduated from "deferred to 3.x" to 1.0 preview on 2026-05-17
 
 Phase 3B in the original plan covered three areas: request scope, security context,
-observability tracing. Of these:
+observability tracing. The 2026-05-17 downstream observability review reversed the
+"deferred to 3.x" deferral and split 3B into kernel-independent and kernel-gated halves:
 
-- **Security context** is partially delivered through Phase 2c
+- **Phase 3B-α — Request Scope + Structured Concurrency (kernel-independent, ADR-029).**
+  Lands at 0.6.0-preview. Delivers `ExerisRequestScope` (`ScopedValue<RequestScope>`-backed
+  facade with typed `tenantId()` / `correlationId()` / `attribute(key, type)` accessors
+  and `require*` variants), `ExerisStructuredScope` (JDK 26 `StructuredTaskScope` wrapper
+  that propagates the bound scope across forked virtual threads), and the
+  `RequestScopeBinder` / `RequestScopeResolver` extension points. Default-off via
+  `exeris.runtime.context.scope.enabled`. **3B-α-specific invariants live in
+  `phase-3b-alpha-invariants.md` (created alongside the implementation PR);** the present
+  doc preserves the Phase-3-closure record and points forward.
+- **Phase 3B-β — W3C `traceparent` context propagation (kernel-gated, ADR-031).**
+  Targets 0.9.0-preview, gated on `exeris-kernel` 0.8.0 Sprint 0.12 shipping the kernel
+  `TraceContext` carrier via `ScopedValue`.
+- **Phase 3B-γ — OTel span / metric emission via OTLP (kernel-gated, ADR-031).**
+  Gated on a future kernel `PrometheusOtlpTelemetrySink`; may slip to 1.0.x.
+- **Security context** remains as before — partially delivered through Phase 2c
   (`ExerisSecurityContextFilter` in `web/compat/filter`) for `@RestController` flows.
-- **Request scope** is **not** implemented. Spring `@RequestScope`-annotated beans
-  are not supported on the Exeris path.
-- **Observability tracing** is **not** implemented. No Micrometer Tracing dependency
-  is wired.
+  Not part of the 3B-α/β/γ graduation; ADR-029 does NOT regulate it.
 
-Adding partial / speculative bridges before downstream demand is explicitly forbidden
-by this invariant. Phase 3.x lands the missing pieces with concrete shape driven by
-real requirements; until then, the absence is documented, not papered over.
+The previous deferral text on this row read: "Adding partial / speculative bridges before
+downstream demand is explicitly forbidden by this invariant." That principle still holds;
+the 2026-05-17 graduation was driven by concrete in-flight downstream demand for
+3B-α (tenant isolation + structured concurrency across kernel calls), which makes the
+"partial bridge" concern moot for that scope. 3B-β/γ remain gated on kernel work
+precisely so they don't ship as speculative bridges.
 
 ## 11. When opted in, the Exeris JDBC adapter wins over Spring Boot's `DataSourceAutoConfiguration`
 
@@ -206,7 +221,7 @@ can rely on.
 | One connection per transaction | `ExerisDataSourceTest`, `ExerisConnectionProxyTest` |
 | HikariCP banned | `PureModeClasspathGuardTest` × 5 modules |
 | `server.port` is read-only fallback | `ExerisBootstrapIntegrationTest` exercises both `exeris.runtime.network.port` and `server.port` paths |
-| Phase 3B deferred, no half-impl | Documented in this file + master Phase 3 doc; absence is the contract |
+| Phase 3B graduated 2026-05-17 — 3B-α at 0.6.0-preview (ADR-029); 3B-β/γ kernel-gated (ADR-031) | `phase-3b-alpha-invariants.md` carries 3B-α invariants; the 2026-05-17 graduation is documented above (invariant #10) |
 | Exeris adapter wins over Spring Boot `DataSourceAutoConfiguration` when opted in | `ExerisDataAutoConfigurationTest` — three cases covering the annotation declaration, the `@Primary` marker, and stand-down on user-supplied `DataSource` (see invariant #11 for the named test methods) |
 
 These tests must stay green. A failure indicates a real architectural regression;

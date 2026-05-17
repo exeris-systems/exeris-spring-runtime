@@ -37,7 +37,7 @@ The Spring-side surface reads, in normalized form: *"An Exeris-hosted Spring app
 **Concrete obligations:**
 
 1. **`ExerisRequestScope` API — `ScopedValue`-backed.** A new package `eu.exeris.spring.runtime.web.scope` ships `ExerisRequestScope` with a small typed API: `ExerisRequestScope.tenantId()`, `correlationId()`, `attribute(String key, Class<T> type)`. Implementation is a single `ScopedValue<RequestScope>` bound around `HttpHandler.handle` invocation when `exeris.runtime.context.scope.enabled=true`. No `ThreadLocal` fallback; `ScopedValue` is the only carrier. Access outside an active scope returns `Optional.empty()` (or throws `IllegalStateException` for required-attribute helpers, with the choice documented per method).
-2. **`ExerisStructuredScope` fan-out API.** A new package `eu.exeris.spring.runtime.web.scope.concurrent` ships `ExerisStructuredScope` — a thin wrapper around `StructuredTaskScope` that captures the current `ExerisRequestScope` and rebinds it inside each forked virtual thread. The wrapper exists to (a) preserve the `ScopedValue` binding across `StructuredTaskScope.ShutdownOnFailure` / `ShutdownOnSuccess` forks without manual `ScopedValue.where(...).call(...)` boilerplate at every call site, and (b) ensure failures inside forks propagate as `IOException` / configured-exception types consistently with the kernel error-code conventions.
+2. **`ExerisStructuredScope` fan-out API.** A new package `eu.exeris.spring.runtime.web.scope.concurrent` ships `ExerisStructuredScope` — a thin wrapper around `StructuredTaskScope` that captures the current `ExerisRequestScope` at construction time and rebinds it inside each forked virtual thread. The wrapper exists to preserve the `ScopedValue` binding across `Joiner`-policied forks (per JDK 26 JEP 525 final API) without manual `ScopedValue.where(...).call(...)` boilerplate at every call site. **Exception propagation is the caller's job at the `join()` call site, not the wrapper's:** the policy-Joiner already surfaces the first failure (or the cause of "all forks failed") from `join()` per JDK semantics, and any mapping into kernel error-code conventions is application logic that belongs at the call site. (An earlier draft of this obligation mentioned `IOException` / configured-exception types as a wrapper concern; that was over-reaching — see §"Design notes" for the rationale.)
 3. **Opt-in via `exeris.runtime.context.scope.enabled` (default `false`).** Activation must be explicit — applications that do not opt in pay zero cost. When disabled, every `Optional`-returning method on `ExerisRequestScope` (including `current()`, `tenantId()`, `correlationId()`, `attribute(...)`) returns `Optional.empty()` always; the `require*` helpers throw `IllegalStateException`; and `ExerisStructuredScope` falls through to plain `StructuredTaskScope` semantics without scope rebinding. The property is read at lifecycle start; runtime toggling is not supported. **Property namespace rationale:** the prefix is `exeris.runtime.context.scope` rather than `exeris.runtime.web.scope` because the namespace is reserved for the full Phase 3B family — 3B-α (this ADR), 3B-β (W3C `traceparent` propagation, ADR-031), and 3B-γ (OTel span/metric emission, ADR-031) will all bind under `exeris.runtime.context.*`. The package owner of the implementation classes is still `web` (the request lifecycle entry point); the property reflects the cross-cutting scope of the feature family, not the module ownership.
 4. **No `ThreadLocal` in the scope package, enforced by a new guard.** No existing test bans `ThreadLocal` at the package level — `WallIntegrityTest` covers kernel-SPI/Spring independence, autoconfigure→web independence, and the classpath bans (servlet API, Tomcat/Jetty/Undertow, Netty/Reactor), but does **not** ban `ThreadLocal` as a type. The 3B-α implementation PR creates a new `RequestScopeArchitectureTest#scopePackageMustNotUseThreadLocal` (in `exeris-spring-runtime-web/src/test/java/eu/exeris/spring/runtime/web/scope/`) that asserts zero `ThreadLocal` field, parameter, or static reference under `eu.exeris.spring.runtime.web.scope..`. The hot-path narrative in `CLAUDE.md` §"Pure Mode vs Compatibility Mode" already states "`ThreadLocal` is banned on hot paths"; this ADR turns that narrative rule into a per-package ArchUnit guard for the scope package specifically.
 5. **No tracing emission, no OTel bridge, no W3C `traceparent` ingress.** Those belong to 3B-β (ADR-031) and 3B-γ (ADR-031). 3B-α leaves a small `attribute(String, Class<T>)` API on `ExerisRequestScope` that 3B-β/γ will later use to bind `TraceContext` — but the 3B-α package itself does **not** import any tracing types, does **not** read W3C `traceparent` headers, and does **not** depend on Micrometer Tracing, OpenTelemetry API, or any kernel telemetry SPI beyond `TelemetrySink` (already a Phase 1 dependency).
@@ -45,6 +45,18 @@ The Spring-side surface reads, in normalized form: *"An Exeris-hosted Spring app
 7. **No application-side `ThreadLocal`-to-`ScopedValue` migration tooling.** Application owners migrating off existing `ThreadLocal<TenantId>` patterns are responsible for the migration. This ADR scopes the runtime affordance, not the migration path.
 
 ## API at a glance
+
+> **2026-05-17 implementation-time amendment.** The 0.6.0-preview implementation (this section
+> below) is the canonical surface. The pre-implementation listing in the previous draft of
+> this ADR mirrored a deprecated preview shape of JDK `StructuredTaskScope` (nested
+> `ShutdownOnFailure` / `ShutdownOnSuccess` classes extending the scope); JEP 525 finalised
+> in JDK 26 on the `open(Joiner)` factory pattern and removed those nested classes. The
+> adjusted listing keeps ADR-029's two policy semantics (failure-policy and success-policy)
+> via two factory methods on a single `ExerisStructuredScope<T, R>` class, mapped internally
+> to `Joiner.awaitAllSuccessfulOrThrow()` and `Joiner.anySuccessfulOrThrow()` respectively.
+> `joinUntil(Instant)` was also dropped because JEP 525 final exposes per-scope timeout via
+> `Configuration` at `open()` time rather than per-`join()`; that capability is a follow-up
+> if downstream demand surfaces.
 
 ```java
 package eu.exeris.spring.runtime.web.scope;
@@ -56,48 +68,54 @@ public final class ExerisRequestScope {
     public static <T> Optional<T> attribute(String key, Class<T> type);
     public static UUID requireTenantId();                                 // throws IllegalStateException if absent
     public static String requireCorrelationId();                          // throws IllegalStateException if absent
+
+    public static void runWith(RequestScope scope, Runnable action);
+    public static <T, X extends Throwable> T callWith(RequestScope scope,
+                                                       ScopedValue.CallableOp<T, X> action) throws X;
+    public static ScopedValue<RequestScope> carrier();                    // package-visible accessor
+}
+
+public record RequestScope(UUID tenantId, String correlationId, Map<String, Object> attributes) {
+    public static RequestScope empty();
+    public RequestScope with(String key, Object value);
+    public <T> Optional<T> attribute(String key, Class<T> type);
+}
+
+@FunctionalInterface
+public interface RequestScopeResolver {
+    RequestScope resolve(ExerisServerRequest request);
+}
+
+@FunctionalInterface
+public interface RequestScopeBinder {
+    void bind(ExerisServerRequest request, Runnable action);
+    static RequestScopeBinder noop();
+    static RequestScopeBinder resolving(RequestScopeResolver resolver);
 }
 
 package eu.exeris.spring.runtime.web.scope.concurrent;
 
-/**
- * Sealed abstract base. Mirrors the JDK {@link StructuredTaskScope} hierarchy:
- * concrete usable scopes are {@link ShutdownOnFailure} and {@link ShutdownOnSuccess},
- * which inherit fork/join/joinUntil/close from this class.
- */
-public abstract sealed class ExerisStructuredScope<T> implements AutoCloseable
-        permits ExerisStructuredScope.ShutdownOnFailure, ExerisStructuredScope.ShutdownOnSuccess {
+public final class ExerisStructuredScope<T, R> implements AutoCloseable {
+    public static <T> ExerisStructuredScope<T, Void>    failFast();        // Joiner.awaitAllSuccessfulOrThrow()
+    public static <T> ExerisStructuredScope<T, T>       firstSuccess();    // Joiner.anySuccessfulOrThrow()
+    public static <T> ExerisStructuredScope<T, List<T>> allSuccessful();   // Joiner.allSuccessfulOrThrow()
 
-    public static ShutdownOnFailure shutdownOnFailure();
-    public static <T> ShutdownOnSuccess<T> shutdownOnSuccess();
-
-    // Inherited by both concrete scopes:
-    public <U> StructuredTaskScope.Subtask<U> fork(Callable<? extends U> task);
-    public ExerisStructuredScope<T> join() throws InterruptedException;
-    public ExerisStructuredScope<T> joinUntil(Instant deadline)
-            throws InterruptedException, TimeoutException;
+    public <U extends T> StructuredTaskScope.Subtask<U> fork(Callable<? extends U> task);
+    public R join() throws InterruptedException;
     @Override public void close();
-
-    public static final class ShutdownOnFailure extends ExerisStructuredScope<Void> {
-        public void throwIfFailed() throws ExecutionException;
-        public <X extends Throwable> void throwIfFailed(Function<Throwable, X> mapper) throws X;
-    }
-
-    public static final class ShutdownOnSuccess<T> extends ExerisStructuredScope<T> {
-        public T result() throws ExecutionException;
-        public <X extends Throwable> T result(Function<Throwable, X> mapper) throws X;
-    }
+    public Optional<RequestScope> capturedScope();
 }
 ```
 
 The wrapper preserves the `ScopedValue<RequestScope>` binding across forks transparently. Inside a `fork(...)` task, `ExerisRequestScope.tenantId()` returns the same value it returned in the enclosing scope without manual rebinding.
 
-**Design notes (resolving review feedback):**
+**Design notes:**
 
-- **Hierarchy follows the JDK pattern.** `ShutdownOnFailure` and `ShutdownOnSuccess` extend `ExerisStructuredScope`; `fork`/`join`/`joinUntil`/`close` are defined on the abstract base and inherited by both. This mirrors `StructuredTaskScope.ShutdownOnFailure` / `ShutdownOnSuccess` from the JDK so users moving between the two APIs see the same shape.
+- **One class, two policies via factory methods (not sealed hierarchy).** JEP 525 final removed the nested-class style; `ExerisStructuredScope<T, R>` is parameterised on subtask type `T` and policy result type `R`, with three factory methods (`failFast()`, `firstSuccess()`, `allSuccessful()`) mapped to JDK `Joiner` factories. The two factories ADR-029 originally named (`shutdownOnFailure()` / `shutdownOnSuccess()`) are renamed to `failFast()` / `firstSuccess()` to match common-vocabulary naming and to avoid implying a deprecated JDK shape.
 - **`fork(...)` returns `StructuredTaskScope.Subtask<U>` intentionally.** Wrapping the JDK `Subtask` type would add an allocation per fork without semantic value (the wrapper has nothing to add — `get()`, `state()`, `exception()` are the entire `Subtask` surface and they are correct as-is). The JDK type leak is honest about the implementation cost; documented here so a future reviewer asking "why not `ExerisStructuredScope.Subtask`?" finds the answer.
-- **`joinUntil(Instant)` declares both `InterruptedException` and `TimeoutException`** matching the JDK signature. The wrapper does not absorb `TimeoutException`; callers handle deadline exhaustion the same way they would with raw `StructuredTaskScope`.
-- **`Function<Throwable, X>` exception-mapper overloads** on `throwIfFailed` / `result` exist to bridge fork failures into kernel error-code conventions when needed (the typical pattern: map subtask failure to a domain `KernelException` subtype before propagating). This is the realisation of obligation 2's "ensure failures inside forks propagate as `IOException` / configured-exception types consistently with the kernel error-code conventions" — the mapper is the explicit, allocation-free hook for that mapping.
+- **`join()` returns the policy result `R`** rather than `this`. This matches JEP 525 final's `StructuredTaskScope.join()` returning the `Joiner`'s `R` value. `failFast()`'s `join()` returns `Void` (callers read subtask state from retained `Subtask` handles); `firstSuccess()`'s `join()` returns the first successful value; `allSuccessful()`'s `join()` returns a `List<T>` of subtask values.
+- **`joinUntil(Instant)` is not exposed on the wrapper.** JEP 525 final's per-scope timeout is configured via `StructuredTaskScope.open(Joiner, Configuration)` at construction time, not per-`join()` call. A future amendment can expose `open(Joiner, Duration)` overloads if downstream demand surfaces.
+- **No explicit `throwIfFailed` / `result(mapper)`.** With `Joiner.awaitAllSuccessfulOrThrow()` the first failure surfaces from `join()` directly; with `Joiner.anySuccessfulOrThrow()` the value is `join()`'s return. Exception-mapping into kernel error-code conventions is the application's job at the `join()` call site — adding mapper overloads on the wrapper would obscure where the mapping happens.
 
 ## Consequences
 
