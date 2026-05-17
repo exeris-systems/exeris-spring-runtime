@@ -63,6 +63,6 @@
  * the seam exposes whatever the kernel ships today.
  *
  * @see <a href="../../../../../../../../docs/adr/ADR-030-phase-4c-spring-side-seam-for-kernel-graph-spi.md">ADR-030</a>
- * @since 0.6.0
+ * @since 0.7.0
  */
 package eu.exeris.spring.runtime.graph;

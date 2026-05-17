@@ -447,5 +447,6 @@ Spring `@Transactional` method, using `ScopedValue` rather than `TransactionSync
 | `EventEngine` / `EventBus` | Spring beans publish/subscribe | `ExerisEventPublisher`, `ExerisEventListenerRegistrar`, `ExerisEventTypeRegistry` | `events` | 4A |
 | `FlowEngine` / `FlowScheduler` | Saga / structured async | `ExerisFlowTemplate`, `ExerisFlowDefinitionRegistrar` | `flow` | 4B Steps 1–2 |
 | `FlowChoreographyMapper` / `ChoreographyDecision` | Event-driven flow trigger | `ExerisFlowChoreographyBridge`, `ExerisFlowChoreographyMapper` | `flow` | 4B Step 3 |
+| `GraphEngine` / `GraphSession` (`KernelProviders.GRAPH_ENGINE`) | Graph-query facade | `ExerisGraphTemplate`, `@ExerisGraphQuery`, `GraphEngineSupplier` | `graph` | 4C |
 | `PersistenceEngine` / `ConnectionFactory` | Repository / DataSource | `ExerisPersistenceAdapter` | `data` | 3 |
 | `PlatformTransactionManager` (Spring) | `StorageContext` | `ExerisPlatformTransactionManager` | `tx` | 3 |
