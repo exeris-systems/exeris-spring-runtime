@@ -114,7 +114,7 @@ All forms carry `@eu.exeris.spring.boot.autoconfigure.compat.SbCompat("<type-or-
 - ADR-011 — Pure Mode vs Compatibility Mode: `docs/adr/ADR-011-pure-mode-vs-compatibility-mode.md` — the mode taxonomy that compat shims under this ADR must respect
 - ADR-017 — JDBC Compatibility Scope for `ExerisDataSource`: `docs/adr/ADR-017-jdbc-compact-scope.md` — adjacent compatibility-scope ADR (different surface, same discipline)
 - ADR-021 — Gateway-Class Workloads Out of Compatibility Scope: `docs/adr/ADR-021-gateway-class-workloads-out-of-compatibility-scope.md` — banned coordinates that survive under both matrices
-- ADR-027 — Spring `ApplicationEventPublisher` / Exeris `EventBus` separation: `docs/adr/ADR-027-eventbus-applicationeventpublisher-boundary.md` — invariant that survives the SB4 line unchanged. (Content lives in PR #29 of `exeris-spring-runtime`, parallel to this PR. The file path resolves once PR #29 merges; this PR and PR #29 land together as the 2026-05-17 docs batch. If the reviewer reads this ADR on `main` before PR #29 is merged, the reference path is the expected destination.)
+- ADR-027 — Spring `ApplicationEventPublisher` / Exeris `EventBus` separation: `docs/adr/ADR-027-eventbus-applicationeventpublisher-boundary.md` — invariant that survives the SB4 line unchanged. (The file lands on `main` via this PR as part of the canonical renumber from ADR-026 → ADR-027; the original ADR-026 content was already on `main` via merged PR #29, this PR renames it to align with the 2026-05-17 drift-corrected upstream registry numbering.)
 - `docs/roadmap-1.0-trl9.md` — 0.8.0-preview train row anchors this ADR in the release plan (train slot moved from 0.7.0 to 0.8.0 in the 2026-05-17 resequence)
 
 ## Engineering Protocol

@@ -1,6 +1,6 @@
 # Roadmap to 1.0 and TRL-9
 
-**Status basis:** repository state as of 2026-05-17 (Phase 4B closure 2026-05-11 via PR #27; ADR-021 amendment 2026-05-13; ADR-027/027/028 acceptance and 0.6.0/0.7.0/0.8.0/0.9.0-preview resequence 2026-05-17)  
+**Status basis:** repository state as of 2026-05-17 (Phase 4B closure 2026-05-11 via PR #27; ADR-021 amendment 2026-05-13; ADR-027/028/029 acceptance and 0.6.0/0.7.0/0.8.0/0.9.0-preview resequence 2026-05-17)  
 **Intent:** delivery planning and scope control, not a claim of production readiness.
 
 ---
