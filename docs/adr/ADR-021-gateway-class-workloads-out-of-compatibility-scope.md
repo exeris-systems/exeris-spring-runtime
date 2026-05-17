@@ -2,9 +2,9 @@
 
 | Attribute       | Value                                                                                                                                          |
 |:----------------|:-----------------------------------------------------------------------------------------------------------------------------------------------|
-| **Status**      | **ACCEPTED** (drafted and accepted 2026-05-09; single decider — no future gating event; ratified by the PR that introduces this file)          |
+| **Status**      | **ACCEPTED** (drafted and accepted 2026-05-09; **amended 2026-05-13** — see *Architectural Home Update* section below; single decider — no future gating event) |
 | **Deciders**    | Arkadiusz Przychocki                                                                                                                           |
-| **Date**        | 2026-05-09                                                                                                                                     |
+| **Date**        | 2026-05-09 (original); 2026-05-13 (amendment)                                                                                                  |
 | **Scope**       | spring (binds `exeris-spring-runtime-web` Compatibility Mode contract; introduces `exeris-spring-runtime-gateway` artefact slot)               |
 | **Owning Repo** | `exeris-spring-runtime`                                                                                                                        |
 | **Driven By**   | ADR-006 (Spring-Free Kernel Boundary), ADR-010 (Host Runtime Model), ADR-011 (Pure Mode vs Compatibility Mode); downstream migration review (2026-05-09) that surfaced a Compatibility-Mode-coverage misclassification of Spring Cloud Gateway MVC |

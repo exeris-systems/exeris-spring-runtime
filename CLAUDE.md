@@ -19,6 +19,8 @@ Spring owns DI, config binding, bean lifecycle. Exeris owns transport ingress, r
 
 The kernel (`exeris-kernel-spi`, `exeris-kernel-core`) is consumed as binary dependencies and **must remain Spring-free**. This is "The Wall." The cap-tier Wall (per HLA §4) extends the same rule to every `exeris-caps-*` repository — no cap may reach into Spring internals, which keeps cap manifests reusable across both kernel-direct and Spring-Runtime-hosted deployments without manifest changes.
 
+> **Cross-repo paths in this file.** References like `~/exeris-systems/exeris-docs/...` and `~/exeris-systems/budgetHQ/` are valid in a full multi-repo workspace checkout (see `~/exeris-systems/CLAUDE.md`). They will NOT resolve in the GitHub UI or in a single-repo CI log inspection — that is by design. This file is primarily for AI tool use with a multi-repo workspace; human reviewers reading on GitHub should treat such paths as siblings of this repo's parent directory, not as relative-to-this-repo paths.
+
 ## Build & test
 
 Java **26 with `--enable-preview`** is required (kernel uses preview features → class file minor version 65535). Test JVM args are wired in the root POM (`-XX:+UnlockExperimentalVMOptions -XX:+UseZGC --enable-preview`).
