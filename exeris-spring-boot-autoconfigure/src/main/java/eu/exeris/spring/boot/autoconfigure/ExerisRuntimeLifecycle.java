@@ -24,6 +24,7 @@ import eu.exeris.kernel.spi.bootstrap.BootstrapSelector;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.events.EventEngine;
 import eu.exeris.kernel.spi.flow.FlowEngine;
+import eu.exeris.kernel.spi.graph.GraphEngine;
 import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpKernelProviders;
 
@@ -104,6 +105,16 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
      * classpath.
      */
     private final AtomicReference<FlowEngine> capturedFlowEngine = new AtomicReference<>();
+
+    /**
+     * Captured kernel-side {@link GraphEngine} reference, populated from the boot thread
+     * (where {@link KernelProviders#GRAPH_ENGINE} is bound) so Spring beans running outside
+     * the kernel {@code ScopedValue} scope can still open graph sessions and run MATCH-DSL
+     * traversals. Empty if the kernel activated without a {@code GraphProvider} on the
+     * classpath. Read by {@code GraphEngineSupplier} in {@code exeris-spring-runtime-graph}
+     * per ADR-030.
+     */
+    private final AtomicReference<GraphEngine> capturedGraphEngine = new AtomicReference<>();
 
     public ExerisRuntimeLifecycle(ExerisRuntimeProperties properties,
                                    ExerisSpringConfigProvider configProvider,
@@ -251,6 +262,21 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         return Optional.ofNullable(capturedFlowEngine.get());
     }
 
+    /**
+     * Returns the kernel {@link GraphEngine} reference captured during bootstrap, if a
+     * {@code GraphProvider} was active in the running kernel. Empty before
+     * {@link #start()} completes, after {@link #stop()}, or when the kernel activated
+     * without a graph subsystem.
+     *
+     * <p>Spring beans (graph template, {@code @ExerisGraphQuery} processor) consume this
+     * accessor through {@code GraphEngineSupplier} in {@code exeris-spring-runtime-graph}
+     * to obtain a long-lived engine reference, since {@link KernelProviders#GRAPH_ENGINE}
+     * is a {@code ScopedValue} only bound on kernel-owned virtual threads.
+     */
+    public Optional<GraphEngine> getGraphEngine() {
+        return Optional.ofNullable(capturedGraphEngine.get());
+    }
+
     private void captureKernelEngines() {
         // Runs on the boot thread inside the kernel's ScopedValue scope where the
         // KernelProviders slots are bound. Each subsystem is optional, so each capture
@@ -260,6 +286,9 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         }
         if (KernelProviders.FLOW_ENGINE.isBound()) {
             capturedFlowEngine.set(KernelProviders.FLOW_ENGINE.get());
+        }
+        if (KernelProviders.GRAPH_ENGINE.isBound()) {
+            capturedGraphEngine.set(KernelProviders.GRAPH_ENGINE.get());
         }
     }
 
@@ -287,6 +316,7 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
             configProvider.clearBootstrap();
             capturedEventEngine.set(null);
             capturedFlowEngine.set(null);
+            capturedGraphEngine.set(null);
             heldBootScope.compareAndSet(releaseSignal, null);
             bootThread.compareAndSet(Thread.currentThread(), null);
             synchronized (lifecycleMonitor) {
