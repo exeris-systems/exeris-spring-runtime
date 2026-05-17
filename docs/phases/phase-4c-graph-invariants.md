@@ -9,13 +9,14 @@ page enumerates the non-negotiable invariants Phase 4C established for the
 A change that breaks any item below is an architectural regression, not a style issue, and
 requires a superseding ADR — not a workaround in code.
 
-Phase 0–3, 4A, 4B, and 3B-α invariants
+Phase 0–3, 3B-α, 4A, and 4B invariants
 ([`phase-0-invariants.md`](phase-0-invariants.md),
 [`phase-1-invariants.md`](phase-1-invariants.md),
 [`phase-2-invariants.md`](phase-2-invariants.md),
 [`phase-3-invariants.md`](phase-3-invariants.md),
 [`phase-3b-alpha-invariants.md`](phase-3b-alpha-invariants.md),
-[`phase-4a-events-invariants.md`](phase-4a-events-invariants.md))
+[`phase-4a-events-invariants.md`](phase-4a-events-invariants.md),
+[`phase-4-invariants.md`](phase-4-invariants.md) — Phase 4B flow/saga invariants live in this file rather than a `phase-4b-flow-invariants.md` for historical naming reasons)
 still apply in full; Phase 4C invariants are additive and graph-specific.
 
 These are also the **graduation gate** for promoting `exeris-spring-runtime-graph` from
@@ -65,10 +66,13 @@ under `eu.exeris.spring.runtime.graph..`) is an ADR-030-violating PR.
   is a method reference to `lifecycle::getGraphEngine`, not a captured `GraphEngine`),
   `ExerisGraphAutoConfigurationTest#propertyEnabled_engineCaptured_supplierReturnsIt`.
 
-## 4. Three-state activation matrix is operator-visible
+## 4. Two-property activation matrix is operator-visible — four distinct diagnostic states
 
 The two-property matrix (`enabled` ∈ {false, true}, `requireEngine` ∈ {false, true})
-produces three operator states that surface distinct diagnostics:
+produces four operator states that surface distinct diagnostics. The
+`requireEngine=false` + engine-present combination collapses into "Feature active"
+(same observable behaviour as the default-mode happy path), so the table below
+enumerates the four user-visible states rather than all five property combinations:
 
 | `enabled` | `requireEngine` | `GraphEngine` bound? | State                                 | Diagnostic                                                                        |
 |:---------:|:---------------:|:-------------------:|:--------------------------------------|:---------------------------------------------------------------------------------|
@@ -133,10 +137,15 @@ supported method shapes without extending the validator, is an ADR-030-violating
   `finalClassWithAnnotatedMethod_failsFastWithOperatorReadableMessage`, plus 4 happy-path
   routing tests).
 
-## 7. Module-boundary discipline — eight banned edges enforced at ArchUnit
+## 7. Module-boundary discipline — eight banned edges, nine ArchUnit rules
 
 The graph module imports only kernel SPI + autoconfigure + Spring autoconfig/context. The
-following edges are banned, enforced at every PR by ArchUnit:
+following eight logical edges are banned, enforced at every PR by ArchUnit. The Spring
+async/scheduling/context-event row (row 7) splits into two ArchUnit `@Test` methods —
+package-based rule plus the `ApplicationEventPublisher` FQN point-check — for diagnostic
+isolation (per the Phase 4A `EventModuleBoundaryTest` / Phase 4B `FlowModuleBoundaryTest`
+precedent + the Step 4 review #37 fix that split the merged check), giving 9 rules from
+8 logical edges:
 
 | Banned source package          | Why                                                                                       |
 |:-------------------------------|:------------------------------------------------------------------------------------------|
