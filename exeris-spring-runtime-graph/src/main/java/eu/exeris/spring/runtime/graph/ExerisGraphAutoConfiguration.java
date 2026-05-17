@@ -26,20 +26,25 @@ import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
  * being on the classpath and an {@link ExerisRuntimeLifecycle} bean being available to
  * wire the {@link GraphEngineSupplier}.
  *
- * <h2>Step 2 (this PR) — autoconfig + properties + lifecycle capture</h2>
+ * <h2>Delivered (Steps 2 + 3)</h2>
  *
  * <ul>
  *   <li>{@link GraphEngineSupplier} — deferred accessor wired to
- *       {@link ExerisRuntimeLifecycle#getGraphEngine()}.</li>
+ *       {@link ExerisRuntimeLifecycle#getGraphEngine()} (Step 2).</li>
  *   <li>{@link ExerisGraphProperties} — two-property activation matrix
- *       ({@code enabled} + {@code require-engine}).</li>
+ *       ({@code enabled} + {@code require-engine}) (Step 2).</li>
+ *   <li>{@link ExerisGraphTemplate} — JdbcTemplate-shaped imperative facade with
+ *       {@code execute} / {@code traverseBfs} / {@code streamBfsJson} (caller-owns-buffer
+ *       contract) / {@code inTransaction} / {@code dialect} (Step 3).</li>
+ *   <li>{@link ExerisGraphQuery} + {@link ExerisGraphQueryProcessor} — declarative
+ *       annotation + {@code BeanPostProcessor} that validates at post-processing time
+ *       (fail-fast) and routes annotated method calls through the template by return type
+ *       (Step 3).</li>
  * </ul>
  *
  * <h2>Future steps in the 0.7.0-preview train (per ADR-030 Engineering Protocol)</h2>
  *
  * <ul>
- *   <li>Step 3 — {@code ExerisGraphTemplate} (JdbcTemplate-shaped facade) +
- *       {@code @ExerisGraphQuery} (declarative MATCH-DSL) + {@code BeanPostProcessor}.</li>
  *   <li>Step 4 — Architecture guards ({@code GraphModuleBoundaryTest},
  *       {@code PureModeClasspathGuardTest}).</li>
  *   <li>Step 5 — Integration tests with kernel-community PGQ test-scope.</li>
@@ -73,5 +78,30 @@ public class ExerisGraphAutoConfiguration {
     @ConditionalOnMissingBean
     public GraphEngineSupplier exerisGraphEngineSupplier(ExerisRuntimeLifecycle lifecycle) {
         return lifecycle::getGraphEngine;
+    }
+
+    /**
+     * JdbcTemplate-shaped facade over the kernel {@link GraphEngine} / {@code GraphSession}
+     * SPI (Step 3 per ADR-030 obligation 3). Consumes both the supplier (for per-call engine
+     * resolution per Phase 4A invariant §7) and the properties record (for
+     * {@code requireEngine} behaviour).
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public ExerisGraphTemplate exerisGraphTemplate(GraphEngineSupplier engineSupplier,
+                                                    ExerisGraphProperties properties) {
+        return new ExerisGraphTemplate(engineSupplier, properties);
+    }
+
+    /**
+     * {@code BeanPostProcessor} that validates {@link ExerisGraphQuery}-annotated methods at
+     * post-processing time and installs a Spring AOP proxy routing annotated calls through
+     * {@link ExerisGraphTemplate} (Step 3 per ADR-030 obligation 4 — fail-fast at
+     * post-processing, never at runtime invocation).
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public ExerisGraphQueryProcessor exerisGraphQueryProcessor(ExerisGraphTemplate template) {
+        return new ExerisGraphQueryProcessor(template);
     }
 }
