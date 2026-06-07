@@ -14,7 +14,7 @@ Change:
 $ARGUMENTS
 
 Please review:
-1. Does this change introduce a Spring type (`org.springframework.*`, `jakarta.servlet.*`, `io.netty.*`, `io.projectreactor.*`) into a kernel SPI/Core touchpoint?
+1. Does this change introduce any Wall-banned type — Spring (`org.springframework.*`), servlet (`jakarta.servlet.*`), Netty (`io.netty.*`), or Reactor (`io.projectreactor.*`) — into a kernel SPI/Core touchpoint?
 2. Does this change introduce a Spring `@Component` / `@Service` / `@Autowired` annotation into a kernel-facing class?
 3. Does this change bypass canonical Exeris provider discovery (`ServiceLoader`) with a Spring DI lookup?
 4. Does the change assume Spring is present in a place where the kernel runs standalone?

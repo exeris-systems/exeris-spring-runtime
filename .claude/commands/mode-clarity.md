@@ -9,6 +9,7 @@ Mode rules (per repo `CLAUDE.md`):
 - Every meaningful change MUST declare its mode: `PURE_MODE`, `COMPATIBILITY_MODE`, or `MIXED`.
 - **Pure Mode** (default): Exeris-native request path; no servlet/reactive runtime; performance-first. `ScopedValue` for context — `ThreadLocal` banned on hot paths.
 - **Compatibility Mode** (opt-in via `exeris.runtime.web.mode=compatibility`): isolated in `*.compat.*` sub-packages; must carry `@CompatibilityMode` marker; never activates automatically when pure mode is running. Narrow `ThreadLocal` bridging (e.g. `SecurityContextHolder`) allowed only here, must be cleared in `finally`, must not leak into pure-mode paths.
+- **`MIXED`**: the change touches both paths. Not a blanket escape hatch — document which code paths are pure and which are compat, and verify the two cannot cross-contaminate (no pure-mode import of `*.compat.*`, no silent compat activation under pure mode).
 - Pure-mode code MUST NOT import from `*.compat.*`.
 - Architecture tests (`*ArchitectureTest`, `*BoundaryTest`, `CompatibilityIsolationGuardTest`) enforce this — keep them green.
 
