@@ -17,6 +17,8 @@ This directory mirrors `.github/{agents,skills}` and works alongside `CLAUDE.md`
   - `exeris-spring-module-boundary-review`, `exeris-spring-kernel-wall-check`
   - `exeris-spring-docs-adr-check`, `exeris-spring-verification-planner`
   - `exeris-spring-runtime-path-performance-review`
+- `commands/` — slash commands (`/<command-name>`):
+  - `wall-check`, `mode-clarity`, `module-boundary`, `ownership-boundary`, `runtime-path-perf`
 
 ## Instructions / doctrine — single source
 
