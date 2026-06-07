@@ -17,6 +17,8 @@ This directory mirrors `.github/{agents,skills}` and works alongside `CLAUDE.md`
   - `exeris-spring-module-boundary-review`, `exeris-spring-kernel-wall-check`
   - `exeris-spring-docs-adr-check`, `exeris-spring-verification-planner`
   - `exeris-spring-runtime-path-performance-review`
+- `commands/` — slash commands (`/<command-name>`): quick targeted audits as self-contained prompts; for deeper tool-backed review use the matching skill (e.g. `/wall-check` ↔ `exeris-spring-kernel-wall-check`):
+  - `wall-check`, `mode-clarity`, `module-boundary`, `ownership-boundary`, `runtime-path-perf`
 
 ## Instructions / doctrine — single source
 
@@ -34,3 +36,4 @@ Counterpart files in `.github/`:
 | `skills/<name>/SKILL.md`           | `skills/<name>/SKILL.md`         | Frontmatter added (`name`, `description`) |
 | `copilot-instructions.md`          | (referenced from `/CLAUDE.md`)   | Single source — not duplicated     |
 | `maven-settings.xml`               | (used directly via `mvn -s`)     | Build config, no mirror needed     |
+| (Claude Code-exclusive)            | `commands/*.md`                  | Slash commands — no `.github/` equivalent |
