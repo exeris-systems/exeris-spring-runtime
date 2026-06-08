@@ -259,15 +259,26 @@ starts **cold**: a startup burst of concurrent virtual threads races pool growth
 some acquisitions time out (`PersistenceProviderException.connectionExhausted` → 500) until it warms.
 
 `ExerisSpringConfigProvider.persistenceKernelKeyAlias` maps those raw kernel keys onto the Spring
-surface `exeris.runtime.persistence.{min-pool-size, pool-warmup-enabled, pool-warmup-connections}`
-(symmetric with the `flowKernelKeyAlias` bridge). This lets an application pre-warm the shared pool
-through its own min-idle knob, the same way a Spring/Hikari or Quarkus/Agroal deployment does — the
-fix is config plumbing in the runtime, not a kernel change and not an app-side workaround. The knob
-is mode-neutral (`MIXED`): it governs the kernel-owned pool identically for pure and compat paths.
+surface `exeris.runtime.persistence.{min-pool-size, pool-warmup-enabled, pool-warmup-connections,
+connection-timeout-ms}` (symmetric with the `flowKernelKeyAlias` bridge). This lets an application
+pre-warm the shared pool through its own min-idle knob, the same way a Spring/Hikari or
+Quarkus/Agroal deployment does — the fix is config plumbing in the runtime, not a kernel change and
+not an app-side workaround. The knob is mode-neutral (`MIXED`): it governs the kernel-owned pool
+identically for pure and compat paths.
 
-- **Guard:** `ExerisSpringConfigProviderTest` (min-idle and warmup raw keys + bare aliases resolve
-  to the `exeris.runtime.persistence.*` properties; literal-key precedence; empty when unset;
-  null-environment safety).
+**Connection-timeout and fair-leveling.** Pre-warm blunts cold-start, but a *sustained* error spike
+can remain under load. The kernel pool fail-fasts on acquisition (a short acquire timeout →
+`connectionExhausted` → 500) where a default Spring/Hikari pool **blocks** ~30s — contention surfaces
+as latency, not errors. `persistence.connectionTimeoutMs` is read by the kernel resolver via
+`getLong` but had no record field and no alias, so the compat acquire timeout could not be raised
+from configuration; comparisons against a JDBC-native target were unfair (compat = 500s, native =
+latency). The alias now maps it to `exeris.runtime.persistence.connection-timeout-ms`, so a
+deployment can set the same acquire timeout on both sides and contention shows up as latency, not
+compat-only 500s.
+
+- **Guard:** `ExerisSpringConfigProviderTest` (min-idle, warmup, and connection-timeout raw keys +
+  bare aliases resolve to the `exeris.runtime.persistence.*` properties; `getLong` path for the
+  timeout; literal-key precedence; empty when unset; null-environment safety).
 
 ---
 

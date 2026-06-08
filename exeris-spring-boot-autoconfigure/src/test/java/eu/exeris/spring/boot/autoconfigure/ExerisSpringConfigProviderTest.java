@@ -343,5 +343,39 @@ class ExerisSpringConfigProviderTest {
         assertThat(provider.getInt("persistence.minIdleConnections")).isEmpty();
         assertThat(provider.getBoolean("persistence.pool.warmup.enabled")).isEmpty();
         assertThat(provider.getInt("pool.warmup.connections")).isEmpty();
+        assertThat(provider.getLong("persistence.connectionTimeoutMs")).isEmpty();
+    }
+
+    @Test
+    void persistenceAlias_connectionTimeoutResolvesViaGetLong() {
+        MockEnvironment env = new MockEnvironment()
+                .withProperty("exeris.runtime.persistence.connection-timeout-ms", "30000");
+
+        ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider(env);
+
+        // The kernel resolver reads persistence.connectionTimeoutMs via getLong; the alias
+        // levels the acquire timeout with the JDBC-native targets (which block ~30s rather
+        // than fail-fast). Without this the compat pool's short timeout cannot be raised.
+        assertThat(provider.getLong("persistence.connectionTimeoutMs")).contains(30_000L);
+    }
+
+    @Test
+    void persistenceAlias_connectionTimeoutAppliesToTypedGet() {
+        MockEnvironment env = new MockEnvironment()
+                .withProperty("exeris.runtime.persistence.connection-timeout-ms", "30000");
+
+        ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider(env);
+
+        assertThat(provider.get("persistence.connectionTimeoutMs", Long.class)).contains(30_000L);
+    }
+
+    @Test
+    void persistenceAlias_connectionTimeoutEmptyWhenUnset() {
+        MockEnvironment env = new MockEnvironment();
+
+        ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider(env);
+
+        // Unset → kernel keeps its own default acquire timeout.
+        assertThat(provider.getLong("persistence.connectionTimeoutMs")).isEmpty();
     }
 }

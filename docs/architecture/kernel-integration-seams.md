@@ -149,12 +149,15 @@ SPI accessors. Some kernel settings have **no field on the typed bridge record**
 cannot carry them — they are reachable only by raw key. `ExerisSpringConfigProvider` bridges those:
 
 - `flowKernelKeyAlias` — maps `flow.*` kernel keys onto `exeris.runtime.flow.*` (Phase 4B Step 4).
-- `persistenceKernelKeyAlias` — maps the shared-pool sizing keys the kernel's
+- `persistenceKernelKeyAlias` — maps the shared-pool keys the kernel's
   `CommunityPersistenceConfigResolver` queries (`persistence.minIdleConnections` /
   `persistence.pool.minSize`, `persistence.pool.warmup.{enabled,connections}` and the bare
-  `pool.warmup.*` aliases) onto `exeris.runtime.persistence.{min-pool-size, pool-warmup-enabled,
-  pool-warmup-connections}`. `PersistenceSettings` carries only `maxPoolSize`, so without this alias
-  min-idle/warmup never reach the shared pool and it starts cold (see Seam 9 and Phase 3 invariant #14).
+  `pool.warmup.*` aliases, and `persistence.connectionTimeoutMs` via `getLong`) onto
+  `exeris.runtime.persistence.{min-pool-size, pool-warmup-enabled, pool-warmup-connections,
+  connection-timeout-ms}`. `PersistenceSettings` carries only `maxPoolSize`, so without this alias
+  min-idle/warmup never reach the shared pool (it starts cold) and the acquire timeout cannot be
+  raised — the compat pool fail-fasts to 500 where a default Spring/Hikari pool blocks ~30s, making
+  cross-target comparisons unfair (see Seam 9 and Phase 3 invariant #14).
 
 ---
 
@@ -482,6 +485,12 @@ are raw-key only. `ExerisSpringConfigProvider.persistenceKernelKeyAlias` plumbs 
 Seam 3 and Phase 3 invariant #14). Set `min-pool-size` to pre-warm the pool; otherwise it starts
 near-empty and a startup request burst can exhaust acquisition (`connectionExhausted` → 500) until
 the pool grows. This is the runtime's equivalent of a Spring/Hikari `minimum-idle` knob.
+
+Pre-warm handles cold-start; `connection-timeout-ms` handles *sustained* load. The kernel pool
+fail-fasts on acquisition where a default Spring/Hikari pool blocks ~30s, so under contention the
+compat path returns 500s while a JDBC-native target merely slows down. Raising
+`exeris.runtime.persistence.connection-timeout-ms` levels that asymmetry (contention → latency on
+both sides). Both knobs are plumbed through `persistenceKernelKeyAlias` (Seam 3).
 
 **Transaction integration:**
 
