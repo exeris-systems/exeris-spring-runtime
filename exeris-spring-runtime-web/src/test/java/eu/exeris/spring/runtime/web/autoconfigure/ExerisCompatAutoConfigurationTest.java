@@ -67,6 +67,28 @@ class ExerisCompatAutoConfigurationTest {
         }
     }
 
+    @Test
+    void securityFilter_honoursUserSuppliedJwtConverter_andIgnoresUnrelatedConverters() throws Exception {
+        try (var context = new AnnotationConfigApplicationContext()) {
+            // Register the user beans first so @ConditionalOnBean(JwtDecoder) sees the decoder,
+            // then the security wiring. Isolated to SecurityFilterConfiguration to avoid pulling
+            // in the full compat dispatcher graph.
+            context.register(SecurityWiringConfig.class,
+                    ExerisCompatAutoConfiguration.SecurityFilterConfiguration.class);
+            context.refresh();
+
+            ExerisSecurityContextFilter filter = context.getBean(ExerisSecurityContextFilter.class);
+
+            Field converterField = ExerisSecurityContextFilter.class.getDeclaredField("jwtAuthenticationConverter");
+            converterField.setAccessible(true);
+            Object wiredConverter = converterField.get(filter);
+
+            // The custom Converter<Jwt, ? extends AbstractAuthenticationToken> bean must win;
+            // the unrelated Converter<String, Integer> bean must not be mistaken for it.
+            assertThat(wiredConverter).isSameAs(context.getBean("customJwtConverter"));
+        }
+    }
+
     @SuppressWarnings("null")
     private AnnotationConfigApplicationContext createContext(Map<String, Object> properties, Class<?>... extraConfigs) {
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
@@ -148,6 +170,39 @@ class ExerisCompatAutoConfigurationTest {
         @Override
         public ExerisServerResponse handle(ExerisServerRequest request) {
             return ExerisServerResponse.ok().body("hello");
+        }
+    }
+
+    /**
+     * Mirrors a brownfield app on the compat path: a {@code JwtDecoder} bean (Spring's own
+     * auto-config is web-application-gated and absent under {@code web-application-type=none}),
+     * a custom {@code Converter<Jwt, ? extends AbstractAuthenticationToken>} for authority mapping,
+     * and an unrelated {@code Converter<String, Integer>} that must not be mistaken for the former.
+     */
+    @Configuration
+    static class SecurityWiringConfig {
+
+        @Bean
+        org.springframework.security.oauth2.jwt.JwtDecoder jwtDecoder() {
+            return token -> org.springframework.security.oauth2.jwt.Jwt.withTokenValue(token)
+                    .header("alg", "none")
+                    .subject("user-1")
+                    .claim("scope", "read")
+                    .build();
+        }
+
+        @Bean
+        org.springframework.core.convert.converter.Converter<
+                org.springframework.security.oauth2.jwt.Jwt,
+                ? extends org.springframework.security.authentication.AbstractAuthenticationToken> customJwtConverter() {
+            return jwt -> new org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken(
+                    jwt,
+                    java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_CUSTOM")));
+        }
+
+        @Bean
+        org.springframework.core.convert.converter.Converter<String, Integer> unrelatedConverter() {
+            return Integer::valueOf;
         }
     }
 }

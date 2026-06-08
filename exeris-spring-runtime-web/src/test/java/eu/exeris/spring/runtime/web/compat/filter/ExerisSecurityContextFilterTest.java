@@ -100,6 +100,34 @@ class ExerisSecurityContextFilterTest {
     }
 
     // =========================================================================
+    // populateContext — custom converter is honoured
+    // =========================================================================
+
+    @Test
+    void populateContext_customConverter_isUsedForAuthorityMapping() {
+        Jwt jwt = buildStubJwt();
+        when(jwtDecoder.decode("valid-token")).thenReturn(jwt);
+
+        // An application-supplied converter (e.g. mapping realm_access.roles → ROLE_*).
+        org.springframework.core.convert.converter.Converter<
+                Jwt, ? extends org.springframework.security.authentication.AbstractAuthenticationToken> customConverter =
+                decoded -> new org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken(
+                        decoded,
+                        List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_CUSTOM")));
+
+        ExerisSecurityContextFilter customFilter = new ExerisSecurityContextFilter(jwtDecoder, customConverter);
+
+        HttpRequest request = stubRequest(Map.of("Authorization", List.of("Bearer valid-token")));
+        customFilter.populateContext(request);
+
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        assertThat(auth).isNotNull();
+        assertThat(auth.getAuthorities())
+                .extracting(Object::toString)
+                .containsExactly("ROLE_CUSTOM");
+    }
+
+    // =========================================================================
     // clearContext
     // =========================================================================
 
