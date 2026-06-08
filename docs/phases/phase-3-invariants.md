@@ -55,7 +55,9 @@ singleton at bean construction.
 
 This preserves the kernel `ScopedValue` contract — the engine is always read from the
 current kernel VT scope, so the bridge respects engine-per-scope semantics rather than
-freezing one engine at startup.
+freezing one engine at startup. On the request path this per-call read only resolves a bound
+slot because the runtime re-binds `PERSISTENCE_ENGINE` on the carrier handler thread — see
+invariant #12.
 
 - **Guard:** code review; `ExerisTransactionScaffoldTest` exercises the deferred
   resolution path through `PersistenceEngineProvider`.
@@ -206,6 +208,67 @@ can rely on.
   `exerisDataSourceBeanIsMarkedPrimary`,
   `exerisAdapterStandsDownWhenUserProvidesOwnDataSource`.
 
+## 12. Request-path kernel provider slots are re-bound on the carrier handler thread
+
+The runtime's `HttpHandler` (pure `ExerisHttpDispatcher` / compat `ExerisCompatDispatcher`,
+bound via `HttpKernelProviders.HTTP_SERVER_HANDLER`) is invoked by the kernel on the transport
+carrier thread, which does **not** inherit the bootstrap `ScopedValue` scope. So
+`KernelProviders.PERSISTENCE_ENGINE` and `MEMORY_ALLOCATOR` are unbound on the request thread
+unless re-propagated — without this, the compat datasource (`ExerisDataSource`,
+`PersistenceEngineProvider`) fails on every request with "PersistenceEngine is not bound in the
+current scope", and the response codec falls back to a heap buffer.
+
+`ExerisRuntimeLifecycle` captures both engines at bootstrap (`getPersistenceEngine()` /
+`getMemoryAllocator()`, alongside the event/flow/graph captures). The mode-neutral
+`web.scope.KernelProviderBinder` re-binds them around each dispatch **only when the slot is
+currently unbound** — a kernel-bound, carrier-affine value is never overridden (the allocator is
+a single kernel-wide instance; affinity flows via the separate `CARRIER_INDEX` slot). This is
+what makes invariants #3 and #6 hold on the request path. It is re-propagation of kernel-owned
+references via `ScopedValue` (never `ThreadLocal`), not ownership inversion. The bean is wired
+with a lazy `ObjectProvider<ExerisRuntimeLifecycle>` lookup to avoid the construction-time cycle
+`lifecycle → HttpHandler → binder → lifecycle`.
+
+- **Guard:** `KernelProviderBinderTest` (re-bind when unbound; no override when already bound;
+  pass-through when no captured reference). `ExerisPureModeRequestPathIntegrationTest` and
+  `ExerisCompatMvcIntegrationTest` exercise the wired binder.
+
+## 13. Compat datasource unwraps the request-session connection via the SPI (kernel ≥ 0.8.1)
+
+The kernel HTTP dispatcher binds a per-request `PersistenceSessionBox`, so
+`PersistenceEngine.openConnection()` returns a request-scoped *forwarding* `PersistenceConnection`,
+not the concrete JDBC connection. `ExerisDataSource` obtains the raw `java.sql.Connection` through
+the SPI `PersistenceConnection.unwrap(java.sql.Connection.class)` (added in kernel 0.8.1, forwarded
+by the wrapper) — it no longer casts to the community-concrete `JdbcPersistenceConnection`. This
+keeps the JDBC compatibility bridge swappable across engines and is why the runtime requires
+`exeris-kernel` **0.8.1+**. When unwrap yields empty (a genuinely non-JDBC engine), `ExerisDataSource`
+throws `UnsupportedOperationException` directing to the enterprise tier.
+
+- **Guard:** `ExerisDataSourceTest` (non-JDBC stub → `UnsupportedOperationException`),
+  `ExerisConnectionProxyTest`.
+
+## 14. Shared-pool min-idle and warmup are plumbed through the config provider
+
+The kernel's `CommunityPersistenceConfigResolver` builds its `PersistenceConfig` by asking the
+active `ConfigProvider` for raw keys, including `persistence.minIdleConnections` (alias
+`persistence.pool.minSize`) and `persistence.pool.warmup.{enabled,connections}` (bare aliases
+`pool.warmup.*`). The typed `ConfigProvider.PersistenceSettings` bridge record only carries
+`maxPoolSize` — so `max-pool-size` flows through `kernelSettings()`, but min-idle and warmup have
+**no typed field** and their only path is the raw-key API. Without an alias, those lookups miss,
+the kernel falls back to its default min-idle (~1), and the shared pool (`exeris-community-shared`)
+starts **cold**: a startup burst of concurrent virtual threads races pool growth from 1 → max and
+some acquisitions time out (`PersistenceProviderException.connectionExhausted` → 500) until it warms.
+
+`ExerisSpringConfigProvider.persistenceKernelKeyAlias` maps those raw kernel keys onto the Spring
+surface `exeris.runtime.persistence.{min-pool-size, pool-warmup-enabled, pool-warmup-connections}`
+(symmetric with the `flowKernelKeyAlias` bridge). This lets an application pre-warm the shared pool
+through its own min-idle knob, the same way a Spring/Hikari or Quarkus/Agroal deployment does — the
+fix is config plumbing in the runtime, not a kernel change and not an app-side workaround. The knob
+is mode-neutral (`MIXED`): it governs the kernel-owned pool identically for pure and compat paths.
+
+- **Guard:** `ExerisSpringConfigProviderTest` (min-idle and warmup raw keys + bare aliases resolve
+  to the `exeris.runtime.persistence.*` properties; literal-key precedence; empty when unset;
+  null-environment safety).
+
 ---
 
 ## How invariants are enforced
@@ -223,6 +286,8 @@ can rely on.
 | `server.port` is read-only fallback | `ExerisBootstrapIntegrationTest` exercises both `exeris.runtime.network.port` and `server.port` paths |
 | Phase 3B graduated 2026-05-17 — 3B-α at 0.6.0-preview (ADR-029); 3B-β/γ kernel-gated (ADR-031) | `phase-3b-alpha-invariants.md` carries 3B-α invariants; the 2026-05-17 graduation is documented above (invariant #10) |
 | Exeris adapter wins over Spring Boot `DataSourceAutoConfiguration` when opted in | `ExerisDataAutoConfigurationTest` — three cases covering the annotation declaration, the `@Primary` marker, and stand-down on user-supplied `DataSource` (see invariant #11 for the named test methods) |
+| Request-path provider slots re-bound on carrier thread | `KernelProviderBinderTest`; `ExerisPureModeRequestPathIntegrationTest`, `ExerisCompatMvcIntegrationTest` |
+| Shared-pool min-idle / warmup plumbed through the config provider | `ExerisSpringConfigProviderTest` (persistence raw-key aliases → `exeris.runtime.persistence.*`) |
 
 These tests must stay green. A failure indicates a real architectural regression;
 the test is not the bug.

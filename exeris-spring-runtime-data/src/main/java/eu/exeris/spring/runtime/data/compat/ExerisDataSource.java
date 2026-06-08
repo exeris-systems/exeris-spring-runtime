@@ -6,7 +6,6 @@
  */
 package eu.exeris.spring.runtime.data.compat;
 
-import eu.exeris.kernel.community.persistence.jdbc.JdbcPersistenceConnection;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
@@ -18,6 +17,7 @@ import java.io.PrintWriter;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
+import java.util.Optional;
 import java.util.logging.Logger;
 
 /**
@@ -69,11 +69,11 @@ public final class ExerisDataSource implements DataSource {
 
         // 2. No active transaction — open a new connection (caller owns close)
         PersistenceConnection conn = openConnection();
-        JdbcPersistenceConnection jdbcConn = assertJdbcBacked(conn);
+        Connection rawJdbc = unwrapJdbc(conn);
 
-        // rawJdbcConnection() approved caller: integration bridge. See ADR-017 §6.4.
+        // SPI unwrap(Connection.class) — approved caller: integration bridge. See ADR-017 §6.4.
         ExerisConnectionProxy proxy =
-                new ExerisConnectionProxy(jdbcConn.rawJdbcConnection(), conn, false);
+                new ExerisConnectionProxy(rawJdbc, conn, false);
         JpaConnectionAcquiredEvent.emit();
         return proxy;
     }
@@ -109,11 +109,11 @@ public final class ExerisDataSource implements DataSource {
      * @param connection the freshly opened, already-in-transaction PersistenceConnection
      */
     public void bindTransactionConnection(PersistenceConnection connection) {
-        JdbcPersistenceConnection jdbcConn = assertJdbcBacked(connection);
+        Connection rawJdbc = unwrapJdbc(connection);
 
-        // rawJdbcConnection() approved caller: integration bridge. See ADR-017 §6.4.
+        // SPI unwrap(Connection.class) — approved caller: integration bridge. See ADR-017 §6.4.
         ExerisConnectionProxy proxy =
-                new ExerisConnectionProxy(jdbcConn.rawJdbcConnection(), connection, true);
+                new ExerisConnectionProxy(rawJdbc, connection, true);
         TransactionSynchronizationManager.bindResource(this, proxy);
         TransactionSynchronizationManager.registerSynchronization(
                 new UnbindOnCompletionSynchronization(this));
@@ -180,9 +180,18 @@ public final class ExerisDataSource implements DataSource {
         }
     }
 
-    private static JdbcPersistenceConnection assertJdbcBacked(PersistenceConnection conn) {
-        if (conn instanceof JdbcPersistenceConnection jdbcConn) {
-            return jdbcConn;
+    /**
+     * Unwraps the raw {@link Connection} from a kernel {@link PersistenceConnection} via the SPI
+     * {@link PersistenceConnection#unwrap(Class)} (kernel 0.8.1+). This works for both a directly
+     * JDBC-backed connection and the request-session forwarding wrapper the kernel binds per
+     * request (the wrapper forwards {@code unwrap} to its delegate). Using the SPI unwrap keeps
+     * this bridge decoupled from the community-concrete connection type and swappable across
+     * engines.
+     */
+    private static Connection unwrapJdbc(PersistenceConnection conn) {
+        Optional<Connection> rawJdbc = conn.unwrap(Connection.class);
+        if (rawJdbc.isPresent()) {
+            return rawJdbc.get();
         }
         try {
             conn.close();
@@ -191,7 +200,7 @@ public final class ExerisDataSource implements DataSource {
         }
         throw new UnsupportedOperationException(
                 "ExerisDataSource requires a JDBC-backed PersistenceEngine (Community tier). " +
-                "The bound engine does not provide JDBC connections. " +
+                "The bound engine's connection does not unwrap to java.sql.Connection. " +
                 "Enterprise-tier JDBC compatibility requires exeris-spring-runtime-enterprise.");
     }
 

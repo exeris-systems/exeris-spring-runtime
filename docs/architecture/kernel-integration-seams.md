@@ -143,6 +143,19 @@ The `ExerisSpringConfigProvider` is registered in:
 This makes Spring the configuration source for the kernel — without making the kernel
 aware of Spring. The kernel only knows about `ConfigProvider`.
 
+**Raw-key aliasing (typed record gap):** Beyond the typed `KernelSettings`/`PersistenceSettings`
+record, kernel subsystems also read individual raw keys through the `getInt`/`getBoolean`/`getString`
+SPI accessors. Some kernel settings have **no field on the typed bridge record**, so the record path
+cannot carry them — they are reachable only by raw key. `ExerisSpringConfigProvider` bridges those:
+
+- `flowKernelKeyAlias` — maps `flow.*` kernel keys onto `exeris.runtime.flow.*` (Phase 4B Step 4).
+- `persistenceKernelKeyAlias` — maps the shared-pool sizing keys the kernel's
+  `CommunityPersistenceConfigResolver` queries (`persistence.minIdleConnections` /
+  `persistence.pool.minSize`, `persistence.pool.warmup.{enabled,connections}` and the bare
+  `pool.warmup.*` aliases) onto `exeris.runtime.persistence.{min-pool-size, pool-warmup-enabled,
+  pool-warmup-connections}`. `PersistenceSettings` carries only `maxPoolSize`, so without this alias
+  min-idle/warmup never reach the shared pool and it starts cold (see Seam 9 and Phase 3 invariant #14).
+
 ---
 
 ## Seam 4: Lifecycle / Subsystem Bridge
@@ -238,8 +251,24 @@ behaviour as a missing provider on the classpath.
 
 **Kernel SPI:** `eu.exeris.kernel.spi.context.KernelProviders`
 
-`KernelProviders` contains `ScopedValue` slots for all runtime providers. They are bound
-once during bootstrap and inherited by all virtual threads in scope.
+`KernelProviders` contains `ScopedValue` slots for all runtime providers, bound once during
+bootstrap. The kernel's own dispatch path (generated handlers / per-request dispatch virtual
+threads) sees them. However, an **externally supplied `HttpHandler`** — this runtime's
+dispatcher, bound via `HttpKernelProviders.HTTP_SERVER_HANDLER` — is invoked on the kernel
+transport carrier thread, which does **not** inherit the bootstrap scope. Handler-thread code
+that reads a slot directly (compat `ExerisDataSource`, the response codec's `MEMORY_ALLOCATOR`)
+therefore sees it unbound unless the runtime re-binds it.
+
+**Request-path re-binding (`KernelProviderBinder`):** `ExerisRuntimeLifecycle` captures
+`PERSISTENCE_ENGINE` and `MEMORY_ALLOCATOR` at bootstrap (alongside the event/flow/graph engine
+captures) and exposes them via `getPersistenceEngine()` / `getMemoryAllocator()`. The
+mode-neutral `web.scope.KernelProviderBinder` re-binds these slots around each dispatch in both
+the pure (`ExerisHttpDispatcher`) and compat (`ExerisCompatDispatcher`) paths — **only when the
+slot is currently unbound**, so a kernel-bound (carrier-affine) value is never overridden. This
+is re-propagation of kernel-owned references, not an ownership claim; it uses only `ScopedValue`,
+never `ThreadLocal`. The allocator is a single kernel-wide instance (carrier affinity flows via
+the separate `CARRIER_INDEX` slot), so re-binding it is safe. The event/flow/graph seams avoid
+the same gap by reading captured references through their `*EngineSupplier` rather than the slot.
 
 **Key slots relevant to this integration:**
 
@@ -424,6 +453,35 @@ provides the execution semantics.
 `ExerisDataSource implements javax.sql.DataSource` wraps `ConnectionFactory` to provide
 JDBC compatibility for frameworks that cannot otherwise adapt. This is explicitly the
 compatibility layer and must never be presented as the canonical persistence path.
+
+**Request-path binding (carrier thread):** Both levels read `KernelProviders.PERSISTENCE_ENGINE`
+on the request handler thread. Because the externally supplied dispatcher runs on the kernel
+transport carrier thread (which does not inherit the bootstrap `ScopedValue` scope), the engine
+is re-bound per request by `KernelProviderBinder` (see Seam 5). Without it,
+`ExerisDataSource.getConnection()` / `PersistenceEngineProvider.get()` fail with
+"PersistenceEngine is not bound in the current scope" on every request.
+
+**Request-session connection unwrap (requires kernel ≥ 0.8.1):** The kernel HTTP dispatcher
+binds a per-request `PersistenceSessionBox`, so `PersistenceEngine.openConnection()` returns a
+request-scoped *forwarding* `PersistenceConnection` (not the concrete JDBC connection). The JDBC
+compat bridge obtains the raw `java.sql.Connection` via the SPI `PersistenceConnection.unwrap(
+java.sql.Connection.class)` (added in kernel 0.8.1; the forwarding wrapper delegates `unwrap`).
+`ExerisDataSource` no longer depends on the community-concrete `JdbcPersistenceConnection` type —
+it unwraps through the SPI, keeping the engine swappable. Against kernel < 0.8.1 the bridge fails
+because the request-session wrapper is neither the concrete connection nor unwrappable. The startup-time dialect
+probe is a separate concern: with a lazily-bound `DataSource`, set `hibernate.dialect` explicitly
+and `hibernate.boot.allow_jdbc_metadata_access=false` so Hibernate does not call `getConnection()`
+during `EntityManagerFactory` construction (which happens during Spring `refresh()`, before the
+kernel has booted). This is the canonical compat-datasource configuration, not a workaround.
+
+**Shared-pool warmup (cold-start avoidance):** The kernel owns the connection pool
+(`exeris-community-shared`). Its `CommunityPersistenceConfigResolver` supports min-idle and
+pool-warmup, but only `maxPoolSize` rides the typed `PersistenceSettings` record — min-idle/warmup
+are raw-key only. `ExerisSpringConfigProvider.persistenceKernelKeyAlias` plumbs them from
+`exeris.runtime.persistence.{min-pool-size, pool-warmup-enabled, pool-warmup-connections}` (see
+Seam 3 and Phase 3 invariant #14). Set `min-pool-size` to pre-warm the pool; otherwise it starts
+near-empty and a startup request burst can exhaust acquisition (`connectionExhausted` → 500) until
+the pool grows. This is the runtime's equivalent of a Spring/Hikari `minimum-idle` knob.
 
 **Transaction integration:**
 

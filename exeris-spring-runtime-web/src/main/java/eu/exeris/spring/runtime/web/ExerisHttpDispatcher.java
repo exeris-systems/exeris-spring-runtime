@@ -19,6 +19,7 @@ import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.telemetry.TelemetrySink;
+import eu.exeris.spring.runtime.web.scope.KernelProviderBinder;
 import eu.exeris.spring.runtime.web.scope.RequestScopeBinder;
 
 /**
@@ -67,6 +68,7 @@ public final class ExerisHttpDispatcher implements HttpHandler {
     private final ExerisErrorMapper errorMapper;
     private final Supplier<List<TelemetrySink>> fallbackSinksSupplier;
     private final RequestScopeBinder scopeBinder;
+    private final KernelProviderBinder kernelProviderBinder;
 
     public ExerisHttpDispatcher(ExerisRouteRegistry routeRegistry,
                                  ExerisErrorMapper errorMapper) {
@@ -95,10 +97,28 @@ public final class ExerisHttpDispatcher implements HttpHandler {
                                  ExerisErrorMapper errorMapper,
                                  Supplier<List<TelemetrySink>> fallbackSinksSupplier,
                                  RequestScopeBinder scopeBinder) {
+        this(routeRegistry, errorMapper, fallbackSinksSupplier, scopeBinder, KernelProviderBinder.noop());
+    }
+
+    /**
+     * Canonical constructor. Adds the {@link KernelProviderBinder} that re-binds kernel provider
+     * {@code ScopedValue} slots (persistence engine, memory allocator) around the dispatch when
+     * the handler thread did not inherit the kernel bootstrap scope — the externally-supplied
+     * {@code HttpHandler} runs on the transport carrier thread, which carries no bootstrap
+     * bindings. With {@link KernelProviderBinder#noop()} (default and test path) it is a
+     * zero-cost pass-through.
+     */
+    public ExerisHttpDispatcher(ExerisRouteRegistry routeRegistry,
+                                 ExerisErrorMapper errorMapper,
+                                 Supplier<List<TelemetrySink>> fallbackSinksSupplier,
+                                 RequestScopeBinder scopeBinder,
+                                 KernelProviderBinder kernelProviderBinder) {
         this.routeRegistry = Objects.requireNonNull(routeRegistry, "routeRegistry must not be null");
         this.errorMapper = Objects.requireNonNull(errorMapper, "errorMapper must not be null");
         this.fallbackSinksSupplier = memoizeFallbackSinks(fallbackSinksSupplier);
         this.scopeBinder = Objects.requireNonNull(scopeBinder, "scopeBinder must not be null");
+        this.kernelProviderBinder =
+                Objects.requireNonNull(kernelProviderBinder, "kernelProviderBinder must not be null");
     }
 
     @Override
@@ -122,15 +142,19 @@ public final class ExerisHttpDispatcher implements HttpHandler {
     }
 
     /**
-     * Bind the Phase 3B-α request scope via the configured {@link RequestScopeBinder} and then
-     * dispatch. With the default {@link RequestScopeBinder#noop()} this collapses to a direct
-     * {@link #dispatch(HttpExchange)} call (zero overhead). With a resolving binder it wraps the
-     * dispatch in {@code ExerisRequestScope.runWith(...)}.
+     * Re-bind any unbound kernel provider slots via the configured {@link KernelProviderBinder},
+     * then bind the Phase 3B-α request scope via the configured {@link RequestScopeBinder}, then
+     * dispatch. With the default {@link KernelProviderBinder#noop()} / {@link RequestScopeBinder#noop()}
+     * this collapses to a direct {@link #dispatch(HttpExchange, ExerisServerRequest)} call (zero
+     * overhead). With a capturing provider binder it wraps the dispatch so the persistence engine
+     * and memory allocator are visible to handler code that reads them via {@code ScopedValue}.
      */
     private void dispatchWithScope(HttpExchange exchange) {
-        var kernelRequest = exchange.request();
-        var request = new ExerisServerRequest(kernelRequest);
-        scopeBinder.bind(request, () -> dispatch(exchange, request));
+        kernelProviderBinder.bind(() -> {
+            var kernelRequest = exchange.request();
+            var request = new ExerisServerRequest(kernelRequest);
+            scopeBinder.bind(request, () -> dispatch(exchange, request));
+        });
     }
 
     private List<TelemetrySink> resolveFallbackSinks() {
@@ -160,6 +184,13 @@ public final class ExerisHttpDispatcher implements HttpHandler {
         } catch (HttpException ex) {
             exchange.respond(errorMapper.map(ex, version));
         } catch (Exception ex) {
+            // ExerisErrorMapper.mapUnhandled() intentionally returns a body-less 500; the cause
+            // must be logged HERE or it is lost (JdbcTemplate/DataAccess exceptions are not logged
+            // by any other layer, unlike Hibernate's SqlExceptionHelper). Without this, a failing
+            // request surfaces only as a silent 500.
+            LOGGER.log(System.Logger.Level.ERROR,
+                    () -> "Unhandled exception during Exeris dispatch of "
+                            + request.method() + " " + request.path() + " — mapped to 500", ex);
             exchange.respond(errorMapper.mapUnhandled(ex, version));
         }
     }
