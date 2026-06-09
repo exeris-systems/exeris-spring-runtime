@@ -202,7 +202,13 @@ class ExerisCompatAutoConfigurationTest {
 
         @Bean
         org.springframework.core.convert.converter.Converter<String, Integer> unrelatedConverter() {
-            return Integer::valueOf;
+            return value -> {
+                try {
+                    return Integer.valueOf(value);
+                } catch (NumberFormatException ex) {
+                    throw new IllegalArgumentException("Not an integer: " + value, ex);
+                }
+            };
         }
     }
 }
