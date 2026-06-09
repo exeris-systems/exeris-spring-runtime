@@ -28,7 +28,7 @@ on:
 # Cancel superseded runs on the same ref (newer push to a PR branch wins).
 # Never cancel main builds.
 concurrency:
-  group: build-${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
