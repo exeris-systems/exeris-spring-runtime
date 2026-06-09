@@ -6,6 +6,7 @@
  */
 package eu.exeris.spring.runtime.data.compat;
 
+import jdk.jfr.EventType;
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingFile;
@@ -23,9 +24,11 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * Coverage for the JFR observability events emitted by the JDBC compat bridge
  * ({@link JpaConnectionAcquiredEvent}, {@link JpaConnectionBoundEvent}; ADR-017 §6.4).
  *
- * <p>Each test exercises both branches of {@code emit()}: the JFR-disabled early return
- * (no active recording) and the enabled commit path (an active recording with the event
- * enabled), asserting the committed event is present in the recording stream.
+ * <p>Each test exercises both paths of {@code emit()}: the no-recording case (default test
+ * JVM — {@code isEnabled()} is false, so {@code emit()} early-returns; asserted as no-throw)
+ * and the enabled commit path (an active recording with the event enabled), asserting the
+ * committed event is present in the recording stream. Test execution is sequential, so the
+ * no-recording case is not perturbed by the recording opened in the enabled case.
  */
 class JpaConnectionEventsTest {
 
@@ -34,7 +37,7 @@ class JpaConnectionEventsTest {
 
     @Test
     void acquiredEvent_disabledThenEnabled() throws IOException {
-        // disabled path — no active recording, isEnabled() == false → early return
+        // no-recording path: isEnabled() false → emit() early-returns (asserted no-throw)
         assertThatCode(JpaConnectionAcquiredEvent::emit).doesNotThrowAnyException();
         // enabled path — committed event must appear in the recording
         assertThat(recordEmit(ACQUIRED, JpaConnectionAcquiredEvent::emit)).contains(ACQUIRED);
@@ -58,7 +61,7 @@ class JpaConnectionEventsTest {
             recording.dump(dump);
             return RecordingFile.readAllEvents(dump).stream()
                     .map(RecordedEvent::getEventType)
-                    .map(t -> t.getName())
+                    .map(EventType::getName)
                     .toList();
         } finally {
             Files.deleteIfExists(dump);

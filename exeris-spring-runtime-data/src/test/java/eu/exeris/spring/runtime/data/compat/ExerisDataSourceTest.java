@@ -41,6 +41,9 @@ class ExerisDataSourceTest {
             assertThat(dataSource.getConnection()).isSameAs(bound);
         } finally {
             TransactionSynchronizationManager.unbindResourceIfPossible(dataSource);
+            // Deterministic cleanup. close() is a no-op here (transactionActive=true), but
+            // asserting no-throw keeps intent explicit and quiets resource-leak analysis.
+            assertThatCode(bound::close).doesNotThrowAnyException();
         }
     }
 

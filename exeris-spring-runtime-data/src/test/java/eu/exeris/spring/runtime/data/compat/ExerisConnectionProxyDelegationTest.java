@@ -78,7 +78,7 @@ class ExerisConnectionProxyDelegationTest {
     }
 
     @Test
-    void commit_inTx_doesNotTouchRawConnection() throws SQLException {
+    void commitAndRollback_inTx_doNotTouchRawConnection() throws SQLException {
         proxy(true).commit();
         proxy(true).rollback();
         verifyNoInteractions(raw);
@@ -105,60 +105,62 @@ class ExerisConnectionProxyDelegationTest {
         ExerisConnectionProxy p = proxy(false);
         Executor executor = Runnable::run;
         Savepoint sp = mock(Savepoint.class);
+        // Shared references for array/Properties args — verify(...) matches by reference, so the
+        // call and the verification must use the same instance.
+        int[] colIndexes = {1};
+        String[] colNames = {"id"};
+        Properties clientProps = new Properties();
+        Object[] arrayElems = {1};
+        Object[] structAttrs = {1};
 
-        p.createStatement();
-        p.prepareStatement("SELECT 1");
-        p.prepareCall("{call f()}");
-        p.nativeSQL("SELECT 1");
-        p.getAutoCommit();
-        p.getMetaData();
-        p.setReadOnly(true);
-        p.isReadOnly();
-        p.setCatalog("c");
-        p.getCatalog();
-        p.getTransactionIsolation();
-        p.getWarnings();
-        p.clearWarnings();
-        p.createStatement(ResultSet_TYPE, ResultSet_CONCUR);
-        p.prepareStatement("s", ResultSet_TYPE, ResultSet_CONCUR);
-        p.prepareCall("c", ResultSet_TYPE, ResultSet_CONCUR);
-        p.getTypeMap();
-        p.setTypeMap(Map.of());
-        p.setHoldability(1);
-        p.getHoldability();
-        p.setSavepoint();
-        p.setSavepoint("sp");
-        p.releaseSavepoint(sp);
-        p.createStatement(ResultSet_TYPE, ResultSet_CONCUR, 1);
-        p.prepareStatement("s", ResultSet_TYPE, ResultSet_CONCUR, 1);
-        p.prepareCall("c", ResultSet_TYPE, ResultSet_CONCUR, 1);
-        p.prepareStatement("s", java.sql.Statement.RETURN_GENERATED_KEYS);
-        p.prepareStatement("s", new int[] {1});
-        p.prepareStatement("s", new String[] {"id"});
-        p.createClob();
-        p.createBlob();
-        p.createNClob();
-        p.createSQLXML();
-        p.isValid(1);
-        p.setClientInfo("k", "v");
-        p.setClientInfo(new Properties());
-        p.getClientInfo("k");
-        p.getClientInfo();
-        p.createArrayOf("int", new Object[] {1});
-        p.createStruct("t", new Object[] {1});
-        p.setSchema("s");
-        p.getSchema();
-        p.abort(executor);
-        p.setNetworkTimeout(executor, 1000);
-        p.getNetworkTimeout();
-
-        // Spot-check a representative subset reached the raw connection.
-        verify(raw).createStatement();
-        verify(raw).getMetaData();
-        verify(raw).setReadOnly(true);
-        verify(raw).setSchema("s");
-        verify(raw).abort(executor);
-        verify(raw).getNetworkTimeout();
+        // Every call below is followed by a verify(...) so a regression in any single
+        // delegation (not just a representative subset) fails the test, not merely a
+        // "method threw" check.
+        p.createStatement();                                          verify(raw).createStatement();
+        p.prepareStatement("SELECT 1");                              verify(raw).prepareStatement("SELECT 1");
+        p.prepareCall("{call f()}");                                 verify(raw).prepareCall("{call f()}");
+        p.nativeSQL("SELECT 1");                                     verify(raw).nativeSQL("SELECT 1");
+        p.getAutoCommit();                                           verify(raw).getAutoCommit();
+        p.getMetaData();                                             verify(raw).getMetaData();
+        p.setReadOnly(true);                                         verify(raw).setReadOnly(true);
+        p.isReadOnly();                                              verify(raw).isReadOnly();
+        p.setCatalog("c");                                           verify(raw).setCatalog("c");
+        p.getCatalog();                                              verify(raw).getCatalog();
+        p.getTransactionIsolation();                                 verify(raw).getTransactionIsolation();
+        p.getWarnings();                                             verify(raw).getWarnings();
+        p.clearWarnings();                                           verify(raw).clearWarnings();
+        p.createStatement(ResultSet_TYPE, ResultSet_CONCUR);         verify(raw).createStatement(ResultSet_TYPE, ResultSet_CONCUR);
+        p.prepareStatement("s", ResultSet_TYPE, ResultSet_CONCUR);   verify(raw).prepareStatement("s", ResultSet_TYPE, ResultSet_CONCUR);
+        p.prepareCall("c", ResultSet_TYPE, ResultSet_CONCUR);        verify(raw).prepareCall("c", ResultSet_TYPE, ResultSet_CONCUR);
+        p.getTypeMap();                                              verify(raw).getTypeMap();
+        p.setTypeMap(Map.of());                                      verify(raw).setTypeMap(Map.of());
+        p.setHoldability(1);                                         verify(raw).setHoldability(1);
+        p.getHoldability();                                          verify(raw).getHoldability();
+        p.setSavepoint();                                            verify(raw).setSavepoint();
+        p.setSavepoint("sp");                                        verify(raw).setSavepoint("sp");
+        p.releaseSavepoint(sp);                                      verify(raw).releaseSavepoint(sp);
+        p.createStatement(ResultSet_TYPE, ResultSet_CONCUR, 1);      verify(raw).createStatement(ResultSet_TYPE, ResultSet_CONCUR, 1);
+        p.prepareStatement("s", ResultSet_TYPE, ResultSet_CONCUR, 1); verify(raw).prepareStatement("s", ResultSet_TYPE, ResultSet_CONCUR, 1);
+        p.prepareCall("c", ResultSet_TYPE, ResultSet_CONCUR, 1);     verify(raw).prepareCall("c", ResultSet_TYPE, ResultSet_CONCUR, 1);
+        p.prepareStatement("s", java.sql.Statement.RETURN_GENERATED_KEYS); verify(raw).prepareStatement("s", java.sql.Statement.RETURN_GENERATED_KEYS);
+        p.prepareStatement("s", colIndexes);                         verify(raw).prepareStatement("s", colIndexes);
+        p.prepareStatement("s", colNames);                           verify(raw).prepareStatement("s", colNames);
+        p.createClob();                                              verify(raw).createClob();
+        p.createBlob();                                              verify(raw).createBlob();
+        p.createNClob();                                             verify(raw).createNClob();
+        p.createSQLXML();                                            verify(raw).createSQLXML();
+        p.isValid(1);                                                verify(raw).isValid(1);
+        p.setClientInfo("k", "v");                                   verify(raw).setClientInfo("k", "v");
+        p.setClientInfo(clientProps);                                verify(raw).setClientInfo(clientProps);
+        p.getClientInfo("k");                                        verify(raw).getClientInfo("k");
+        p.getClientInfo();                                           verify(raw).getClientInfo();
+        p.createArrayOf("int", arrayElems);                          verify(raw).createArrayOf("int", arrayElems);
+        p.createStruct("t", structAttrs);                            verify(raw).createStruct("t", structAttrs);
+        p.setSchema("s");                                            verify(raw).setSchema("s");
+        p.getSchema();                                               verify(raw).getSchema();
+        p.abort(executor);                                           verify(raw).abort(executor);
+        p.setNetworkTimeout(executor, 1000);                         verify(raw).setNetworkTimeout(executor, 1000);
+        p.getNetworkTimeout();                                       verify(raw).getNetworkTimeout();
     }
 
     private static final int ResultSet_TYPE = java.sql.ResultSet.TYPE_FORWARD_ONLY;
