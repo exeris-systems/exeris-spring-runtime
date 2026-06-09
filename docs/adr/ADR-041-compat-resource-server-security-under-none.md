@@ -2,7 +2,7 @@
 
 | Attribute       | Value                                                                                                                                                                                                                 |
 |:----------------|:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Status**      | **ACCEPTED** (drafted and accepted 2026-06-09; single decider — no future gating event; ratified by the PR that introduces this file; convention documented in `CLAUDE.md` §"ADR status convention in this repo")     |
+| **Status**      | **ACCEPTED**                                                                                                                                                                                                         |
 | **Deciders**    | Arkadiusz Przychocki                                                                                                                                                                                                 |
 | **Date**        | 2026-06-09                                                                                                                                                                                                           |
 | **Scope**       | spring/web compat security (adds a compatibility `JwtDecoder` bean; no kernel SPI changes; Compatibility Mode only)                                                                                                  |
