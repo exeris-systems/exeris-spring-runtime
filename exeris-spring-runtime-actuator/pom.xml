@@ -34,6 +34,12 @@
         See docs/architecture/module-boundaries.md.
     </description>
 
+    <properties>
+        <!-- Coverage ratchet floor (enforced only under -Pcoverage). Measured LINE 94.4% —
+             already past the ~0.85 1.0 GA target; floor guards against regression. -->
+        <jacoco.line.minimum>0.93</jacoco.line.minimum>
+    </properties>
+
     <dependencies>
 
         <!-- Kernel SPI — TelemetryProvider, TelemetrySink, KernelProviders,

@@ -35,6 +35,13 @@
         See docs/adr/ADR-001-host-runtime-model.md sections 4.2 and 4.3.
     </description>
 
+    <properties>
+        <!-- Coverage ratchet floor (enforced only under -Pcoverage). Measured LINE 36.1% —
+             the largest gap to the ~0.85 1.0 GA target (compat JDBC bridge, thinly tested).
+             Priority for test-writing before GA; ratchet this up as coverage improves. -->
+        <jacoco.line.minimum>0.35</jacoco.line.minimum>
+    </properties>
+
     <dependencies>
 
         <!-- Kernel SPI — PersistenceProvider, PersistenceEngine, ConnectionFactory,
