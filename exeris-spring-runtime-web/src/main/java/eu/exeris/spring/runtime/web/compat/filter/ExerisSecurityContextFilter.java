@@ -7,6 +7,8 @@
 package eu.exeris.spring.runtime.web.compat.filter;
 
 import eu.exeris.kernel.spi.http.HttpRequest;
+import org.springframework.core.convert.converter.Converter;
+import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
@@ -30,6 +32,12 @@ import java.util.Objects;
  * <p>Active only in Compatibility Mode when {@code spring-security-oauth2-resource-server}
  * is on the classpath. Conditional on absence of a {@code SecurityFilterChain} bean
  * (if a full Spring Security configuration is provided, this filter must not activate).
+ *
+ * <p>Token-to-{@link Authentication} conversion honours an application-supplied
+ * {@code Converter<Jwt, ? extends AbstractAuthenticationToken>} (or
+ * {@link JwtAuthenticationConverter}) bean when one is registered, falling back to a default
+ * {@link JwtAuthenticationConverter} otherwise — so custom claim-to-authority mapping survives
+ * a brownfield migration onto the Exeris-hosted compat path.
  *
  * <h2>Lifetime Contract</h2>
  * <p>Called exactly once per request: {@link #populateContext(HttpRequest)} before dispatch,
@@ -56,11 +64,30 @@ public final class ExerisSecurityContextFilter {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtDecoder jwtDecoder;
-    private final JwtAuthenticationConverter jwtAuthenticationConverter;
+    private final Converter<Jwt, ? extends AbstractAuthenticationToken> jwtAuthenticationConverter;
 
+    /**
+     * Creates a filter with the default {@link JwtAuthenticationConverter} (scope-based
+     * authorities only). Retained for backward compatibility; prefer the converter-aware
+     * constructor so an application's custom claim-to-authority mapping is honoured.
+     */
     public ExerisSecurityContextFilter(JwtDecoder jwtDecoder) {
+        this(jwtDecoder, new JwtAuthenticationConverter());
+    }
+
+    /**
+     * Creates a filter that converts decoded tokens with the supplied converter — typically
+     * an application-registered {@code Converter<Jwt, ? extends AbstractAuthenticationToken>}
+     * or {@link JwtAuthenticationConverter} bean (e.g. mapping {@code realm_access.roles} or a
+     * custom authority prefix). Mirrors how Spring Security's resource server honours a
+     * user-supplied JWT authentication converter.
+     */
+    public ExerisSecurityContextFilter(
+            JwtDecoder jwtDecoder,
+            Converter<Jwt, ? extends AbstractAuthenticationToken> jwtAuthenticationConverter) {
         this.jwtDecoder = Objects.requireNonNull(jwtDecoder, "jwtDecoder must not be null");
-        this.jwtAuthenticationConverter = new JwtAuthenticationConverter();
+        this.jwtAuthenticationConverter =
+                Objects.requireNonNull(jwtAuthenticationConverter, "jwtAuthenticationConverter must not be null");
     }
 
     /**

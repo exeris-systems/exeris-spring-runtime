@@ -7,11 +7,14 @@
 package eu.exeris.spring.runtime.web.autoconfigure;
 
 import java.lang.reflect.Field;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
@@ -22,7 +25,10 @@ import org.springframework.core.env.MapPropertySource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.core.type.AnnotationMetadata;
 
+import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpMethod;
+import eu.exeris.kernel.spi.http.HttpRequest;
+import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
 import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeProperties;
 import eu.exeris.spring.runtime.web.ExerisHttpDispatcher;
@@ -65,6 +71,40 @@ class ExerisCompatAutoConfigurationTest {
 
             assertThat(matches).isFalse();
         }
+    }
+
+    @Test
+    void securityFilter_honoursUserSuppliedJwtConverter_andIgnoresUnrelatedConverters() {
+        try (var context = new AnnotationConfigApplicationContext()) {
+            // Register the user beans first so @ConditionalOnBean(JwtDecoder) sees the decoder,
+            // then the security wiring. Isolated to SecurityFilterConfiguration to avoid pulling
+            // in the full compat dispatcher graph.
+            context.register(SecurityWiringConfig.class,
+                    ExerisCompatAutoConfiguration.SecurityFilterConfiguration.class);
+            context.refresh();
+
+            ExerisSecurityContextFilter filter = context.getBean(ExerisSecurityContextFilter.class);
+            try {
+                // Drive the wired filter rather than reflecting its private field: the custom
+                // Converter<Jwt, ? extends AbstractAuthenticationToken> bean maps to ROLE_CUSTOM,
+                // whereas the scope-only default would yield SCOPE_read and the unrelated
+                // Converter<String, Integer> bean must not be mistaken for the JWT converter.
+                filter.populateContext(bearerRequest("any-token"));
+
+                Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+                assertThat(auth).isNotNull();
+                assertThat(auth.getAuthorities())
+                        .extracting(Object::toString)
+                        .containsExactly("ROLE_CUSTOM");
+            } finally {
+                SecurityContextHolder.clearContext();
+            }
+        }
+    }
+
+    private static HttpRequest bearerRequest(String token) {
+        return HttpRequest.noBody(HttpMethod.GET, "/test", HttpVersion.HTTP_1_1,
+                List.of(new HttpHeader("Authorization", "Bearer " + token)));
     }
 
     @SuppressWarnings("null")
@@ -148,6 +188,45 @@ class ExerisCompatAutoConfigurationTest {
         @Override
         public ExerisServerResponse handle(ExerisServerRequest request) {
             return ExerisServerResponse.ok().body("hello");
+        }
+    }
+
+    /**
+     * Mirrors a brownfield app on the compat path: a {@code JwtDecoder} bean (Spring's own
+     * auto-config is web-application-gated and absent under {@code web-application-type=none}),
+     * a custom {@code Converter<Jwt, ? extends AbstractAuthenticationToken>} for authority mapping,
+     * and an unrelated {@code Converter<String, Integer>} that must not be mistaken for the former.
+     */
+    @Configuration
+    static class SecurityWiringConfig {
+
+        @Bean
+        org.springframework.security.oauth2.jwt.JwtDecoder jwtDecoder() {
+            return token -> org.springframework.security.oauth2.jwt.Jwt.withTokenValue(token)
+                    .header("alg", "none")
+                    .subject("user-1")
+                    .claim("scope", "read")
+                    .build();
+        }
+
+        @Bean
+        org.springframework.core.convert.converter.Converter<
+                org.springframework.security.oauth2.jwt.Jwt,
+                ? extends org.springframework.security.authentication.AbstractAuthenticationToken> customJwtConverter() {
+            return jwt -> new org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken(
+                    jwt,
+                    java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_CUSTOM")));
+        }
+
+        @Bean
+        org.springframework.core.convert.converter.Converter<String, Integer> unrelatedConverter() {
+            return value -> {
+                try {
+                    return Integer.valueOf(value);
+                } catch (NumberFormatException ex) {
+                    throw new IllegalArgumentException("Not an integer: " + value, ex);
+                }
+            };
         }
     }
 }

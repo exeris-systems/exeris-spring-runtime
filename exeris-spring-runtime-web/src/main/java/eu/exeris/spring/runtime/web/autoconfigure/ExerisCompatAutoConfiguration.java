@@ -211,8 +211,23 @@ public class ExerisCompatAutoConfiguration {
         @ConditionalOnMissingBean(ExerisSecurityContextFilter.class)
         @Conditional(NoSecurityFilterChainCondition.class)
         public ExerisSecurityContextFilter exerisSecurityContextFilter(
-                org.springframework.security.oauth2.jwt.JwtDecoder jwtDecoder) {
-            return new ExerisSecurityContextFilter(jwtDecoder);
+                org.springframework.security.oauth2.jwt.JwtDecoder jwtDecoder,
+                ObjectProvider<org.springframework.core.convert.converter.Converter<
+                        org.springframework.security.oauth2.jwt.Jwt,
+                        ? extends org.springframework.security.authentication.AbstractAuthenticationToken>>
+                        jwtAuthenticationConverter) {
+            // Honour an application-registered Converter<Jwt, ? extends AbstractAuthenticationToken>
+            // (e.g. a JwtAuthenticationConverter mapping realm_access.roles or a custom prefix);
+            // fall back to the scope-only default when none is present. Same compat pattern as the
+            // other "honour the user bean, don't hardcode the default" wirings in this module.
+            // If a brownfield app registers TWO such converter beans, getIfAvailable(Supplier)
+            // throws NoUniqueBeanDefinitionException at start-up — intentional fail-fast: the
+            // authority mapping is ambiguous and the app must mark one @Primary (mirrors how
+            // Spring Security's own resource server resolves the converter).
+            return new ExerisSecurityContextFilter(
+                    jwtDecoder,
+                    jwtAuthenticationConverter.getIfAvailable(
+                            org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter::new));
         }
 
         /**
