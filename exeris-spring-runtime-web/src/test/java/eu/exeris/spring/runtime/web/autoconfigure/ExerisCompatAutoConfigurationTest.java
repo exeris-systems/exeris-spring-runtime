@@ -7,11 +7,14 @@
 package eu.exeris.spring.runtime.web.autoconfigure;
 
 import java.lang.reflect.Field;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
@@ -22,7 +25,10 @@ import org.springframework.core.env.MapPropertySource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.core.type.AnnotationMetadata;
 
+import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpMethod;
+import eu.exeris.kernel.spi.http.HttpRequest;
+import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
 import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeProperties;
 import eu.exeris.spring.runtime.web.ExerisHttpDispatcher;
@@ -68,7 +74,7 @@ class ExerisCompatAutoConfigurationTest {
     }
 
     @Test
-    void securityFilter_honoursUserSuppliedJwtConverter_andIgnoresUnrelatedConverters() throws Exception {
+    void securityFilter_honoursUserSuppliedJwtConverter_andIgnoresUnrelatedConverters() {
         try (var context = new AnnotationConfigApplicationContext()) {
             // Register the user beans first so @ConditionalOnBean(JwtDecoder) sees the decoder,
             // then the security wiring. Isolated to SecurityFilterConfiguration to avoid pulling
@@ -78,15 +84,27 @@ class ExerisCompatAutoConfigurationTest {
             context.refresh();
 
             ExerisSecurityContextFilter filter = context.getBean(ExerisSecurityContextFilter.class);
+            try {
+                // Drive the wired filter rather than reflecting its private field: the custom
+                // Converter<Jwt, ? extends AbstractAuthenticationToken> bean maps to ROLE_CUSTOM,
+                // whereas the scope-only default would yield SCOPE_read and the unrelated
+                // Converter<String, Integer> bean must not be mistaken for the JWT converter.
+                filter.populateContext(bearerRequest("any-token"));
 
-            Field converterField = ExerisSecurityContextFilter.class.getDeclaredField("jwtAuthenticationConverter");
-            converterField.setAccessible(true);
-            Object wiredConverter = converterField.get(filter);
-
-            // The custom Converter<Jwt, ? extends AbstractAuthenticationToken> bean must win;
-            // the unrelated Converter<String, Integer> bean must not be mistaken for it.
-            assertThat(wiredConverter).isSameAs(context.getBean("customJwtConverter"));
+                Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+                assertThat(auth).isNotNull();
+                assertThat(auth.getAuthorities())
+                        .extracting(Object::toString)
+                        .containsExactly("ROLE_CUSTOM");
+            } finally {
+                SecurityContextHolder.clearContext();
+            }
         }
+    }
+
+    private static HttpRequest bearerRequest(String token) {
+        return HttpRequest.noBody(HttpMethod.GET, "/test", HttpVersion.HTTP_1_1,
+                List.of(new HttpHeader("Authorization", "Bearer " + token)));
     }
 
     @SuppressWarnings("null")

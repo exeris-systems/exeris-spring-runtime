@@ -220,6 +220,10 @@ public class ExerisCompatAutoConfiguration {
             // (e.g. a JwtAuthenticationConverter mapping realm_access.roles or a custom prefix);
             // fall back to the scope-only default when none is present. Same compat pattern as the
             // other "honour the user bean, don't hardcode the default" wirings in this module.
+            // If a brownfield app registers TWO such converter beans, getIfAvailable(Supplier)
+            // throws NoUniqueBeanDefinitionException at start-up — intentional fail-fast: the
+            // authority mapping is ambiguous and the app must mark one @Primary (mirrors how
+            // Spring Security's own resource server resolves the converter).
             return new ExerisSecurityContextFilter(
                     jwtDecoder,
                     jwtAuthenticationConverter.getIfAvailable(
