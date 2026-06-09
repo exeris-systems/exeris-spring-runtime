@@ -51,7 +51,11 @@
         <maven.compiler.release>26</maven.compiler.release>
 
         <!-- Dependency versions -->
-        <exeris.kernel.version>0.8.1-SNAPSHOT</exeris.kernel.version>
+        <!-- Pinned to the released 0.8.1 (clean, not -SNAPSHOT): the datasource SPI-unwrap
+             bridge requires kernel >= 0.8.1, and 0.8.1-SNAPSHOT was never published to
+             GitHub Packages (the kernel went straight to the 0.8.1 release), so a -SNAPSHOT
+             reference fails to resolve (401/absent) in CI. -->
+        <exeris.kernel.version>0.8.1</exeris.kernel.version>
         <!-- Spring Boot 3.5.14 ships fixes for SNYK-JAVA-ORGSPRINGFRAMEWORKBOOT-16191649
              (CWE-338 Weak PRNG, CVE-2026-40975), -16198880 (CWE-377 Insecure Temp File,
              CVE-2026-40973), -16201011 (CWE-59 Symlink Attack, CVE-2026-40977),
