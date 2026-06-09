@@ -38,6 +38,12 @@
         See docs/architecture/kernel-integration-seams.md for the exact SPI seams.
     </description>
 
+    <properties>
+        <!-- Coverage ratchet floor (enforced only under -Pcoverage). Measured LINE 80.1%.
+             1.0 GA target is ~0.85 per module — ratchet this up as coverage improves. -->
+        <jacoco.line.minimum>0.79</jacoco.line.minimum>
+    </properties>
+
     <dependencies>
 
         <!-- Kernel SPI — HttpHandler, HttpExchange, HttpRequest, HttpResponse,

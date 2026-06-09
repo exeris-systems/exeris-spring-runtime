@@ -65,6 +65,12 @@
         See docs/phases/phase-4-events-flow.md (Section 4B) for the full delivery plan.
     </description>
 
+    <properties>
+        <!-- Coverage ratchet floor (enforced only under -Pcoverage). Measured LINE 98.4% —
+             already past the ~0.85 1.0 GA target; floor guards against regression. -->
+        <jacoco.line.minimum>0.97</jacoco.line.minimum>
+    </properties>
+
     <dependencies>
 
         <!-- Kernel SPI — FlowEngine, FlowScheduler, FlowDefinitionBuilder,

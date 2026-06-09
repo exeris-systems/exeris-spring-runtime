@@ -35,6 +35,12 @@
         See docs/phases/phase-3-tx-persistence.md for the full delivery plan.
     </description>
 
+    <properties>
+        <!-- Coverage ratchet floor (enforced only under -Pcoverage). Measured LINE 73.5%.
+             1.0 GA target is ~0.85 per module — ratchet this up as coverage improves. -->
+        <jacoco.line.minimum>0.72</jacoco.line.minimum>
+    </properties>
+
     <dependencies>
 
         <!-- Kernel SPI — PersistenceProvider, PersistenceConnection, StorageContext -->

@@ -9,6 +9,11 @@ name: build
 # that breaks The Wall, a module boundary, pure-mode classpath purity, or compat
 # isolation fails here instead of on main.
 #
+# -Pcoverage additionally attaches the JaCoCo agent and enforces a per-module LINE
+# coverage floor (each module's ${jacoco.line.minimum}). The floors are a ratchet
+# toward the ~0.85 1.0-GA target — a PR that drops a module below its floor fails
+# here. Mirrors the exeris-kernel coverage profile.
+#
 # No paths-ignore filter: a quality gate intended for branch protection must always
 # report a conclusion. Skipping via paths-ignore leaves a required check "pending"
 # forever and blocks otherwise-mergeable PRs (e.g. docs-only changes).
@@ -64,9 +69,10 @@ jobs:
             exit 1
           fi
 
-      - name: Build, test & architecture guards (mvn verify)
+      - name: Build, test, architecture guards & coverage gate (mvn verify)
         run: >
           mvn -B -ntp -s .github/maven-settings.xml
+          -Pcoverage
           clean verify
 
       - name: Upload Surefire/Failsafe reports on failure

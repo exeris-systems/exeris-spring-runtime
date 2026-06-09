@@ -57,6 +57,12 @@
         in CI (kernel Sprint 7).
     </description>
 
+    <properties>
+        <!-- Coverage ratchet floor (enforced only under -Pcoverage). Measured LINE 97.9% —
+             already past the ~0.85 1.0 GA target; floor guards against regression. -->
+        <jacoco.line.minimum>0.97</jacoco.line.minimum>
+    </properties>
+
     <dependencies>
 
         <!-- Kernel SPI — GraphEngine, GraphSession, GraphTraversal, GraphProvider,
