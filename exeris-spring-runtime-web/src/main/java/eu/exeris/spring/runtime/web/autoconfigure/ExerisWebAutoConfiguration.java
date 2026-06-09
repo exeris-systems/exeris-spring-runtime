@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
@@ -26,12 +27,14 @@ import org.springframework.context.annotation.Bean;
 import eu.exeris.kernel.spi.telemetry.TelemetryConfig;
 import eu.exeris.kernel.spi.telemetry.TelemetryProvider;
 import eu.exeris.kernel.spi.telemetry.TelemetrySink;
+import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
 import eu.exeris.spring.runtime.web.ExerisErrorMapper;
 import eu.exeris.spring.runtime.web.ExerisHttpDispatcher;
 import eu.exeris.spring.runtime.web.ExerisRequestHandler;
 import eu.exeris.spring.runtime.web.ExerisRoute;
 import eu.exeris.spring.runtime.web.ExerisRouteRegistry;
 import eu.exeris.spring.runtime.web.scope.ExerisContextScopeProperties;
+import eu.exeris.spring.runtime.web.scope.KernelProviderBinder;
 import eu.exeris.spring.runtime.web.scope.RequestScopeBinder;
 import eu.exeris.spring.runtime.web.scope.RequestScopeResolver;
 
@@ -113,6 +116,32 @@ public class ExerisWebAutoConfiguration {
         return RequestScopeBinder.resolving(resolver);
     }
 
+    /**
+     * Builds the {@link KernelProviderBinder} the dispatcher uses to re-bind kernel provider
+     * {@code ScopedValue} slots (persistence engine, memory allocator) onto the request handler
+     * thread. The externally-supplied {@code HttpHandler} runs on the transport carrier thread,
+     * which does not inherit the kernel bootstrap scope, so the captured references held by
+     * {@link ExerisRuntimeLifecycle} are re-bound per request (only when currently unbound).
+     *
+     * <p>The {@link ExerisRuntimeLifecycle} bean is resolved <em>lazily</em>, per request, via the
+     * {@link ObjectProvider} — NOT at bean construction. Eager resolution here would create a
+     * construction-time cycle: {@code ExerisRuntimeLifecycle} depends on the {@code HttpHandler}
+     * (dispatcher), which depends on this binder. Deferring the lookup to request time (when the
+     * lifecycle singleton is fully built and has captured its engines) breaks that cycle. When no
+     * lifecycle is present (web-slice tests) the suppliers yield empty and the binder is a
+     * zero-cost pass-through.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @SuppressWarnings("unused")
+    KernelProviderBinder exerisKernelProviderBinder(ObjectProvider<ExerisRuntimeLifecycle> lifecycleProvider) {
+        return KernelProviderBinder.capturing(
+                () -> Optional.ofNullable(lifecycleProvider.getIfAvailable())
+                        .flatMap(ExerisRuntimeLifecycle::getPersistenceEngine),
+                () -> Optional.ofNullable(lifecycleProvider.getIfAvailable())
+                        .flatMap(ExerisRuntimeLifecycle::getMemoryAllocator));
+    }
+
     @Bean
     @ConditionalOnMissingBean
     @SuppressWarnings("unused")
@@ -120,8 +149,10 @@ public class ExerisWebAutoConfiguration {
                                                ExerisErrorMapper errorMapper,
                                                @Qualifier(FALLBACK_TELEMETRY_SINKS_BEAN_NAME)
                                                Supplier<List<TelemetrySink>> fallbackTelemetrySinks,
-                                               RequestScopeBinder scopeBinder) {
-        return new ExerisHttpDispatcher(routeRegistry, errorMapper, fallbackTelemetrySinks, scopeBinder);
+                                               RequestScopeBinder scopeBinder,
+                                               KernelProviderBinder kernelProviderBinder) {
+        return new ExerisHttpDispatcher(
+                routeRegistry, errorMapper, fallbackTelemetrySinks, scopeBinder, kernelProviderBinder);
     }
 
     /**

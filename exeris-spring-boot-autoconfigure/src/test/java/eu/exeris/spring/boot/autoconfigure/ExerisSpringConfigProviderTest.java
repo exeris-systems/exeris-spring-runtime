@@ -232,4 +232,150 @@ class ExerisSpringConfigProviderTest {
         assertThat(provider.getBoolean("flow.persistenceEnabled")).isEmpty();
         assertThat(provider.get("flow.persistenceEnabled", Boolean.class)).isEmpty();
     }
+
+    // ===========================================================================
+    // persistenceKernelKeyAlias — pool min-idle / warmup plumbing
+    //
+    // The kernel's CommunityPersistenceConfigResolver asks this provider for raw
+    // keys (persistence.minIdleConnections, persistence.pool.warmup.*, ...). The
+    // typed PersistenceSettings bridge record only carries maxPoolSize, so without
+    // these aliases min-idle / warmup can never reach the shared pool and it starts
+    // cold (connectionExhausted bursts at startup). These tests assert the raw
+    // kernel keys resolve to the exeris.runtime.persistence.* Spring surface.
+    // ===========================================================================
+
+    @Test
+    void persistenceAlias_minIdleResolvesFromSpringProperty() {
+        MockEnvironment env = new MockEnvironment()
+                .withProperty("exeris.runtime.persistence.min-pool-size", "16");
+
+        ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider(env);
+
+        // Kernel asks for `persistence.minIdleConnections`; alias maps it onto the
+        // Spring `exeris.runtime.persistence.min-pool-size` property.
+        assertThat(provider.getInt("persistence.minIdleConnections")).contains(16);
+    }
+
+    @Test
+    void persistenceAlias_minIdlePoolMinSizeAliasResolves() {
+        MockEnvironment env = new MockEnvironment()
+                .withProperty("exeris.runtime.persistence.min-pool-size", "16");
+
+        ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider(env);
+
+        // The kernel's secondary key for the same setting.
+        assertThat(provider.getInt("persistence.pool.minSize")).contains(16);
+    }
+
+    @Test
+    void persistenceAlias_warmupEnabledResolvesAsBoolean() {
+        MockEnvironment env = new MockEnvironment()
+                .withProperty("exeris.runtime.persistence.pool-warmup-enabled", "true");
+
+        ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider(env);
+
+        assertThat(provider.getBoolean("persistence.pool.warmup.enabled")).contains(true);
+        // Bare-aliased form the kernel also queries.
+        assertThat(provider.getBoolean("pool.warmup.enabled")).contains(true);
+    }
+
+    @Test
+    void persistenceAlias_warmupConnectionsResolvesAsInt() {
+        MockEnvironment env = new MockEnvironment()
+                .withProperty("exeris.runtime.persistence.pool-warmup-connections", "8");
+
+        ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider(env);
+
+        assertThat(provider.getInt("persistence.pool.warmup.connections")).contains(8);
+        assertThat(provider.getInt("pool.warmup.connections")).contains(8);
+    }
+
+    @Test
+    void persistenceAlias_appliesToTypedGet() {
+        MockEnvironment env = new MockEnvironment()
+                .withProperty("exeris.runtime.persistence.min-pool-size", "12")
+                .withProperty("exeris.runtime.persistence.pool-warmup-enabled", "true");
+
+        ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider(env);
+
+        assertThat(provider.get("persistence.minIdleConnections", Integer.class)).contains(12);
+        assertThat(provider.get("persistence.pool.warmup.enabled", Boolean.class)).contains(true);
+    }
+
+    @Test
+    void persistenceAlias_directLiteralLookupBeatsAlias() {
+        MockEnvironment env = new MockEnvironment()
+                .withProperty("persistence.minIdleConnections", "4")
+                .withProperty("exeris.runtime.persistence.min-pool-size", "16");
+
+        ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider(env);
+
+        // A literal kernel-namespace property, if ever set, wins over the alias.
+        assertThat(provider.getInt("persistence.minIdleConnections")).contains(4);
+    }
+
+    @Test
+    void persistenceAlias_returnsEmptyForNonPersistenceKey() {
+        MockEnvironment env = new MockEnvironment()
+                .withProperty("exeris.runtime.persistence.min-pool-size", "16");
+
+        ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider(env);
+
+        // Unrelated kernel key must not engage the persistence alias.
+        assertThat(provider.getInt("persistence.maxTenantPools")).isEmpty();
+    }
+
+    @Test
+    void persistenceAlias_returnsEmptyWhenSpringPropertyUnset() {
+        MockEnvironment env = new MockEnvironment();
+
+        ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider(env);
+
+        // No min-pool-size configured → kernel falls back to its own default.
+        assertThat(provider.getInt("persistence.minIdleConnections")).isEmpty();
+        assertThat(provider.getBoolean("persistence.pool.warmup.enabled")).isEmpty();
+    }
+
+    @Test
+    void persistenceAlias_nullEnvironmentIsSafe() {
+        ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider(null);
+
+        assertThat(provider.getInt("persistence.minIdleConnections")).isEmpty();
+        assertThat(provider.getBoolean("persistence.pool.warmup.enabled")).isEmpty();
+        assertThat(provider.getInt("pool.warmup.connections")).isEmpty();
+        assertThat(provider.getLong("persistence.connectionTimeoutMs")).isEmpty();
+    }
+
+    @Test
+    void persistenceAlias_connectionTimeoutResolvesViaGetLong() {
+        MockEnvironment env = new MockEnvironment()
+                .withProperty("exeris.runtime.persistence.connection-timeout-ms", "30000");
+
+        ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider(env);
+
+        // The kernel resolver reads persistence.connectionTimeoutMs via getLong; the alias
+        // levels the acquire timeout with the JDBC-native targets (which block ~30s rather
+        // than fail-fast). Without this the compat pool's short timeout cannot be raised.
+        assertThat(provider.getLong("persistence.connectionTimeoutMs")).contains(30_000L);
+    }
+
+    @Test
+    void persistenceAlias_connectionTimeoutAppliesToTypedGet() {
+        MockEnvironment env = new MockEnvironment()
+                .withProperty("exeris.runtime.persistence.connection-timeout-ms", "30000");
+
+        ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider(env);
+
+        assertThat(provider.get("persistence.connectionTimeoutMs", Long.class)).contains(30_000L);
+    }
+
+    @Test
+    void persistenceAlias_connectionTimeoutEmptyWhenUnset() {
+        MockEnvironment env = new MockEnvironment();
+
+        ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider(env);
+
+        // Unset → kernel keeps its own default acquire timeout.
+        assertThat(provider.getLong("persistence.connectionTimeoutMs")).isEmpty();
+    }
 }

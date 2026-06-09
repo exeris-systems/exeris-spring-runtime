@@ -27,6 +27,8 @@ import eu.exeris.kernel.spi.flow.FlowEngine;
 import eu.exeris.kernel.spi.graph.GraphEngine;
 import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpKernelProviders;
+import eu.exeris.kernel.spi.memory.MemoryAllocator;
+import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 
 /**
  * Spring lifecycle coordinator for the Exeris runtime.
@@ -115,6 +117,33 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
      * per ADR-030.
      */
     private final AtomicReference<GraphEngine> capturedGraphEngine = new AtomicReference<>();
+
+    /**
+     * Captured kernel-side {@link PersistenceEngine} reference, populated from the boot thread
+     * (where {@link KernelProviders#PERSISTENCE_ENGINE} is bound) so the request path can
+     * re-bind it on handler threads that do not inherit the kernel bootstrap scope.
+     *
+     * <p>Unlike the kernel's own generated handlers — which receive their providers via the
+     * kernel construction seam / per-request dispatch virtual threads — an externally supplied
+     * {@link HttpHandler} (this runtime's dispatcher) is invoked on the transport carrier thread,
+     * which carries no {@code ScopedValue} bootstrap bindings. Without re-propagation, the compat
+     * persistence path ({@code ExerisDataSource}, {@code PersistenceEngineProvider}) reads an
+     * unbound {@code PERSISTENCE_ENGINE} and fails on every request. This capture is the same
+     * mechanism already used for the event/flow/graph engines above. Empty when the kernel
+     * activated without a persistence subsystem.
+     */
+    private final AtomicReference<PersistenceEngine> capturedPersistenceEngine = new AtomicReference<>();
+
+    /**
+     * Captured kernel-side {@link MemoryAllocator} reference, populated from the boot thread
+     * (where {@link KernelProviders#MEMORY_ALLOCATOR} is bound). The allocator is a single
+     * kernel-wide instance (carrier affinity flows through the separate
+     * {@link KernelProviders#CARRIER_INDEX} slot, not through distinct allocator instances), so
+     * re-binding the captured reference on a handler thread that has none is safe and strictly
+     * better than the heap-backed fallback in {@code ExerisServerResponse}. Empty when the kernel
+     * activated without a memory subsystem (never, in practice).
+     */
+    private final AtomicReference<MemoryAllocator> capturedMemoryAllocator = new AtomicReference<>();
 
     public ExerisRuntimeLifecycle(ExerisRuntimeProperties properties,
                                    ExerisSpringConfigProvider configProvider,
@@ -277,6 +306,35 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         return Optional.ofNullable(capturedGraphEngine.get());
     }
 
+    /**
+     * Returns the kernel {@link PersistenceEngine} reference captured during bootstrap, if a
+     * {@code PersistenceProvider} was active in the running kernel. Empty before {@link #start()}
+     * completes, after {@link #stop()}, or when the kernel activated without a persistence
+     * subsystem.
+     *
+     * <p>Consumed by the web {@code KernelProviderBinder} to re-bind
+     * {@link KernelProviders#PERSISTENCE_ENGINE} around each request on handler threads that do
+     * not inherit the kernel bootstrap scope, since that {@code ScopedValue} is otherwise only
+     * bound on kernel-owned dispatch threads.
+     */
+    public Optional<PersistenceEngine> getPersistenceEngine() {
+        return Optional.ofNullable(capturedPersistenceEngine.get());
+    }
+
+    /**
+     * Returns the kernel {@link MemoryAllocator} reference captured during bootstrap. Empty
+     * before {@link #start()} completes, after {@link #stop()}, or when the kernel activated
+     * without a memory subsystem.
+     *
+     * <p>Consumed by the web {@code KernelProviderBinder} to re-bind
+     * {@link KernelProviders#MEMORY_ALLOCATOR} around a request when the handler thread has no
+     * allocator bound — restoring the zero-copy response path instead of the heap-backed
+     * fallback in {@code ExerisServerResponse}.
+     */
+    public Optional<MemoryAllocator> getMemoryAllocator() {
+        return Optional.ofNullable(capturedMemoryAllocator.get());
+    }
+
     private void captureKernelEngines() {
         // Runs on the boot thread inside the kernel's ScopedValue scope where the
         // KernelProviders slots are bound. Each subsystem is optional, so each capture
@@ -289,6 +347,12 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         }
         if (KernelProviders.GRAPH_ENGINE.isBound()) {
             capturedGraphEngine.set(KernelProviders.GRAPH_ENGINE.get());
+        }
+        if (KernelProviders.PERSISTENCE_ENGINE.isBound()) {
+            capturedPersistenceEngine.set(KernelProviders.PERSISTENCE_ENGINE.get());
+        }
+        if (KernelProviders.MEMORY_ALLOCATOR.isBound()) {
+            capturedMemoryAllocator.set(KernelProviders.MEMORY_ALLOCATOR.get());
         }
     }
 
@@ -317,6 +381,8 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
             capturedEventEngine.set(null);
             capturedFlowEngine.set(null);
             capturedGraphEngine.set(null);
+            capturedPersistenceEngine.set(null);
+            capturedMemoryAllocator.set(null);
             heldBootScope.compareAndSet(releaseSignal, null);
             bootThread.compareAndSet(Thread.currentThread(), null);
             synchronized (lifecycleMonitor) {

@@ -7,6 +7,7 @@
 package eu.exeris.spring.runtime.web.autoconfigure;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.beans.factory.FactoryBean;
 import org.springframework.beans.factory.ObjectProvider;
@@ -30,6 +31,7 @@ import org.springframework.validation.SmartValidator;
 import org.springframework.web.method.support.HandlerMethodArgumentResolverComposite;
 import org.springframework.web.method.support.HandlerMethodReturnValueHandlerComposite;
 
+import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
 import eu.exeris.spring.runtime.web.ExerisErrorMapper;
 import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
 import eu.exeris.spring.runtime.web.compat.ExerisCompatDispatcher;
@@ -37,6 +39,7 @@ import eu.exeris.spring.runtime.web.compat.ExerisExceptionHandlerResolver;
 import eu.exeris.spring.runtime.web.compat.ExerisHandlerMethodRegistry;
 import eu.exeris.spring.runtime.web.compat.ExerisSpringMvcBridge;
 import eu.exeris.spring.runtime.web.compat.context.ExerisThreadLocalBridge;
+import eu.exeris.spring.runtime.web.scope.KernelProviderBinder;
 import eu.exeris.spring.runtime.web.compat.filter.ExerisSecurityContextFilter;
 import eu.exeris.spring.runtime.web.compat.handler.ExerisResponseBodyReturnValueHandler;
 import eu.exeris.spring.runtime.web.compat.handler.ExerisResponseEntityReturnValueHandler;
@@ -288,14 +291,38 @@ public class ExerisCompatAutoConfiguration {
         }
     }
 
+    /**
+     * Builds the {@link KernelProviderBinder} the compat dispatcher uses to re-bind kernel
+     * provider {@code ScopedValue} slots (persistence engine, memory allocator) onto the request
+     * handler thread, so JPA/Hibernate → {@code ExerisDataSource} and the response codec resolve
+     * them. The externally-supplied {@code HttpHandler} runs on the transport carrier thread,
+     * which does not inherit the kernel bootstrap scope.
+     *
+     * <p>The {@link ExerisRuntimeLifecycle} bean is resolved <em>lazily</em>, per request, via the
+     * {@link ObjectProvider} — NOT at bean construction — to avoid a construction-time cycle
+     * ({@code ExerisRuntimeLifecycle} → {@code HttpHandler} dispatcher → this binder). When no
+     * lifecycle is present the suppliers yield empty and the binder is a zero-cost pass-through.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public KernelProviderBinder exerisKernelProviderBinder(
+            ObjectProvider<ExerisRuntimeLifecycle> lifecycleProvider) {
+        return KernelProviderBinder.capturing(
+                () -> Optional.ofNullable(lifecycleProvider.getIfAvailable())
+                        .flatMap(ExerisRuntimeLifecycle::getPersistenceEngine),
+                () -> Optional.ofNullable(lifecycleProvider.getIfAvailable())
+                        .flatMap(ExerisRuntimeLifecycle::getMemoryAllocator));
+    }
+
     // 16. Compat dispatcher
     @Bean
     @ConditionalOnMissingBean
     public ExerisCompatDispatcher exerisCompatDispatcher(
             ExerisSpringMvcBridge bridge,
             ExerisErrorMapper errorMapper,
-            @Autowired(required = false) ExerisSecurityContextFilter securityFilter) {
-        return new ExerisCompatDispatcher(bridge, errorMapper, securityFilter);
+            @Autowired(required = false) ExerisSecurityContextFilter securityFilter,
+            KernelProviderBinder kernelProviderBinder) {
+        return new ExerisCompatDispatcher(bridge, errorMapper, securityFilter, kernelProviderBinder);
     }
 }
 

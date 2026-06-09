@@ -194,7 +194,8 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
         if (legacy.isPresent()) {
             return legacy;
         }
-        return flowKernelKeyAlias(key, environment, Integer.class);
+        return flowKernelKeyAlias(key, environment, Integer.class)
+                .or(() -> persistenceKernelKeyAlias(key, environment, Integer.class));
     }
 
     @Override
@@ -206,7 +207,8 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
         if (direct != null) {
             return Optional.of(direct);
         }
-        return flowKernelKeyAlias(key, environment, Long.class);
+        return flowKernelKeyAlias(key, environment, Long.class)
+                .or(() -> persistenceKernelKeyAlias(key, environment, Long.class));
     }
 
     @Override
@@ -218,7 +220,8 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
         if (direct != null) {
             return Optional.of(direct);
         }
-        return flowKernelKeyAlias(key, environment, Boolean.class);
+        return flowKernelKeyAlias(key, environment, Boolean.class)
+                .or(() -> persistenceKernelKeyAlias(key, environment, Boolean.class));
     }
 
     @Override
@@ -242,9 +245,11 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
             if (legacy.isPresent()) {
                 return legacy.map(type::cast);
             }
-            return flowKernelKeyAlias(key, environment, type);
+            return flowKernelKeyAlias(key, environment, type)
+                    .or(() -> persistenceKernelKeyAlias(key, environment, type));
         }
-        return flowKernelKeyAlias(key, environment, type);
+        return flowKernelKeyAlias(key, environment, type)
+                .or(() -> persistenceKernelKeyAlias(key, environment, type));
     }
 
     @Override
@@ -379,6 +384,60 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * Bridges kernel-side persistence-pool sizing lookups to the Spring property surface
+     * under {@code exeris.runtime.persistence.*}. Returns {@link Optional#empty()} for any
+     * key outside the small fixed set below.
+     *
+     * <p>The kernel's {@code CommunityPersistenceConfigResolver} builds its
+     * {@link eu.exeris.kernel.spi.persistence.PersistenceConfig} by asking this
+     * {@link eu.exeris.kernel.spi.config.ConfigProvider} for raw keys — including
+     * {@code persistence.minIdleConnections} (alias {@code persistence.pool.minSize}), the
+     * pool-warmup keys {@code persistence.pool.warmup.enabled} / {@code .connections} (bare
+     * aliases {@code pool.warmup.*}), and {@code persistence.connectionTimeoutMs} (read via
+     * {@code getLong}). The typed {@link PersistenceSettings} bridge record only carries
+     * {@code maxPoolSize}, so {@code max-pool-size} flows through {@link #kernelSettings()} but
+     * min-idle / warmup / connection-timeout have <em>no</em> typed field — their only path is the
+     * raw key API.
+     *
+     * <p>Without this alias those raw lookups miss (a {@code MockEnvironment} or a Spring
+     * {@link Environment} has no literal {@code persistence.minIdleConnections} property), the
+     * kernel falls back to its default min-idle (~1), and the shared pool
+     * ({@code exeris-community-shared}) starts cold: a burst of concurrent virtual threads at
+     * startup races pool growth from 1 → max and some acquisitions time out
+     * ({@code PersistenceProviderException.connectionExhausted} → 500) until the pool warms.
+     * Mapping the raw kernel keys onto {@code exeris.runtime.persistence.min-pool-size} and
+     * {@code .pool-warmup-{enabled,connections}} lets an application pre-warm the shared pool the
+     * same way a Spring/Hikari or Quarkus/Agroal target does via its native min-idle knob.
+     *
+     * <p><b>Connection-timeout and fair-leveling.</b> Pre-warm blunts cold-start, but a sustained
+     * error spike can remain under load: the kernel pool fail-fasts on acquisition (a short acquire
+     * timeout {@code ->} {@code connectionExhausted} {@code ->} 500) where a default Spring/Hikari
+     * pool <em>blocks</em> for ~30s (contention surfaces as latency, not errors). Without exposing
+     * {@code connection-timeout-ms}, that asymmetry cannot be levelled from configuration. Mapping
+     * it lets a deployment set the same acquire timeout the JDBC-native targets use, so contention
+     * shows up as latency on both sides rather than 500s on the compat path only.
+     *
+     * <p>Symmetric with {@link #flowKernelKeyAlias(String, Environment, Class)} (Phase 4B Step 4).
+     */
+    private static <T> Optional<T> persistenceKernelKeyAlias(String key, Environment environment, Class<T> type) {
+        String springKey = switch (key) {
+            case "persistence.minIdleConnections", "persistence.pool.minSize" ->
+                    "exeris.runtime.persistence.min-pool-size";
+            case "persistence.pool.warmup.enabled", "pool.warmup.enabled" ->
+                    "exeris.runtime.persistence.pool-warmup-enabled";
+            case "persistence.pool.warmup.connections", "pool.warmup.connections" ->
+                    "exeris.runtime.persistence.pool-warmup-connections";
+            case "persistence.connectionTimeoutMs" ->
+                    "exeris.runtime.persistence.connection-timeout-ms";
+            default -> null;
+        };
+        if (springKey == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(environment.getProperty(springKey, type));
     }
 
     /**
