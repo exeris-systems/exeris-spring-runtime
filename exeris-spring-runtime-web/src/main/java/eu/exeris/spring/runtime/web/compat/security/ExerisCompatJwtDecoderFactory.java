@@ -6,6 +6,7 @@
  */
 package eu.exeris.spring.runtime.web.compat.security;
 
+import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
 import org.springframework.boot.autoconfigure.security.oauth2.resource.OAuth2ResourceServerProperties;
 import org.springframework.core.io.Resource;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
@@ -56,6 +57,7 @@ import java.util.Set;
  *
  * @since 0.5.0
  */
+@CompatibilityMode
 public final class ExerisCompatJwtDecoderFactory {
 
     private ExerisCompatJwtDecoderFactory() {
@@ -146,10 +148,15 @@ public final class ExerisCompatJwtDecoderFactory {
 
     private static RSAPublicKey readPublicKey(Resource location) {
         try {
-            byte[] bytes = location.getInputStream().readAllBytes();
+            byte[] bytes;
+            try (var inputStream = location.getInputStream()) {
+                bytes = inputStream.readAllBytes();
+            }
+            // Strip any PEM armour (-----BEGIN ...----- / -----END ...-----), like Spring Boot does,
+            // so a wrong-but-still-PEM key fails on the DER spec rather than on stray Base64 chars.
             String pem = new String(bytes, java.nio.charset.StandardCharsets.UTF_8)
-                    .replace("-----BEGIN PUBLIC KEY-----", "")
-                    .replace("-----END PUBLIC KEY-----", "")
+                    .replaceAll("-----BEGIN [^-]+-----", "")
+                    .replaceAll("-----END [^-]+-----", "")
                     .replaceAll("\\s", "");
             byte[] decoded = Base64.getDecoder().decode(pem);
             return (RSAPublicKey) KeyFactory.getInstance("RSA")

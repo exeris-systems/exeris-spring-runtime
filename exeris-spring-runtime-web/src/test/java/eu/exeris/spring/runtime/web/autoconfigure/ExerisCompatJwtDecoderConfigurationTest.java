@@ -20,7 +20,7 @@ import org.springframework.security.oauth2.jwt.SupplierJwtDecoder;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Module-integration tests for {@link ExerisCompatAutoConfiguration.CompatJwtDecoderConfiguration}
+ * Module-integration tests for {@link ExerisCompatJwtDecoderAutoConfiguration}
  * (ADR-041) — the compatibility re-activation of Spring Boot's servlet-web-gated OAuth2
  * resource-server {@link JwtDecoder} under {@code web-application-type=none}.
  *
@@ -79,15 +79,18 @@ class ExerisCompatJwtDecoderConfigurationTest {
     private static AnnotationConfigApplicationContext contextWith(Map<String, Object> properties,
                                                                   Class<?>... extraConfigs) {
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
+        // The decoder auto-config is gated on compatibility mode; set it for every case here.
+        Map<String, Object> withMode = new java.util.HashMap<>(properties);
+        withMode.put("exeris.runtime.web.mode", "compatibility");
         context.getEnvironment().getPropertySources().addFirst(
-                new MapPropertySource("testProps", Map.copyOf(properties)));
-        // Register any user config first, then the compat decoder config — mirroring the production
-        // order where ExerisCompatAutoConfiguration (an @AutoConfiguration) is processed AFTER user
-        // beans, so its @ConditionalOnMissingBean(JwtDecoder) sees an app-declared decoder.
+                new MapPropertySource("testProps", withMode));
+        // Register any user config first, then the compat decoder auto-config — mirroring the
+        // production order where ExerisCompatJwtDecoderAutoConfiguration is processed AFTER user beans,
+        // so its @ConditionalOnMissingBean(JwtDecoder) sees an app-declared decoder.
         if (extraConfigs.length > 0) {
             context.register(extraConfigs);
         }
-        context.register(ExerisCompatAutoConfiguration.CompatJwtDecoderConfiguration.class);
+        context.register(ExerisCompatJwtDecoderAutoConfiguration.class);
         context.refresh();
         return context;
     }

@@ -30,10 +30,12 @@ This is **instance #1 of a broader class**: error handling, CORS, multipart, con
 
 In Compatibility Mode, **re-activate the OAuth2 resource-server `JwtDecoder`** that Spring Boot would have created on a servlet stack, so the security filter has a decoder to use under `web-application-type=none`.
 
-The decoder is provided by `ExerisCompatAutoConfiguration.CompatJwtDecoderConfiguration`:
+The decoder is provided by a **dedicated auto-configuration**, `ExerisCompatJwtDecoderAutoConfiguration`, ordered `@AutoConfiguration(before = ExerisCompatAutoConfiguration.class)`:
 
+- **Why a separate, ordered auto-config (not a nested `@Configuration`).** `ExerisSecurityContextFilter` is gated `@ConditionalOnBean(JwtDecoder)`. `@ConditionalOnBean` only reliably observes beans contributed by auto-configurations processed **earlier** — it does **not** reliably see a bean from a sibling nested `@Configuration` of the same auto-config (declaration order is not enough, because the condition is evaluated before sibling member-class `@Bean` definitions are registered). So the decoder lives in its own auto-config ordered `before` the one that carries the security filter — exactly how Spring Boot itself separates the resource-server decoder from the security-filter-chain configuration. (An early nested-config attempt failed precisely this way: the decoder bean existed but the filter never activated; an end-to-end test now guards against regression.)
 - **Gating:**
   - `@ConditionalOnClass(JwtDecoder)` — only when `spring-security-oauth2-resource-server` is on the classpath (the dependency is optional).
+  - `@ConditionalOnProperty(exeris.runtime.web.mode = compatibility)` — Compatibility Mode only.
   - `@ConditionalOnNotWebApplication` — only when the app is **not** a servlet/reactive web app, i.e. exactly the Exeris-hosted `none` case. On a real servlet deployment Spring Boot's own decoder wins and this never fires.
   - `@EnableConfigurationProperties(OAuth2ResourceServerProperties.class)` — bind the same `spring.security.oauth2.resourceserver.jwt.*` properties Spring Boot uses.
   - bean `@ConditionalOnMissingBean(type = JwtDecoder)` — inert whenever a decoder already exists (servlet deployment, or an app-declared `JwtDecoder` bean).
@@ -73,3 +75,4 @@ The decoder is provided by `ExerisCompatAutoConfiguration.CompatJwtDecoderConfig
 - Mode: **COMPATIBILITY_MODE**. Code lives in `eu.exeris.spring.runtime.web.compat.security.*` and the compat nested config; `CompatibilityIsolationGuardTest` and `ModuleBoundaryTest` stay green.
 - Unit: `ExerisCompatJwtDecoderFactoryTest` (key-source selection, lazy issuer path, blank-handling, no-source error).
 - Module-integration: `ExerisCompatJwtDecoderConfigurationTest` (jwk-set-uri / issuer-uri / public-key-location produce a decoder under a non-web context; no decoder without properties; app-declared decoder wins).
+- End-to-end: `ExerisCompatAutoConfigurationTest#compatJwtDecoder_activatesSecurityFilter_endToEnd_underNone` drives the full auto-config chain through `ApplicationContextRunner` and asserts that the compat decoder **and** `ExerisSecurityContextFilter` are both present — proving the `before`-ordered decoder actually activates the `@ConditionalOnBean(JwtDecoder)` filter (the regression that the nested-config approach hit).
