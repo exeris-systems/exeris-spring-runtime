@@ -17,12 +17,12 @@ Phase 3B was originally three concerns folded into one row in the roadmap: (a) r
 A 2026-05-17 downstream observability review changed two facts:
 
 1. **In-flight migration demand for (a) and (b).** A downstream service migration identified that tenant isolation and correlation-ID propagation need to be load-bearing during the migration, not after — the application uses `StructuredTaskScope` to fan out kernel calls (persistence + event publication + downstream HTTP) and the tenant ID must propagate without `ThreadLocal` (banned on hot paths by the `CLAUDE.md` §"Pure Mode vs Compatibility Mode" narrative rule; obligation 4 below turns that rule into a per-package ArchUnit guard for the scope package).
-2. **Kernel-gating distinction surfaced for (c).** `exeris-kernel/docs/v0.8-sprint-and-implementation-map.md` Sprint 0.12 commits to W3C `traceparent` + `TraceContext` carrier via `ScopedValue`; the OTLP sink path (`PrometheusOtlpTelemetrySink`) is in the kernel v0.8/v0.9 gap section without sprint commitment. Distributed tracing therefore depends on kernel work that has a known wait period (for β) and an uncertain wait period (for γ).
+2. **Kernel-gating distinction surfaced for (c).** The kernel places the W3C `traceparent` + `TraceContext` carrier via `ScopedValue` in its consolidated 1.0 GA roadmap Sprint 0.12 (~v0.12); the OTLP sink path (`PrometheusOtlpTelemetrySink`) is in the kernel telemetry gap section without sprint commitment. Distributed tracing therefore depends on kernel work that has a planned-but-future wait period (for β) and an uncertain wait period (for γ). *(Fact corrected 2026-06-09: this point originally pinned β to "`exeris-kernel` 0.8.0 Sprint 0.12". Kernel 0.8.0 shipped 2026-06-03 with no tracing — verified in `exeris-kernel-spi` `ConfigProvider` javadoc and kernel ADR-032 §traceparent. The correction touches only the kernel-gate fact in this ADR's context/cross-references; the 3B-α decision and obligations below are unchanged.)*
 
 The two facts together point at a split:
 
 - **3B-α** — request scope + structured concurrency helpers, **kernel-independent** (pure JDK 26 preview features: `ScopedValue`, `StructuredTaskScope`). Can land at 0.6.0-preview without waiting on the kernel. **This ADR.**
-- **3B-β/γ** — context propagation bridge + OTel emission, **kernel-gated** (waits on `exeris-kernel` 0.8.0 Sprint 0.12 for β, on a future `PrometheusOtlpTelemetrySink` for γ). ADR-031.
+- **3B-β/γ** — context propagation bridge + OTel emission, **kernel-gated** (waits on the kernel `TraceContext` slot — consolidated 1.0 GA roadmap Sprint 0.12, ~v0.12, **not** 0.8.0 — for β, and on a future `PrometheusOtlpTelemetrySink` for γ). ADR-031.
 
 This ADR scopes **3B-α only**. ADR-031 scopes 3B-β/γ.
 
@@ -124,7 +124,7 @@ The wrapper preserves the `ScopedValue<RequestScope>` binding across forks trans
 - **[+] Kernel-independent — lands at 0.6.0-preview without waiting on kernel 0.8.0.** The work is pure JDK 26 preview-feature usage (`ScopedValue`, `StructuredTaskScope`). Spring-side authors can adopt the scope and fan-out API in the same train that closes Phase 4B (already in main).
 - **[+] Replaces `ThreadLocal` cleanly.** Application authors migrating off `ThreadLocal<TenantId>` get a typed `ScopedValue` carrier without writing their own `ScopedValue.where(...).call(...)` plumbing at every fan-out site. The hot-path ban on `ThreadLocal` extends naturally.
 - **[+] Operator-visible activation.** `exeris.runtime.context.scope.enabled` is a single property. An application opts in once; downstream reviewers see the property on the deployment manifest.
-- **[+] Future 3B-β/γ work has a clean attachment point.** The `attribute(String, Class<T>)` API on `ExerisRequestScope` is the slot that 3B-β will bind `TraceContext` into when kernel 0.8.0 ships. The 3B-β PR adds an attribute, not a new runtime carrier.
+- **[+] Future 3B-β/γ work has a clean attachment point.** The `attribute(String, Class<T>)` API on `ExerisRequestScope` is the slot that 3B-β will bind `TraceContext` into when the kernel `TraceContext` slot ships (consolidated 1.0 GA roadmap Sprint 0.12, ~v0.12; not 0.8.0). The 3B-β PR adds an attribute, not a new runtime carrier.
 - **[+] No new module surface to maintain.** The scope package lives inside `exeris-spring-runtime-web` (request-path-adjacent code). No new BOM entry, no new POM file, no new module-boundary test fixture.
 
 ### ⚠️ Trade-offs
@@ -136,7 +136,7 @@ The wrapper preserves the `ScopedValue<RequestScope>` binding across forks trans
 
 ### 📋 What is NOT in scope
 
-- **W3C `traceparent` ingress / egress.** Reading `traceparent` from inbound HTTP headers, propagating it to outbound HTTP-client calls, and bridging into a kernel `TraceContext` — all of that is 3B-β (ADR-031), kernel-gated on `exeris-kernel` 0.8.0 Sprint 0.12.
+- **W3C `traceparent` ingress / egress.** Reading `traceparent` from inbound HTTP headers, propagating it to outbound HTTP-client calls, and bridging into a kernel `TraceContext` — all of that is 3B-β (ADR-031), kernel-gated on the kernel `TraceContext` slot (consolidated 1.0 GA roadmap Sprint 0.12, ~v0.12; not 0.8.0).
 - **OTel span / metric emission.** Emitting OTel spans for request lifecycle and exporting via OTLP — that is 3B-γ (ADR-031), kernel-gated on `PrometheusOtlpTelemetrySink`.
 - **Micrometer Tracing integration.** 3B-α does not depend on or wire Micrometer Tracing. If the downstream application already uses Micrometer Tracing, it continues to do so; this ADR does not regulate that.
 - **`@RequestScope` Spring bean lifecycle integration.** Spring's `@RequestScope` is a `BeanFactory`-level scope tied to the legacy servlet request lifecycle; 3B-α does not bridge it. Applications using `@RequestScope` should consider whether `ExerisRequestScope` covers their use case directly; if they need `@RequestScope` specifically, they keep using it under Compatibility Mode.
@@ -150,7 +150,7 @@ The wrapper preserves the `ScopedValue<RequestScope>` binding across forks trans
 - ADR-010 — Host Runtime Model: `docs/adr/ADR-010-host-runtime-model.md` — the ownership boundary; `ExerisRequestScope` is a Spring-side affordance over the Exeris-owned request lifecycle
 - ADR-011 — Pure Mode vs Compatibility Mode: `docs/adr/ADR-011-pure-mode-vs-compatibility-mode.md` — the scope package is Pure Mode; `@RequestScope` interop, if added, would be Compatibility Mode
 - ADR-027 — Spring `ApplicationEventPublisher` / Exeris `EventBus` separation: `docs/adr/ADR-027-eventbus-applicationeventpublisher-boundary.md` — adjacent invariant; bus boundary stays unchanged
-- ADR-031 (reserved) — Phase 3B-β/γ Scope (kernel-gated context propagation + OTel bridge): `docs/adr/ADR-031-…` (content pending; kernel-gated on `exeris-kernel` 0.8.0 W3C `traceparent` + future `PrometheusOtlpTelemetrySink`)
+- ADR-031 (reserved) — Phase 3B-β/γ Scope (kernel-gated context propagation + OTel bridge): `docs/adr/ADR-031-…` (content pending; kernel-gated on the kernel W3C `traceparent`/`TraceContext` slot — consolidated 1.0 GA roadmap Sprint 0.12, ~v0.12, **not** 0.8.0 — plus a future `PrometheusOtlpTelemetrySink`)
 - `docs/roadmap-1.0-trl9.md` — 0.6.0-preview train row anchors this ADR in the release plan
 - JEP 446 (Scoped Values) — JDK preview feature backing the carrier
 - JEP 462 (Structured Concurrency) — JDK preview feature backing `StructuredTaskScope`

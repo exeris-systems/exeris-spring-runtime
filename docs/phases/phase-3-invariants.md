@@ -156,8 +156,10 @@ observability tracing. The 2026-05-17 downstream observability review reversed t
   `phase-3b-alpha-invariants.md` (created alongside the implementation PR);** the present
   doc preserves the Phase-3-closure record and points forward.
 - **Phase 3B-β — W3C `traceparent` context propagation (kernel-gated, ADR-031).**
-  Targets 0.9.0-preview, gated on `exeris-kernel` 0.8.0 Sprint 0.12 shipping the kernel
-  `TraceContext` carrier via `ScopedValue`.
+  Targets the 0.9.0-preview Spring-side train, gated on the kernel `TraceContext` carrier
+  via `ScopedValue` — which the kernel defers to the consolidated 1.0 GA roadmap Sprint 0.12
+  (~v0.12), **not** `exeris-kernel` 0.8.0 (0.8.0 shipped 2026-06-03 with no tracing; see kernel
+  ADR-032 §traceparent). If the kernel slot has not landed by the 0.9.0-preview cut, 3B-β slips.
 - **Phase 3B-γ — OTel span / metric emission via OTLP (kernel-gated, ADR-031).**
   Gated on a future kernel `PrometheusOtlpTelemetrySink`; may slip to 1.0.x.
 - **Security context** remains as before — partially delivered through Phase 2c
