@@ -7,6 +7,7 @@
 package eu.exeris.spring.runtime.data.compat;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.sql.SQLException;
 
@@ -81,6 +82,26 @@ class ExerisDataSourceTest {
         assertThatThrownBy(() -> dataSource.bindTransactionConnection(stubConn))
                 .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessageContaining("exeris-spring-runtime-enterprise");
+    }
+
+    @Test
+    void bindTransactionConnection_closesConnection_whenBindResourceFails() {
+        // Pre-bind a resource to the dataSource key so the subsequent bindResource() in
+        // bindTransactionConnection throws IllegalStateException ("already bound"). The guard
+        // must then release the freshly opened PersistenceConnection rather than orphan it.
+        // (transactionActive=true makes ExerisConnectionProxy.close() a no-op, so the connection
+        // is closed directly — this test would fail if the guard called proxy.close() instead.)
+        var stubConn = new StubJdbcPersistenceConnection();
+        TransactionSynchronizationManager.bindResource(dataSource, new Object());
+        try {
+            assertThatThrownBy(() -> dataSource.bindTransactionConnection(stubConn))
+                    .isInstanceOf(IllegalStateException.class);
+            assertThat(stubConn.isClosed())
+                    .as("PersistenceConnection must be closed on the bindResource failure path")
+                    .isTrue();
+        } finally {
+            TransactionSynchronizationManager.unbindResourceIfPossible(dataSource);
+        }
     }
 }
 

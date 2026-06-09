@@ -43,7 +43,7 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  * the scope this collapses to a zero-overhead pass-through and never overrides a carrier-affine
  * binding established by the kernel.
  *
- * @since 0.8.0
+ * @since 0.8.1
  */
 @FunctionalInterface
 public interface KernelProviderBinder {

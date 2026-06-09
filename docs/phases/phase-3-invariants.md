@@ -230,7 +230,8 @@ with a lazy `ObjectProvider<ExerisRuntimeLifecycle>` lookup to avoid the constru
 
 - **Guard:** `KernelProviderBinderTest` (re-bind when unbound; no override when already bound;
   pass-through when no captured reference). `ExerisPureModeRequestPathIntegrationTest` and
-  `ExerisCompatMvcIntegrationTest` exercise the wired binder.
+  `ExerisCompatMvcIntegrationTest` exercise the binder wiring (that it sits on the dispatch path);
+  the re-bind/no-override/pass-through behaviour is covered by `KernelProviderBinderTest`.
 
 ## 13. Compat datasource unwraps the request-session connection via the SPI (kernel ≥ 0.8.1)
 

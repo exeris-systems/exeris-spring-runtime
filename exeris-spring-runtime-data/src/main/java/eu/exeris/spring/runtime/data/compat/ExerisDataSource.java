@@ -114,10 +114,35 @@ public final class ExerisDataSource implements DataSource {
         // SPI unwrap(Connection.class) — approved caller: integration bridge. See ADR-017 §6.4.
         ExerisConnectionProxy proxy =
                 new ExerisConnectionProxy(rawJdbc, connection, true);
-        TransactionSynchronizationManager.bindResource(this, proxy);
-        TransactionSynchronizationManager.registerSynchronization(
-                new UnbindOnCompletionSynchronization(this));
-        JpaConnectionBoundEvent.emit();
+
+        // Guard the bind/register sequence: if bindResource throws (a resource is already
+        // bound to this key) or registerSynchronization throws after a successful bind, the
+        // freshly opened PersistenceConnection would otherwise leak. Not reachable under normal
+        // wiring (ExerisJdbcResourceCallback checks for an active transaction first), but the
+        // exception path must not orphan a connection.
+        //
+        // Close the PersistenceConnection directly, NOT proxy.close(): the proxy is built with
+        // transactionActive=true, so ExerisConnectionProxy.close() is a deliberate no-op (the
+        // tx manager owns the lifecycle on the happy path). On this failure path no tx manager
+        // will ever complete, so we must release the underlying connection ourselves.
+        boolean bound = false;
+        try {
+            TransactionSynchronizationManager.bindResource(this, proxy);
+            bound = true;
+            TransactionSynchronizationManager.registerSynchronization(
+                    new UnbindOnCompletionSynchronization(this));
+            JpaConnectionBoundEvent.emit();
+        } catch (RuntimeException ex) {
+            if (bound && TransactionSynchronizationManager.hasResource(this)) {
+                TransactionSynchronizationManager.unbindResource(this);
+            }
+            try {
+                connection.close();
+            } catch (Exception suppressed) {
+                ex.addSuppressed(suppressed);
+            }
+            throw ex;
+        }
     }
 
     // =========================================================================
