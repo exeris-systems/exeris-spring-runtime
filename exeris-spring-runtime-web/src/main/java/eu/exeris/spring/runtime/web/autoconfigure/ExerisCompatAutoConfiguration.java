@@ -203,8 +203,15 @@ public class ExerisCompatAutoConfiguration {
         return new ExerisErrorMapper();
     }
 
-    // 15. Security context filter — active only when JwtDecoder is on classpath
-    //     and no full SecurityFilterChain is present.
+    // 15a. The compatibility JwtDecoder that this filter depends on (ADR-041) lives in a SEPARATE
+    //      auto-configuration, ExerisCompatJwtDecoderAutoConfiguration, ordered @AutoConfiguration(
+    //      before = ExerisCompatAutoConfiguration.class). That ordering is what lets the
+    //      @ConditionalOnBean(JwtDecoder) below observe the re-activated decoder under
+    //      web-application-type=none — @ConditionalOnBean does not reliably see a bean from a sibling
+    //      nested @Configuration of the same auto-config, so it must not be nested here.
+
+    // 15b. Security context filter — active only when JwtDecoder is on classpath
+    //      and no full SecurityFilterChain is present.
     @Configuration
     @ConditionalOnClass(name = "org.springframework.security.oauth2.jwt.JwtDecoder")
     static class SecurityFilterConfiguration {

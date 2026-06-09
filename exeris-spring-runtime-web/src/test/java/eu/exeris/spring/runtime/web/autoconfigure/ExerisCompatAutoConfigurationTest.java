@@ -39,6 +39,9 @@ import eu.exeris.spring.runtime.web.ExerisServerRequest;
 import eu.exeris.spring.runtime.web.ExerisServerResponse;
 import eu.exeris.spring.runtime.web.compat.ExerisCompatDispatcher;
 import eu.exeris.spring.runtime.web.compat.filter.ExerisSecurityContextFilter;
+import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 
 class ExerisCompatAutoConfigurationTest {
 
@@ -49,6 +52,32 @@ class ExerisCompatAutoConfigurationTest {
             assertThat(context.getBeanNamesForType(ExerisHttpDispatcher.class)).isEmpty();
             assertThat(context.getBeanNamesForType(ExerisRouteRegistry.class)).isEmpty();
         }
+    }
+
+    @Test
+    void compatJwtDecoder_activatesSecurityFilter_endToEnd_underNone() {
+        // The full ADR-041 path in one shot: a non-web (web-application-type=none) context with a
+        // resource-server jwk-set-uri configured and no app-declared JwtDecoder. The compat decoder
+        // must be created AND ExerisSecurityContextFilter (gated @ConditionalOnBean(JwtDecoder)) must
+        // activate off it. Driven through ApplicationContextRunner + AutoConfigurations so the
+        // @ConditionalOnBean ordering is evaluated with real auto-configuration semantics (it is
+        // unreliable under manual @Configuration registration) — this proves the decoder→filter
+        // wiring on the actual code path, not an artefact of registration order.
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(
+                        ExerisWebAutoConfiguration.class,
+                        ExerisCompatJwtDecoderAutoConfiguration.class,
+                        ExerisCompatAutoConfiguration.class))
+                .withUserConfiguration(TestConfig.class)
+                .withPropertyValues(
+                        "exeris.runtime.web.mode=compatibility",
+                        "spring.security.oauth2.resourceserver.jwt.jwk-set-uri="
+                                + "https://issuer.example.com/.well-known/jwks.json")
+                .run(context -> {
+                    assertThat(context).hasBean("exerisCompatJwtDecoder");
+                    assertThat(context).hasSingleBean(JwtDecoder.class);
+                    assertThat(context).hasSingleBean(ExerisSecurityContextFilter.class);
+                });
     }
 
     @Test
