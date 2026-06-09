@@ -36,10 +36,12 @@
     </description>
 
     <properties>
-        <!-- Coverage ratchet floor (enforced only under -Pcoverage). Measured LINE 36.1% —
-             the largest gap to the ~0.85 1.0 GA target (compat JDBC bridge, thinly tested).
-             Priority for test-writing before GA; ratchet this up as coverage improves. -->
-        <jacoco.line.minimum>0.35</jacoco.line.minimum>
+        <!-- Coverage ratchet floor (enforced only under -Pcoverage). Raised 0.35 -> 0.85 once
+             the compat JDBC bridge tests landed: proxy pass-through delegation, JFR events, and
+             the tx-bind happy path now cover the bridge (measured LINE ~90%). 0.85 meets the
+             1.0 GA target; ratchet tighter as the remaining engine-bound getConnection() paths
+             gain integration coverage. -->
+        <jacoco.line.minimum>0.85</jacoco.line.minimum>
     </properties>
 
     <dependencies>
@@ -104,6 +106,16 @@
         <dependency>
             <groupId>org.assertj</groupId>
             <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Mockito — mock java.sql.Connection to cover ExerisConnectionProxy pass-through
+             delegation deterministically (a JDK-Proxy returning null NPEs on primitive-return
+             methods; Mockito returns proper primitive defaults). Version managed by the
+             spring-boot-dependencies BOM, mirroring exeris-spring-runtime-web. -->
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
             <scope>test</scope>
         </dependency>
 

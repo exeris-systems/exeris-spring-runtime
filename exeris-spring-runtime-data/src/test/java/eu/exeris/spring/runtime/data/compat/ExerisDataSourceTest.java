@@ -7,12 +7,15 @@
 package eu.exeris.spring.runtime.data.compat;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.sql.SQLException;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 
 class ExerisDataSourceTest {
 
@@ -24,6 +27,24 @@ class ExerisDataSourceTest {
         assertThatThrownBy(dataSource::getConnection)
                 .isInstanceOf(SQLException.class)
                 .hasMessageContaining("PersistenceEngine is not bound");
+    }
+
+    @Test
+    void getConnection_withTransactionBoundProxy_returnsItWithoutOpening() throws SQLException {
+        // Simulate an active ExerisPlatformTransactionManager transaction: a proxy is already
+        // bound to the dataSource key. getConnection() must return that proxy (one connection
+        // per transaction) instead of opening a new PersistenceConnection.
+        var bound = new ExerisConnectionProxy(
+                mock(java.sql.Connection.class), new StubJdbcPersistenceConnection(), true);
+        TransactionSynchronizationManager.bindResource(dataSource, bound);
+        try {
+            assertThat(dataSource.getConnection()).isSameAs(bound);
+        } finally {
+            TransactionSynchronizationManager.unbindResourceIfPossible(dataSource);
+            // Deterministic cleanup. close() is a no-op here (transactionActive=true), but
+            // asserting no-throw keeps intent explicit and quiets resource-leak analysis.
+            assertThatCode(bound::close).doesNotThrowAnyException();
+        }
     }
 
     @Test
@@ -71,6 +92,18 @@ class ExerisDataSourceTest {
         assertThat(dataSource.getLogWriter()).isNull();
     }
 
+    @Test
+    void setLogWriter_isNoOp() {
+        // Exeris uses JFR/JUL, not the JDBC LogWriter — the setter is a deliberate no-op.
+        assertThatCode(() -> dataSource.setLogWriter(null)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void setLoginTimeout_isNoOp() {
+        // Timeout is governed by PersistenceEngine configuration — the setter is a no-op.
+        assertThatCode(() -> dataSource.setLoginTimeout(5)).doesNotThrowAnyException();
+    }
+
     // -------------------------------------------------------------------------
     // bindTransactionConnection — tested via TransactionSynchronizationManager
     // -------------------------------------------------------------------------
@@ -82,6 +115,29 @@ class ExerisDataSourceTest {
         assertThatThrownBy(() -> dataSource.bindTransactionConnection(stubConn))
                 .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessageContaining("exeris-spring-runtime-enterprise");
+    }
+
+    @Test
+    void bindTransactionConnection_happyPath_bindsProxyAndUnbindsOnCompletion() {
+        // Synchronization must be active for registerSynchronization() to succeed.
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            var stubConn = new StubJdbcPersistenceConnection();
+            dataSource.bindTransactionConnection(stubConn);
+
+            // Proxy is now bound to the dataSource key and a completion sync is registered.
+            assertThat(TransactionSynchronizationManager.getResource(dataSource))
+                    .isInstanceOf(ExerisConnectionProxy.class);
+            var syncs = TransactionSynchronizationManager.getSynchronizations();
+            assertThat(syncs).isNotEmpty();
+
+            // Drive UnbindOnCompletionSynchronization.afterCompletion → resource is unbound.
+            syncs.forEach(s -> s.afterCompletion(TransactionSynchronization.STATUS_COMMITTED));
+            assertThat(TransactionSynchronizationManager.getResource(dataSource)).isNull();
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+            TransactionSynchronizationManager.unbindResourceIfPossible(dataSource);
+        }
     }
 
     @Test
