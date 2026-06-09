@@ -1,0 +1,79 @@
+name: build
+
+# Quality gate: builds and tests every PR (and every push to main) BEFORE merge.
+# This is the missing pre-merge counterpart to deploy.yml — deploy.yml only runs
+# `clean deploy` AFTER a commit lands on main, so until now nothing exercised the
+# reactor on the PR itself. `mvn verify` runs unit + module-integration +
+# runtime-integration tests AND the architecture guard suite (WallIntegrityTest,
+# ModuleBoundaryTest, *ClasspathGuardTest, CompatibilityIsolationGuardTest), so a PR
+# that breaks The Wall, a module boundary, pure-mode classpath purity, or compat
+# isolation fails here instead of on main.
+#
+# No paths-ignore filter: a quality gate intended for branch protection must always
+# report a conclusion. Skipping via paths-ignore leaves a required check "pending"
+# forever and blocks otherwise-mergeable PRs (e.g. docs-only changes).
+#
+# Required repo secrets (same as deploy.yml):
+#   GITHUB_TOKEN         — provided automatically; reads this repo's own packages.
+#   PACKAGES_READ_TOKEN  — PAT (classic) with read:packages; needed because the
+#                          default GITHUB_TOKEN cannot read exeris-kernel snapshots
+#                          from a different repository.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref (newer push to a PR branch wins).
+# Never cancel main builds.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  verify:
+    name: mvn verify (JDK 26, --enable-preview)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PACKAGES_READ_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
+      MAVEN_OPTS: '-Xmx2g'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 26
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '26'
+          cache: maven
+
+      - name: Verify settings token wiring
+        run: |
+          if [ -z "${PACKAGES_READ_TOKEN}" ]; then
+            echo "::error::PACKAGES_READ_TOKEN secret is not set. Create a PAT (classic) with read:packages scope and add it as a repository secret."
+            exit 1
+          fi
+
+      - name: Build, test & architecture guards (mvn verify)
+        run: >
+          mvn -B -ntp -s .github/maven-settings.xml
+          clean verify
+
+      - name: Upload Surefire/Failsafe reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-${{ github.run_number }}
+          path: '**/target/*-reports/'
+          if-no-files-found: ignore
+          retention-days: 7
