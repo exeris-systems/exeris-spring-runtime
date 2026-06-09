@@ -16,7 +16,10 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnNotWebApplication;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.security.oauth2.resource.OAuth2ResourceServerProperties;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.convert.ApplicationConversionService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Condition;
@@ -41,6 +44,7 @@ import eu.exeris.spring.runtime.web.compat.ExerisSpringMvcBridge;
 import eu.exeris.spring.runtime.web.compat.context.ExerisThreadLocalBridge;
 import eu.exeris.spring.runtime.web.scope.KernelProviderBinder;
 import eu.exeris.spring.runtime.web.compat.filter.ExerisSecurityContextFilter;
+import eu.exeris.spring.runtime.web.compat.security.ExerisCompatJwtDecoderFactory;
 import eu.exeris.spring.runtime.web.compat.handler.ExerisResponseBodyReturnValueHandler;
 import eu.exeris.spring.runtime.web.compat.handler.ExerisResponseEntityReturnValueHandler;
 import eu.exeris.spring.runtime.web.compat.resolver.ExerisAuthenticationArgumentResolver;
@@ -203,8 +207,52 @@ public class ExerisCompatAutoConfiguration {
         return new ExerisErrorMapper();
     }
 
-    // 15. Security context filter — active only when JwtDecoder is on classpath
-    //     and no full SecurityFilterChain is present.
+    // 15a. Compatibility JwtDecoder (ADR-041) — re-activates Spring Boot's servlet-web-gated
+    //      OAuth2 resource-server decoder when the app runs Exeris-hosted under
+    //      web-application-type=none, so the security filter below has a decoder to use.
+    //      Built with public Spring Security factories — no bespoke token validation.
+    @Configuration
+    @ConditionalOnClass(name = "org.springframework.security.oauth2.jwt.JwtDecoder")
+    @ConditionalOnNotWebApplication
+    @EnableConfigurationProperties(OAuth2ResourceServerProperties.class)
+    static class CompatJwtDecoderConfiguration {
+
+        @Bean
+        @ConditionalOnMissingBean(type = "org.springframework.security.oauth2.jwt.JwtDecoder")
+        @Conditional(OnResourceServerJwtConfiguredCondition.class)
+        public org.springframework.security.oauth2.jwt.JwtDecoder exerisCompatJwtDecoder(
+                OAuth2ResourceServerProperties properties) {
+            // ADR-041: under web-application-type=none Spring Boot's
+            // OAuth2ResourceServerAutoConfiguration (@ConditionalOnWebApplication(SERVLET)) never runs,
+            // so no JwtDecoder exists and ExerisSecurityContextFilter (gated on a JwtDecoder bean) stays
+            // inactive — silently dropping authentication after a brownfield migration. Rebuild the
+            // decoder from the same properties. @ConditionalOnMissingBean keeps this inert whenever a
+            // decoder already exists (a servlet deployment, or an app-declared JwtDecoder bean).
+            return ExerisCompatJwtDecoderFactory.build(properties.getJwt());
+        }
+
+        /**
+         * Matches when at least one resource-server JWT key source is configured
+         * ({@code jwk-set-uri} / {@code public-key-location} / {@code issuer-uri}) — mirrors the
+         * property gating Spring Boot applies before creating its own decoder, so we never build an
+         * unconfigured decoder.
+         */
+        static final class OnResourceServerJwtConfiguredCondition implements Condition {
+
+            private static final String PREFIX = "spring.security.oauth2.resourceserver.jwt.";
+
+            @Override
+            public boolean matches(ConditionContext context, AnnotatedTypeMetadata metadata) {
+                var environment = context.getEnvironment();
+                return environment.containsProperty(PREFIX + "jwk-set-uri")
+                        || environment.containsProperty(PREFIX + "public-key-location")
+                        || environment.containsProperty(PREFIX + "issuer-uri");
+            }
+        }
+    }
+
+    // 15b. Security context filter — active only when JwtDecoder is on classpath
+    //      and no full SecurityFilterChain is present.
     @Configuration
     @ConditionalOnClass(name = "org.springframework.security.oauth2.jwt.JwtDecoder")
     static class SecurityFilterConfiguration {
