@@ -12,6 +12,7 @@ import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeAutoConfiguration;
+import eu.exeris.spring.boot.autoconfigure.KernelProviderScope;
 import eu.exeris.spring.runtime.events.ExerisEventAutoConfiguration;
 
 /**
@@ -52,6 +53,7 @@ class ExerisFlowAutoConfigurationTest {
             assertThat(context).doesNotHaveBean(ExerisFlowProperties.class);
             assertThat(context).doesNotHaveBean(ExerisFlowTemplate.class);
             assertThat(context).doesNotHaveBean(ExerisFlowDefinitionRegistrar.class);
+            assertThat(context).doesNotHaveBean(KernelProviderScope.class);
         });
     }
 
@@ -68,6 +70,21 @@ class ExerisFlowAutoConfigurationTest {
                     assertThat(context).hasSingleBean(ExerisFlowProperties.class);
                     assertThat(context).hasSingleBean(ExerisFlowTemplate.class);
                     assertThat(context).hasSingleBean(ExerisFlowDefinitionRegistrar.class);
+                    assertThat(context).hasSingleBean(KernelProviderScope.class);
+                });
+    }
+
+    @Test
+    void respectsCustomKernelProviderScopeBeanOverride() {
+        KernelProviderScope custom = KernelProviderScope.noop();
+        contextRunner
+                .withPropertyValues(
+                        "exeris.runtime.flow.enabled=true",
+                        "exeris.runtime.flow.require-engine=false")
+                .withBean(KernelProviderScope.class, () -> custom)
+                .run(context -> {
+                    assertThat(context).hasSingleBean(KernelProviderScope.class);
+                    assertThat(context.getBean(KernelProviderScope.class)).isSameAs(custom);
                 });
     }
 

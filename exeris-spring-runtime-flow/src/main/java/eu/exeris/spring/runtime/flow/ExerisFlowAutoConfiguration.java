@@ -17,6 +17,7 @@ import org.springframework.context.annotation.Bean;
 
 import eu.exeris.kernel.spi.flow.FlowEngine;
 import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
+import eu.exeris.spring.boot.autoconfigure.KernelProviderScope;
 import eu.exeris.spring.runtime.events.EventEngineSupplier;
 import eu.exeris.spring.runtime.events.ExerisEventAutoConfiguration;
 import eu.exeris.spring.runtime.events.ExerisEventPublisher;
@@ -79,13 +80,33 @@ public class ExerisFlowAutoConfiguration {
         return new ExerisFlowTemplate(engineSupplier);
     }
 
+    /**
+     * Kernel provider scope used to re-bind {@code KernelProviders} {@code ScopedValue} slots
+     * (persistence engine, memory allocator) around each {@code FlowStepAction} execution. Flow
+     * steps run on kernel flow scheduler worker virtual threads, which do not inherit the
+     * bootstrap scope — without this, application step bodies that reach the kernel persistence
+     * engine through slot readers (the compat {@code ExerisDataSource} path in particular) fail
+     * with "PersistenceEngine is not bound in the current scope". Mirrors the request-path
+     * {@code KernelProviderBinder} wiring in the web module.
+     *
+     * <p>The accessors read the lifecycle's captured references lazily at step execution time,
+     * so wiring order relative to kernel boot does not matter.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public KernelProviderScope exerisFlowKernelProviderScope(ExerisRuntimeLifecycle lifecycle) {
+        return KernelProviderScope.fromLifecycle(lifecycle);
+    }
+
     @Bean
     @ConditionalOnMissingBean
     public ExerisFlowDefinitionRegistrar exerisFlowDefinitionRegistrar(ApplicationContext applicationContext,
                                                                         FlowEngineSupplier engineSupplier,
                                                                         ExerisFlowTemplate template,
-                                                                        ExerisFlowProperties properties) {
-        return new ExerisFlowDefinitionRegistrar(applicationContext, engineSupplier, template, properties);
+                                                                        ExerisFlowProperties properties,
+                                                                        KernelProviderScope providerScope) {
+        return new ExerisFlowDefinitionRegistrar(applicationContext, engineSupplier, template, properties,
+                providerScope);
     }
 
     /**

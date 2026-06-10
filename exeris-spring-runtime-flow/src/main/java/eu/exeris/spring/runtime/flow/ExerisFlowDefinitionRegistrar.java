@@ -25,6 +25,7 @@ import eu.exeris.kernel.spi.flow.FlowEngine;
 import eu.exeris.kernel.spi.flow.FlowExecutionPlanFactory;
 import eu.exeris.kernel.spi.flow.model.FlowDefinition;
 import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
+import eu.exeris.spring.boot.autoconfigure.KernelProviderScope;
 
 /**
  * Discovers {@link ExerisFlowDefinition} beans, builds and compiles their kernel
@@ -69,6 +70,7 @@ public final class ExerisFlowDefinitionRegistrar implements SmartInitializingSin
     private final FlowEngineSupplier engineSupplier;
     private final ExerisFlowTemplate template;
     private final ExerisFlowProperties properties;
+    private final KernelProviderScope providerScope;
     private final Object lifecycleLock = new Object();
 
     private final List<DefinitionBinding> bindings = new ArrayList<>();
@@ -77,11 +79,13 @@ public final class ExerisFlowDefinitionRegistrar implements SmartInitializingSin
     public ExerisFlowDefinitionRegistrar(ApplicationContext applicationContext,
                                           FlowEngineSupplier engineSupplier,
                                           ExerisFlowTemplate template,
-                                          ExerisFlowProperties properties) {
+                                          ExerisFlowProperties properties,
+                                          KernelProviderScope providerScope) {
         this.applicationContext = Objects.requireNonNull(applicationContext, "applicationContext");
         this.engineSupplier = Objects.requireNonNull(engineSupplier, "engineSupplier");
         this.template = Objects.requireNonNull(template, "template");
         this.properties = Objects.requireNonNull(properties, "properties");
+        this.providerScope = Objects.requireNonNull(providerScope, "providerScope");
     }
 
     @Override
@@ -151,7 +155,11 @@ public final class ExerisFlowDefinitionRegistrar implements SmartInitializingSin
             }
             FlowExecutionPlanFactory plans = engine.get().plans();
             for (DefinitionBinding binding : bindings) {
-                FlowDefinitionBuilder builder = plans.newDefinition(binding.flowName());
+                // Decorate the kernel builder so every step action / compensation executes
+                // inside the kernel provider scope — step bodies run on flow scheduler worker
+                // virtual threads that do not inherit the bootstrap ScopedValue bindings.
+                FlowDefinitionBuilder builder = new ProviderScopedFlowDefinitionBuilder(
+                        plans.newDefinition(binding.flowName()), providerScope);
                 FlowDefinition definition = binding.definition().define(builder);
                 if (definition == null) {
                     throw new IllegalStateException(

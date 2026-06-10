@@ -312,10 +312,11 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
      * completes, after {@link #stop()}, or when the kernel activated without a persistence
      * subsystem.
      *
-     * <p>Consumed by the web {@code KernelProviderBinder} to re-bind
-     * {@link KernelProviders#PERSISTENCE_ENGINE} around each request on handler threads that do
-     * not inherit the kernel bootstrap scope, since that {@code ScopedValue} is otherwise only
-     * bound on kernel-owned dispatch threads.
+     * <p>Consumed by the web {@code KernelProviderBinder} (per request) and by
+     * {@link KernelProviderScope} (per flow step execution) to re-bind
+     * {@link KernelProviders#PERSISTENCE_ENGINE} on threads that do not inherit the kernel
+     * bootstrap scope, since that {@code ScopedValue} is otherwise only bound on kernel-owned
+     * dispatch threads.
      */
     public Optional<PersistenceEngine> getPersistenceEngine() {
         return Optional.ofNullable(capturedPersistenceEngine.get());
@@ -326,10 +327,10 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
      * before {@link #start()} completes, after {@link #stop()}, or when the kernel activated
      * without a memory subsystem.
      *
-     * <p>Consumed by the web {@code KernelProviderBinder} to re-bind
-     * {@link KernelProviders#MEMORY_ALLOCATOR} around a request when the handler thread has no
-     * allocator bound — restoring the zero-copy response path instead of the heap-backed
-     * fallback in {@code ExerisServerResponse}.
+     * <p>Consumed by the web {@code KernelProviderBinder} (and {@link KernelProviderScope} for
+     * flow step bodies) to re-bind {@link KernelProviders#MEMORY_ALLOCATOR} when the executing
+     * thread has no allocator bound — restoring the zero-copy response path instead of the
+     * heap-backed fallback in {@code ExerisServerResponse}.
      */
     public Optional<MemoryAllocator> getMemoryAllocator() {
         return Optional.ofNullable(capturedMemoryAllocator.get());

@@ -8,28 +8,35 @@ package eu.exeris.spring.runtime.flow;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.flow.FlowDefinitionBuilder;
 import eu.exeris.kernel.spi.flow.FlowEngine;
 import eu.exeris.kernel.spi.flow.FlowExecutionPlanFactory;
+import eu.exeris.kernel.spi.flow.model.FlowContext;
 import eu.exeris.kernel.spi.flow.model.FlowDefinition;
 import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
 import eu.exeris.kernel.spi.flow.model.FlowOutcome;
 import eu.exeris.kernel.spi.flow.model.FlowStepAction;
 import eu.exeris.kernel.spi.flow.model.FlowStepDescriptor;
+import eu.exeris.kernel.spi.persistence.PersistenceEngine;
+import eu.exeris.spring.boot.autoconfigure.KernelProviderScope;
 
 /**
  * Unit tests for {@link ExerisFlowDefinitionRegistrar} — verifies bean discovery,
@@ -47,7 +54,7 @@ class ExerisFlowDefinitionRegistrarTest {
             ExerisFlowTemplate template = template();
             EngineMocks engine = mockEngine();
             ExerisFlowDefinitionRegistrar registrar = new ExerisFlowDefinitionRegistrar(
-                    ctx, () -> Optional.of(engine.engine), template, strict());
+                    ctx, () -> Optional.of(engine.engine), template, strict(), KernelProviderScope.noop());
 
             registrar.afterSingletonsInstantiated();
             assertThat(registrar.boundDefinitionCount()).isEqualTo(2);
@@ -69,7 +76,7 @@ class ExerisFlowDefinitionRegistrarTest {
             ctx.refresh();
 
             ExerisFlowDefinitionRegistrar registrar = new ExerisFlowDefinitionRegistrar(
-                    ctx, () -> Optional.of(mockEngine().engine), template(), strict());
+                    ctx, () -> Optional.of(mockEngine().engine), template(), strict(), KernelProviderScope.noop());
 
             assertThatThrownBy(registrar::afterSingletonsInstantiated)
                     .isInstanceOf(IllegalStateException.class)
@@ -84,7 +91,7 @@ class ExerisFlowDefinitionRegistrarTest {
             ctx.refresh();
 
             ExerisFlowDefinitionRegistrar registrar = new ExerisFlowDefinitionRegistrar(
-                    ctx, () -> Optional.of(mockEngine().engine), template(), strict());
+                    ctx, () -> Optional.of(mockEngine().engine), template(), strict(), KernelProviderScope.noop());
 
             assertThatThrownBy(registrar::afterSingletonsInstantiated)
                     .isInstanceOf(IllegalStateException.class)
@@ -109,7 +116,7 @@ class ExerisFlowDefinitionRegistrarTest {
             when(builder.build()).thenReturn(stubDefinition("forged-name"));
 
             ExerisFlowDefinitionRegistrar registrar = new ExerisFlowDefinitionRegistrar(
-                    ctx, () -> Optional.of(engine.engine), template, strict());
+                    ctx, () -> Optional.of(engine.engine), template, strict(), KernelProviderScope.noop());
             registrar.afterSingletonsInstantiated();
 
             assertThatThrownBy(registrar::start)
@@ -126,7 +133,7 @@ class ExerisFlowDefinitionRegistrarTest {
             ctx.refresh();
 
             ExerisFlowDefinitionRegistrar registrar = new ExerisFlowDefinitionRegistrar(
-                    ctx, () -> Optional.of(mockEngine().engine), template(), strict());
+                    ctx, () -> Optional.of(mockEngine().engine), template(), strict(), KernelProviderScope.noop());
             registrar.afterSingletonsInstantiated();
 
             assertThatThrownBy(registrar::start)
@@ -146,7 +153,7 @@ class ExerisFlowDefinitionRegistrarTest {
 
             ExerisFlowTemplate template = template();
             ExerisFlowDefinitionRegistrar registrar = new ExerisFlowDefinitionRegistrar(
-                    ctx, Optional::empty, template, tolerant());
+                    ctx, Optional::empty, template, tolerant(), KernelProviderScope.noop());
             registrar.afterSingletonsInstantiated();
             registrar.start();
 
@@ -167,7 +174,7 @@ class ExerisFlowDefinitionRegistrarTest {
             ctx.refresh();
 
             ExerisFlowDefinitionRegistrar registrar = new ExerisFlowDefinitionRegistrar(
-                    ctx, Optional::empty, template(), strict());
+                    ctx, Optional::empty, template(), strict(), KernelProviderScope.noop());
             registrar.afterSingletonsInstantiated();
 
             assertThatThrownBy(registrar::start)
@@ -187,7 +194,7 @@ class ExerisFlowDefinitionRegistrarTest {
             ctx.refresh();
 
             ExerisFlowDefinitionRegistrar registrar = new ExerisFlowDefinitionRegistrar(
-                    ctx, Optional::empty, template(), strict());
+                    ctx, Optional::empty, template(), strict(), KernelProviderScope.noop());
             registrar.afterSingletonsInstantiated();
             registrar.start();
 
@@ -205,7 +212,7 @@ class ExerisFlowDefinitionRegistrarTest {
             ExerisFlowTemplate template = template();
             EngineMocks engine = mockEngine();
             ExerisFlowDefinitionRegistrar registrar = new ExerisFlowDefinitionRegistrar(
-                    ctx, () -> Optional.of(engine.engine), template, strict());
+                    ctx, () -> Optional.of(engine.engine), template, strict(), KernelProviderScope.noop());
             registrar.afterSingletonsInstantiated();
             registrar.start();
             assertThat(template.registeredFlowNames()).hasSize(2);
@@ -214,6 +221,61 @@ class ExerisFlowDefinitionRegistrarTest {
 
             assertThat(template.registeredFlowNames()).isEmpty();
             assertThat(registrar.isRunning()).isFalse();
+        }
+    }
+
+    @Test
+    void wrapsStepActionsInKernelProviderScopeBeforeHandingThemToTheKernelBuilder() {
+        // The registrar must decorate the kernel builder so application step bodies execute
+        // with KernelProviders slots re-bound — flow scheduler worker virtual threads do not
+        // inherit the bootstrap ScopedValue scope, and compat-DataSource consumers inside saga
+        // steps read KernelProviders.PERSISTENCE_ENGINE directly.
+        try (AnnotationConfigApplicationContext ctx = new AnnotationConfigApplicationContext()) {
+            AtomicReference<PersistenceEngine> seenInStep = new AtomicReference<>();
+            ExerisFlowDefinition stepped = new ExerisFlowDefinition() {
+                @Override public String name() { return "stepped"; }
+                @Override public FlowDefinition define(FlowDefinitionBuilder b) {
+                    return b.step("touch-db", stepContext -> {
+                        seenInStep.set(KernelProviders.PERSISTENCE_ENGINE.get());
+                        return FlowOutcome.COMPLETE;
+                    }, null).build();
+                }
+            };
+            ctx.registerBean(ExerisFlowDefinition.class, () -> stepped);
+            ctx.refresh();
+
+            FlowEngine flowEngine = mock(FlowEngine.class);
+            FlowExecutionPlanFactory plans = mock(FlowExecutionPlanFactory.class);
+            FlowDefinitionBuilder kernelBuilder = mock(FlowDefinitionBuilder.class);
+            // Pre-build stubs before any when(...) — see mockEngine() for the Mockito
+            // UnfinishedStubbing pitfall this avoids.
+            FlowDefinition steppedDefinition = stubDefinition("stepped");
+            FlowExecutionPlan steppedPlan = stubPlan("stepped");
+            when(flowEngine.plans()).thenReturn(plans);
+            when(kernelBuilder.build()).thenReturn(steppedDefinition);
+            when(plans.newDefinition(eq("stepped"))).thenReturn(kernelBuilder);
+            when(plans.compile(any(FlowDefinition.class))).thenReturn(steppedPlan);
+
+            PersistenceEngine capturedEngine = mock(PersistenceEngine.class);
+            ExerisFlowDefinitionRegistrar registrar = new ExerisFlowDefinitionRegistrar(
+                    ctx, () -> Optional.of(flowEngine), template(), strict(),
+                    KernelProviderScope.capturing(() -> Optional.of(capturedEngine), Optional::empty));
+            registrar.afterSingletonsInstantiated();
+            registrar.start();
+
+            ArgumentCaptor<FlowStepAction> registered = ArgumentCaptor.forClass(FlowStepAction.class);
+            verify(kernelBuilder).step(eq("touch-db"), registered.capture(), isNull());
+
+            // Execute the registered action on this test thread (no bootstrap bindings) —
+            // exactly what the kernel scheduler does on a worker virtual thread.
+            assertThat(registered.getValue().execute(mock(FlowContext.class)))
+                    .isEqualTo(FlowOutcome.COMPLETE);
+            assertThat(seenInStep.get())
+                    .as("step body must observe PERSISTENCE_ENGINE re-bound from the captured reference")
+                    .isSameAs(capturedEngine);
+            assertThat(KernelProviders.PERSISTENCE_ENGINE.isBound())
+                    .as("re-bind must be scoped to the step body")
+                    .isFalse();
         }
     }
 
