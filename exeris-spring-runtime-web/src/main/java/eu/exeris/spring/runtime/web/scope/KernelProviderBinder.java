@@ -32,7 +32,10 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  * path ({@code ExerisDataSource}, {@code PersistenceEngineProvider}) and the response codec
  * ({@code ExerisServerResponse} reading {@code MEMORY_ALLOCATOR}) read the slot directly, so they
  * need the slot re-bound here. The captured references come from
- * {@code ExerisRuntimeLifecycle.getPersistenceEngine()} / {@code getMemoryAllocator()}.
+ * {@code ExerisRuntimeLifecycle.getPersistenceEngine()} / {@code getMemoryAllocator()}. The same
+ * gap exists for {@code FlowStepAction} bodies on flow scheduler worker threads — covered by the
+ * value-returning sibling {@code eu.exeris.spring.boot.autoconfigure.KernelProviderScope}, wired
+ * by the flow module.
  *
  * <h2>Ownership</h2>
  * <p>This is re-propagation of references the kernel created and owns — not a host-runtime claim.

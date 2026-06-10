@@ -14,6 +14,7 @@ import java.sql.SQLException;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -21,6 +22,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.env.MockEnvironment;
 
+import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.flow.FlowDefinitionBuilder;
 import eu.exeris.kernel.spi.flow.FlowEngine;
 import eu.exeris.kernel.spi.flow.model.FlowContext;
@@ -29,6 +31,7 @@ import eu.exeris.kernel.spi.flow.model.FlowOutcome;
 import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
 import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeProperties;
 import eu.exeris.spring.boot.autoconfigure.ExerisSpringConfigProvider;
+import eu.exeris.spring.boot.autoconfigure.KernelProviderScope;
 
 /**
  * End-to-end runtime integration test for the flow bridge.
@@ -156,6 +159,84 @@ class ExerisFlowBridgeRuntimeIntegrationTest {
             // copies / advances the context internally, but instance identity is stable.
             assertThat(seenInsideStep.get().instanceIdMost()).isEqualTo(seed.instanceIdMost());
             assertThat(seenInsideStep.get().instanceIdLeast()).isEqualTo(seed.instanceIdLeast());
+        } finally {
+            lifecycle.stop();
+        }
+    }
+
+    /**
+     * Provider-scope runtime IT — proves, against a live community kernel with a real JDBC
+     * {@code PersistenceEngine}, that:
+     * <ol>
+     *   <li><b>Control:</b> a step registered through the <em>raw</em> kernel builder executes
+     *       on a flow scheduler worker thread with {@code KernelProviders.PERSISTENCE_ENGINE}
+     *       <em>unbound</em> — the exact gap that made every saga step touching the compat
+     *       {@code ExerisDataSource} fail ({@code FAILED_ROLLEDBACK} at step 0) while the
+     *       kernel-owned snapshot store kept working.</li>
+     *   <li><b>Fix:</b> the same step registered through {@link ProviderScopedFlowDefinitionBuilder}
+     *       (the decorator the registrar applies to every {@code ExerisFlowDefinition}) observes
+     *       the slot re-bound from the lifecycle's captured reference.</li>
+     * </ol>
+     *
+     * <p>If the control assertion ever flips — i.e. the kernel starts propagating the bootstrap
+     * scope to flow worker threads — the runtime-side wrap has collapsed to a pass-through and
+     * can be retired; treat that failure as a removal signal, not a regression.
+     */
+    @Test
+    void stepBodiesObserveKernelProviderScopeOnFlowWorkerThreads() throws InterruptedException {
+        ExerisRuntimeLifecycle lifecycle = newPersistenceLifecycle(
+                "jdbc:h2:mem:exeris_flow_provider_scope_it;DB_CLOSE_DELAY=-1");
+        lifecycle.start();
+        try {
+            assertThat(lifecycle.getPersistenceEngine())
+                    .as("kernel must capture a PersistenceEngine for this IT to be meaningful")
+                    .isPresent();
+
+            FlowEngine engine = lifecycle.getFlowEngine().orElseThrow();
+            ExerisFlowTemplate template = new ExerisFlowTemplate(lifecycle::getFlowEngine);
+
+            CountDownLatch controlRan = new CountDownLatch(1);
+            AtomicBoolean controlSawBinding = new AtomicBoolean(true);
+            FlowDefinition control = engine.plans().newDefinition("scope-control")
+                    .step("observe-raw", ctx -> {
+                        controlSawBinding.set(KernelProviders.PERSISTENCE_ENGINE.isBound());
+                        controlRan.countDown();
+                        return FlowOutcome.COMPLETE;
+                    }, null)
+                    .timeoutDuration(5_000_000_000L)
+                    .build();
+            template.registerPlan("scope-control", engine.plans().compile(control));
+
+            CountDownLatch wrappedRan = new CountDownLatch(1);
+            AtomicBoolean wrappedSawBinding = new AtomicBoolean(false);
+            FlowDefinitionBuilder scopedBuilder = new ProviderScopedFlowDefinitionBuilder(
+                    engine.plans().newDefinition("scope-wrapped"),
+                    KernelProviderScope.fromLifecycle(lifecycle));
+            FlowDefinition wrapped = scopedBuilder
+                    .step("observe-wrapped", ctx -> {
+                        wrappedSawBinding.set(KernelProviders.PERSISTENCE_ENGINE.isBound());
+                        wrappedRan.countDown();
+                        return FlowOutcome.COMPLETE;
+                    }, null)
+                    .timeoutDuration(5_000_000_000L)
+                    .build();
+            template.registerPlan("scope-wrapped", engine.plans().compile(wrapped));
+
+            template.schedule("scope-control");
+            template.schedule("scope-wrapped");
+
+            assertThat(controlRan.await(AWAIT_DISPATCH_SECONDS, TimeUnit.SECONDS)).isTrue();
+            assertThat(wrappedRan.await(AWAIT_DISPATCH_SECONDS, TimeUnit.SECONDS)).isTrue();
+
+            assertThat(controlSawBinding.get())
+                    .as("control: flow worker threads do not inherit the bootstrap ScopedValue "
+                            + "scope — the gap this fix covers (see javadoc: a flip here is a "
+                            + "removal signal for the wrap, not a regression)")
+                    .isFalse();
+            assertThat(wrappedSawBinding.get())
+                    .as("wrapped: step body must observe PERSISTENCE_ENGINE re-bound from the "
+                            + "lifecycle's captured reference")
+                    .isTrue();
         } finally {
             lifecycle.stop();
         }
