@@ -66,19 +66,28 @@ public final class ExerisCompatDispatcher implements HttpHandler {
 
     @Override
     public void handle(HttpExchange exchange) throws HttpException {
-        if (securityFilter != null) {
-            securityFilter.populateContext(exchange.request());
-        }
-        try {
-            // Re-bind kernel provider slots (persistence engine, memory allocator) for the
-            // duration of the handler invocation so JPA/Hibernate → ExerisDataSource and the
-            // response codec see them via ScopedValue. No-op when already bound.
-            kernelProviderBinder.bind(() -> dispatchAndRespond(exchange));
-        } finally {
-            if (securityFilter != null) {
-                securityFilter.clearContext();
+        // Re-bind kernel provider slots (persistence engine, memory allocator) for the duration of
+        // the WHOLE request — security-context population AND the handler invocation — so both see
+        // them via ScopedValue. No-op when already bound.
+        //
+        // populateContext MUST run inside this scope: a canonical identity-resolution
+        // JwtAuthenticationConverter does per-request DB access (e.g. user lookup) through
+        // ExerisDataSource → KernelProviders.PERSISTENCE_ENGINE. Run before bind(), the slot is
+        // unbound and getConnection() fails with "PersistenceEngine is not bound in the current
+        // scope"; the converter then yields no Authentication, surfacing as a 500 in the handler.
+        // The filter must get the kernel pool exactly like the handlers do.
+        kernelProviderBinder.bind(() -> {
+            try {
+                if (securityFilter != null) {
+                    securityFilter.populateContext(exchange.request());
+                }
+                dispatchAndRespond(exchange);
+            } finally {
+                if (securityFilter != null) {
+                    securityFilter.clearContext();
+                }
             }
-        }
+        });
     }
 
     private void dispatchAndRespond(HttpExchange exchange) {

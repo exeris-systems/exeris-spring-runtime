@@ -6,14 +6,19 @@
  */
 package eu.exeris.spring.runtime.web.compat;
 
+import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.http.HttpExchange;
+import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
+import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import eu.exeris.spring.runtime.web.ExerisErrorMapper;
 import eu.exeris.spring.runtime.web.compat.context.ExerisThreadLocalBridge;
+import eu.exeris.spring.runtime.web.compat.filter.ExerisSecurityContextFilter;
+import eu.exeris.spring.runtime.web.scope.KernelProviderBinder;
 import eu.exeris.spring.runtime.web.compat.handler.ExerisResponseBodyReturnValueHandler;
 import eu.exeris.spring.runtime.web.compat.handler.ExerisResponseEntityReturnValueHandler;
 import eu.exeris.spring.runtime.web.compat.resolver.ExerisPathVariableArgumentResolver;
@@ -26,6 +31,8 @@ import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.method.support.HandlerMethodArgumentResolverComposite;
@@ -34,13 +41,16 @@ import org.springframework.web.method.support.HandlerMethodReturnValueHandlerCom
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 class ExerisCompatDispatcherTest {
 
     private ExerisCompatDispatcher dispatcher;
+    private ExerisSpringMvcBridge bridge;
 
     @BeforeEach
     void setUp() {
@@ -67,7 +77,7 @@ class ExerisCompatDispatcherTest {
 
         ExerisExceptionHandlerResolver exceptionResolver = ctx.getBean(ExerisExceptionHandlerResolver.class);
 
-        ExerisSpringMvcBridge bridge = new ExerisSpringMvcBridge(
+        bridge = new ExerisSpringMvcBridge(
                 registry, argResolvers, returnHandlers, exceptionResolver, new ExerisThreadLocalBridge());
 
         dispatcher = new ExerisCompatDispatcher(bridge, new ExerisErrorMapper(), null);
@@ -84,6 +94,42 @@ class ExerisCompatDispatcherTest {
     void handle_matchedRoute_returns200() throws Exception {
         TestExchange exchange = TestExchange.get(HttpMethod.GET, "/hello", anyHttpVersion());
         dispatcher.handle(exchange.proxy());
+        assertThat(statusCodeOf(exchange.response())).isEqualTo(200);
+    }
+
+    @Test
+    void handle_populateContext_runsWithinKernelProviderScope() throws Exception {
+        // Regression guard: a canonical identity-resolution JwtAuthenticationConverter does
+        // per-request DB access (ExerisDataSource → KernelProviders.PERSISTENCE_ENGINE). The
+        // security filter's populateContext must therefore run INSIDE the KernelProviderBinder
+        // scope. Previously it ran before bind(), so PERSISTENCE_ENGINE was unbound and the
+        // converter's getConnection() failed with "PersistenceEngine is not bound in the current
+        // scope". Assert the slot is bound at conversion time.
+        PersistenceEngine engine = mock(PersistenceEngine.class);
+        AtomicBoolean boundDuringConvert = new AtomicBoolean(false);
+
+        JwtDecoder decoder = token -> Jwt.withTokenValue(token)
+                .header("alg", "none").subject("user-1")
+                .claim("scope", "read").build();
+        org.springframework.core.convert.converter.Converter<
+                Jwt, ? extends org.springframework.security.authentication.AbstractAuthenticationToken> converter =
+                jwt -> {
+                    boundDuringConvert.set(KernelProviders.PERSISTENCE_ENGINE.isBound());
+                    return new org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken(jwt);
+                };
+        var securityFilter = new ExerisSecurityContextFilter(decoder, converter);
+        KernelProviderBinder binder =
+                KernelProviderBinder.capturing(() -> java.util.Optional.of(engine), java.util.Optional::empty);
+
+        var scopedDispatcher = new ExerisCompatDispatcher(bridge, new ExerisErrorMapper(), securityFilter, binder);
+
+        TestExchange exchange = TestExchange.getWithHeader(
+                HttpMethod.GET, "/hello", anyHttpVersion(), "Authorization", "Bearer token");
+        scopedDispatcher.handle(exchange.proxy());
+
+        assertThat(boundDuringConvert)
+                .as("populateContext (token conversion / DB access) must run inside the kernel provider scope")
+                .isTrue();
         assertThat(statusCodeOf(exchange.response())).isEqualTo(200);
     }
 
@@ -177,6 +223,12 @@ class ExerisCompatDispatcherTest {
 
         static TestExchange get(HttpMethod method, String path, HttpVersion version) {
             return new TestExchange(HttpRequest.noBody(method, path, version, List.of()));
+        }
+
+        static TestExchange getWithHeader(HttpMethod method, String path, HttpVersion version,
+                                          String headerName, String headerValue) {
+            return new TestExchange(HttpRequest.noBody(
+                    method, path, version, List.of(new HttpHeader(headerName, headerValue))));
         }
 
         HttpExchange proxy() {
