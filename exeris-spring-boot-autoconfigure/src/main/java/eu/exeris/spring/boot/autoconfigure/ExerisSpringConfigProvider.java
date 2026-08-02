@@ -113,7 +113,36 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
     public int priority() {
         // Prefer this provider only when a Spring Environment is actually available.
         // In fixture-only bootstrap paths (no prepared Environment), defer to kernel/community providers.
+        //
+        // NOTE: "defer" is no longer expressible by priority alone. Kernel 0.10.0 re-based the
+        // open-core priorities to Community=0 / Enterprise=100 (kernel CHANGELOG 0.10.0, #217).
+        // CommunityConfigProvider therefore now reports 0 — the same value this provider reports
+        // in the no-Environment path — and KernelBootstrap.resolveConfigProvider() selects via
+        // Stream.max, which keeps the FIRST element on a tie, i.e. ServiceLoader classpath order.
+        // The SPI contracts priority as ">= 0", so there is no value meaning "abstain".
+        // Consequence: this provider can win the tie while holding no Environment, so the
+        // no-Environment path must still answer lookups rather than returning empty — see
+        // systemPropertyFallback(...). Do not "fix" that by returning a negative priority; it
+        // would violate the SPI contract.
         return environment == null ? 0 : 150;
+    }
+
+    /**
+     * Fallback used only by the no-{@link Environment} instance (fixture/bootstrap paths).
+     *
+     * <p>Without this, an instance created by {@code ServiceLoader} before
+     * {@link #prepareBootstrap()} answers every lookup with {@link Optional#empty()}. That was
+     * harmless while the community provider outranked it, but since kernel 0.10.0 the two tie at
+     * priority {@code 0} and this provider can be selected instead — silently blanking kernel
+     * configuration that the caller supplied via system properties (e.g. the kernel testkit's
+     * {@code exeris.http.mode=SERVER}, without which the HTTP subsystem builds no server engine
+     * and {@code HTTP_SERVER_ENGINE} is never bound).
+     *
+     * <p>Reading system properties here matches what the community provider does for the same
+     * keys, so the selection tie stops being observable.
+     */
+    private static Optional<String> systemPropertyFallback(String key) {
+        return Optional.ofNullable(System.getProperty(key));
     }
 
     @Override
@@ -168,7 +197,7 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
     @Override
     public Optional<String> getString(String key) {
         if (environment == null) {
-            return Optional.empty();
+            return systemPropertyFallback(key);
         }
         String direct = environment.getProperty(key);
         if (direct != null) {
@@ -184,7 +213,7 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
     @Override
     public Optional<Integer> getInt(String key) {
         if (environment == null) {
-            return Optional.empty();
+            return systemPropertyFallback(key).map(Integer::valueOf);
         }
         Integer direct = environment.getProperty(key, Integer.class);
         if (direct != null) {
@@ -201,7 +230,7 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
     @Override
     public Optional<Long> getLong(String key) {
         if (environment == null) {
-            return Optional.empty();
+            return systemPropertyFallback(key).map(Long::valueOf);
         }
         Long direct = environment.getProperty(key, Long.class);
         if (direct != null) {
@@ -214,7 +243,7 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
     @Override
     public Optional<Boolean> getBoolean(String key) {
         if (environment == null) {
-            return Optional.empty();
+            return systemPropertyFallback(key).map(Boolean::valueOf);
         }
         Boolean direct = environment.getProperty(key, Boolean.class);
         if (direct != null) {
@@ -227,6 +256,18 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
     @Override
     public <T> Optional<T> get(String key, Class<T> type) {
         if (environment == null) {
+            if (type == String.class) {
+                return systemPropertyFallback(key).map(type::cast);
+            }
+            if (type == Integer.class) {
+                return systemPropertyFallback(key).map(Integer::valueOf).map(type::cast);
+            }
+            if (type == Long.class) {
+                return systemPropertyFallback(key).map(Long::valueOf).map(type::cast);
+            }
+            if (type == Boolean.class) {
+                return systemPropertyFallback(key).map(Boolean::valueOf).map(type::cast);
+            }
             return Optional.empty();
         }
         T direct = environment.getProperty(key, type);
