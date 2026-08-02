@@ -35,18 +35,42 @@ public final class ExerisRouteRegistry {
     }
 
     /**
-     * Resolves the handler for the given method and path.
+     * Resolves the handler for the given method and request target.
      *
-     * @param method the HTTP method
-     * @param path   the request path (e.g., {@code "/status"})
+     * <p>The kernel delivers {@code HttpRequest.path()} as the raw <em>request target</em>,
+     * which includes the query string when present (per the kernel SPI contract:
+     * {@code "/api/v1/users?page=1"}). Routes are registered by path only, so the query
+     * string is stripped before lookup — otherwise {@code GET /api/v1/user?id=1} would miss
+     * the exact-match table and surface as a 404. The compatibility arm performs the
+     * equivalent normalisation in
+     * {@code eu.exeris.spring.runtime.web.compat.ExerisHandlerMethodRegistry#resolve}; both
+     * arms must agree, or the same request shape resolves in one mode and 404s in the other.
+     *
+     * <p><strong>Cost:</strong> query-less requests pay a single {@code indexOf} scan and
+     * allocate nothing. Requests carrying a query string allocate one short-lived substring
+     * per request. This is stated rather than hidden — it is the minimum needed to keep the
+     * lookup key a {@code String} for the {@code O(1)} map, and it is confined to requests
+     * that actually carry a query.
+     *
+     * @param method        the HTTP method
+     * @param requestTarget the raw request target (e.g., {@code "/status"} or
+     *                      {@code "/api/v1/user?id=1"}); the query string is stripped
      * @return the registered handler, or {@code null} if no route matches
      */
-    public ExerisRequestHandler resolve(HttpMethod method, String path) {
+    public ExerisRequestHandler resolve(HttpMethod method, String requestTarget) {
         Map<String, ExerisRequestHandler> handlersByPath = routes.get(method);
         if (handlersByPath == null) {
             return null;
         }
-        return handlersByPath.get(path);
+        return handlersByPath.get(stripQueryString(requestTarget));
+    }
+
+    private static String stripQueryString(String requestTarget) {
+        if (requestTarget == null) {
+            return null;
+        }
+        int q = requestTarget.indexOf('?');
+        return q < 0 ? requestTarget : requestTarget.substring(0, q);
     }
 
     public static Builder builder() {

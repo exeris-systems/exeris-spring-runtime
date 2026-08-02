@@ -378,4 +378,93 @@ class ExerisSpringConfigProviderTest {
         // Unset → kernel keeps its own default acquire timeout.
         assertThat(provider.getLong("persistence.connectionTimeoutMs")).isEmpty();
     }
+
+    // ===========================================================================
+    // No-Environment (fixture/bootstrap) path — system-property fallback
+    //
+    // Kernel 0.10.0 re-based open-core priorities to Community=0 / Enterprise=100
+    // (kernel CHANGELOG 0.10.0, #217). CommunityConfigProvider now reports priority 0,
+    // tying with this provider's no-Environment path, and
+    // KernelBootstrap.resolveConfigProvider() resolves ties via Stream.max — which keeps
+    // the FIRST element, i.e. ServiceLoader classpath order. This provider can therefore
+    // be selected while holding no Environment. If it answered empty, kernel config
+    // supplied via system properties would be silently blanked: the kernel testkit's
+    // exeris.http.mode=SERVER would be lost, CommunityHttpSubsystem would build no server
+    // engine, and HTTP_SERVER_ENGINE would never be bound — which is exactly how the
+    // wire-level ingress suite failed under 0.10.2 before this fallback existed.
+    // ===========================================================================
+
+    @Test
+    void noEnvironment_fallsBackToSystemProperties_soTheProviderTieIsNotObservable() {
+        String key = "exeris.test.noenv.mode";
+        System.setProperty(key, "SERVER");
+        try {
+            ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider((org.springframework.core.env.Environment) null);
+
+            assertThat(provider.getString(key))
+                    .as("A no-Environment instance that wins the priority tie must still "
+                            + "answer lookups the caller supplied via system properties")
+                    .contains("SERVER");
+            assertThat(provider.get(key, String.class)).contains("SERVER");
+        } finally {
+            System.clearProperty(key);
+        }
+    }
+
+    @Test
+    void noEnvironment_fallbackCoversTypedAccessors() {
+        System.setProperty("exeris.test.noenv.port", "8080");
+        System.setProperty("exeris.test.noenv.size", "4096");
+        System.setProperty("exeris.test.noenv.flag", "true");
+        try {
+            ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider((org.springframework.core.env.Environment) null);
+
+            assertThat(provider.getInt("exeris.test.noenv.port")).contains(8080);
+            assertThat(provider.getLong("exeris.test.noenv.size")).contains(4096L);
+            assertThat(provider.getBoolean("exeris.test.noenv.flag")).contains(true);
+            assertThat(provider.get("exeris.test.noenv.port", Integer.class)).contains(8080);
+        } finally {
+            System.clearProperty("exeris.test.noenv.port");
+            System.clearProperty("exeris.test.noenv.size");
+            System.clearProperty("exeris.test.noenv.flag");
+        }
+    }
+
+    @Test
+    void noEnvironment_returnsEmptyForUnsetKeys() {
+        ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider((org.springframework.core.env.Environment) null);
+
+        assertThat(provider.getString("exeris.test.noenv.definitely-unset")).isEmpty();
+        assertThat(provider.getInt("exeris.test.noenv.definitely-unset")).isEmpty();
+    }
+
+    @Test
+    void noEnvironment_malformedNumericValue_degradesToEmptyInsteadOfThrowing() {
+        // Before the system-property fallback existed this path could not throw — it answered
+        // empty for everything. Parsing raw system properties must not reintroduce a throwing
+        // path into a kernel SPI method called during bootstrap: a stray unparseable property
+        // would abort the boot instead of letting the kernel apply its own default.
+        System.setProperty("exeris.test.noenv.bad", "abc");
+        try {
+            ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider((org.springframework.core.env.Environment) null);
+
+            assertThat(provider.getInt("exeris.test.noenv.bad")).isEmpty();
+            assertThat(provider.getLong("exeris.test.noenv.bad")).isEmpty();
+            assertThat(provider.get("exeris.test.noenv.bad", Integer.class)).isEmpty();
+            assertThat(provider.get("exeris.test.noenv.bad", Long.class)).isEmpty();
+        } finally {
+            System.clearProperty("exeris.test.noenv.bad");
+        }
+    }
+
+    @Test
+    void noEnvironment_reportsDeferringPriority_whileSpringBackedInstanceOutranksIt() {
+        ExerisSpringConfigProvider fixtureInstance = new ExerisSpringConfigProvider((org.springframework.core.env.Environment) null);
+        ExerisSpringConfigProvider springInstance = new ExerisSpringConfigProvider(new MockEnvironment());
+
+        // Must stay >= 0: the ConfigProvider SPI contracts priority as ">= 0", so a negative
+        // "abstain" value is not available as a fix for the 0-vs-0 tie.
+        assertThat(fixtureInstance.priority()).isZero();
+        assertThat(springInstance.priority()).isEqualTo(150);
+    }
 }

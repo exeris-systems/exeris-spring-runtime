@@ -7,6 +7,8 @@
 package eu.exeris.spring.runtime.web;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -161,6 +163,38 @@ class ExerisWireLevelRuntimeIntegrationTest {
         fail("Exeris runtime remained reachable after shutdown on localhost:" + port);
     }
 
+    /**
+     * Blocks until {@code port} actually accepts TCP connections, or fails after {@code timeout}.
+     *
+     * <p>{@code EmbeddedHttpEngineFixture.start()} returns as soon as the kernel bootstrap body
+     * has obtained the {@code HttpServerEngine} and signalled started — which happens before the
+     * deferred engine has bound its listening socket. Every other test in this class absorbs that
+     * gap through the retry loops in {@link #awaitSuccessfulGet} / {@link #awaitResponseWithStatus};
+     * the drain test cannot, because it must fire its request asynchronously and leave it in
+     * flight while the fixture closes. Without an explicit gate it races the bind and fails with
+     * an immediate {@code ConnectException: Connection refused} on a slow runner.
+     *
+     * <p>Deliberately a raw TCP connect rather than an HTTP probe: the drain handler blocks until
+     * released, so an HTTP request to {@code /wire-drain} would consume the very handler
+     * invocation the test is trying to keep in flight.
+     */
+    private static void awaitPortAccepting(int port, Duration timeout) throws Exception {
+        Instant deadline = Instant.now().plus(timeout);
+        IOException lastFailure = null;
+
+        while (Instant.now().isBefore(deadline)) {
+            try (Socket probe = new Socket()) {
+                probe.connect(new InetSocketAddress("127.0.0.1", port), 250);
+                return;
+            } catch (IOException ex) {
+                lastFailure = ex;
+            }
+            Thread.sleep(50);
+        }
+
+        fail("Exeris ingress did not start accepting connections on localhost:" + port, lastFailure);
+    }
+
     private static HttpRequest request(int port, String path) {
         return HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path))
                 .GET()
@@ -289,6 +323,10 @@ class ExerisWireLevelRuntimeIntegrationTest {
 
             fixture.start(dispatcher);
             port = fixture.boundPort();
+
+            // start() signals ready before the deferred engine has bound; gate on the listener
+            // actually accepting, or the in-flight request below races the bind (see helper).
+            awaitPortAccepting(port, Duration.ofSeconds(10));
 
             requestFuture = client.sendAsync(
                     request(port, "/wire-drain", Duration.ofSeconds(5)),

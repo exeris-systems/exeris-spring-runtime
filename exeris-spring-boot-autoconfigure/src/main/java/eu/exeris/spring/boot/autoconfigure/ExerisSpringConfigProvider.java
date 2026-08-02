@@ -54,6 +54,9 @@ import eu.exeris.kernel.spi.config.KernelProfile;
  */
 public final class ExerisSpringConfigProvider implements ConfigProvider {
 
+    private static final System.Logger LOGGER =
+            System.getLogger(ExerisSpringConfigProvider.class.getName());
+
     /**
      * Bounded static holder populated by {@link #prepareBootstrap()} immediately before
      * {@code KernelBootstrap.boot()} and cleared in the corresponding finally block.
@@ -113,7 +116,79 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
     public int priority() {
         // Prefer this provider only when a Spring Environment is actually available.
         // In fixture-only bootstrap paths (no prepared Environment), defer to kernel/community providers.
+        //
+        // NOTE: "defer" is no longer expressible by priority alone. Kernel 0.10.0 re-based the
+        // open-core priorities to Community=0 / Enterprise=100 (kernel CHANGELOG 0.10.0, #217).
+        // CommunityConfigProvider therefore now reports 0 — the same value this provider reports
+        // in the no-Environment path — and KernelBootstrap.resolveConfigProvider() selects via
+        // Stream.max, which keeps the FIRST element on a tie, i.e. ServiceLoader classpath order.
+        // The SPI contracts priority as ">= 0", so there is no value meaning "abstain".
+        // Consequence: this provider can win the tie while holding no Environment, so the
+        // no-Environment path must still answer lookups rather than returning empty — see
+        // systemPropertyFallback(...). Do not "fix" that by returning a negative priority; it
+        // would violate the SPI contract.
         return environment == null ? 0 : 150;
+    }
+
+    /**
+     * Fallback used only by the no-{@link Environment} instance (fixture/bootstrap paths).
+     *
+     * <p>Without this, an instance created by {@code ServiceLoader} before
+     * {@link #prepareBootstrap()} answers every lookup with {@link Optional#empty()}. That was
+     * harmless while the community provider outranked it, but since kernel 0.10.0 the two tie at
+     * priority {@code 0} and this provider can be selected instead — silently blanking kernel
+     * configuration that the caller supplied via system properties (e.g. the kernel testkit's
+     * {@code exeris.http.mode=SERVER}, without which the HTTP subsystem builds no server engine
+     * and {@code HTTP_SERVER_ENGINE} is never bound).
+     *
+     * <p>Reading system properties here matches what the community provider does for the same
+     * keys, so the selection tie stops being observable.
+     */
+    private static Optional<String> systemPropertyFallback(String key) {
+        return Optional.ofNullable(System.getProperty(key));
+    }
+
+    /**
+     * Parses a system-property fallback value as an {@link Integer}, degrading to
+     * {@link Optional#empty()} rather than propagating {@link NumberFormatException}.
+     *
+     * <p>Before the fallback existed, the no-{@link Environment} path answered every lookup with
+     * {@code Optional.empty()} and could not throw. Parsing raw system properties reintroduces a
+     * throwing path into a kernel SPI method called during bootstrap, where an unrelated stray
+     * property (e.g. {@code -Dexeris.runtime.network.port=abc}) would abort the boot instead of
+     * letting the kernel apply its own default. Returning empty restores the previous
+     * non-throwing contract.
+     *
+     * <p>The malformed value is logged rather than swallowed: silently booting on a default port
+     * because a supplied value was unparseable is precisely the kind of hidden cost this repo
+     * refuses to ship.
+     */
+    private static Optional<Integer> parseIntOrWarn(String key, String value) {
+        try {
+            return Optional.of(Integer.valueOf(value));
+        } catch (NumberFormatException ex) {
+            warnUnparseable(key, value, "int");
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * {@link Long} counterpart of {@link #parseIntOrWarn(String, String)}; same rationale.
+     */
+    private static Optional<Long> parseLongOrWarn(String key, String value) {
+        try {
+            return Optional.of(Long.valueOf(value));
+        } catch (NumberFormatException ex) {
+            warnUnparseable(key, value, "long");
+            return Optional.empty();
+        }
+    }
+
+    private static void warnUnparseable(String key, String value, String targetType) {
+        LOGGER.log(System.Logger.Level.WARNING,
+                () -> "Exeris kernel config key '" + key + "' has system-property value '" + value
+                        + "' which is not a valid " + targetType
+                        + "; ignoring it and letting the kernel apply its default.");
     }
 
     @Override
@@ -168,7 +243,7 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
     @Override
     public Optional<String> getString(String key) {
         if (environment == null) {
-            return Optional.empty();
+            return systemPropertyFallback(key);
         }
         String direct = environment.getProperty(key);
         if (direct != null) {
@@ -184,7 +259,7 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
     @Override
     public Optional<Integer> getInt(String key) {
         if (environment == null) {
-            return Optional.empty();
+            return systemPropertyFallback(key).flatMap(value -> parseIntOrWarn(key, value));
         }
         Integer direct = environment.getProperty(key, Integer.class);
         if (direct != null) {
@@ -201,7 +276,7 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
     @Override
     public Optional<Long> getLong(String key) {
         if (environment == null) {
-            return Optional.empty();
+            return systemPropertyFallback(key).flatMap(value -> parseLongOrWarn(key, value));
         }
         Long direct = environment.getProperty(key, Long.class);
         if (direct != null) {
@@ -214,7 +289,7 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
     @Override
     public Optional<Boolean> getBoolean(String key) {
         if (environment == null) {
-            return Optional.empty();
+            return systemPropertyFallback(key).map(Boolean::valueOf);
         }
         Boolean direct = environment.getProperty(key, Boolean.class);
         if (direct != null) {
@@ -227,6 +302,22 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
     @Override
     public <T> Optional<T> get(String key, Class<T> type) {
         if (environment == null) {
+            if (type == String.class) {
+                return systemPropertyFallback(key).map(type::cast);
+            }
+            if (type == Integer.class) {
+                return systemPropertyFallback(key)
+                        .flatMap(value -> parseIntOrWarn(key, value))
+                        .map(type::cast);
+            }
+            if (type == Long.class) {
+                return systemPropertyFallback(key)
+                        .flatMap(value -> parseLongOrWarn(key, value))
+                        .map(type::cast);
+            }
+            if (type == Boolean.class) {
+                return systemPropertyFallback(key).map(Boolean::valueOf).map(type::cast);
+            }
             return Optional.empty();
         }
         T direct = environment.getProperty(key, type);
