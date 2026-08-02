@@ -142,7 +142,7 @@ modules must add the same guard set before merge.
 
 | Invariant | Primary guard |
 |:---|:---|
-| Exeris-owned ingress end-to-end | `ExerisWireLevelRuntimeIntegrationTest` (bind, body, 404, status, drain, telemetry scope) |
+| Exeris-owned ingress end-to-end | `ExerisWireLevelRuntimeIntegrationTest` (bind, body, 404, status, telemetry scope; in-flight drain disabled against kernel 0.10.2 — see `phase-1-milestone-status.md`) |
 | Routing via `ExerisRouteRegistry`, no `DispatcherServlet` on Pure Mode | `ExerisRouteRegistryTest`, `ExerisHttpDispatcherTest`, `CompatibilityIsolationGuardTest` |
 | `ExerisRequestHandler` is not a kernel SPI | `WallIntegrityTest` (no Spring in kernel SPI/Core) |
 | No body copy / `LoanedBuffer` ownership | `ExerisServerResponseTest`, `ExerisPureModeRequestPathIntegrationTest`, `ExerisWireLevelRuntimeIntegrationTest#pureMode_bodyResponse_*` |

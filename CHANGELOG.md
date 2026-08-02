@@ -139,8 +139,30 @@ at least one downstream service has run it in production for a representative pe
   outside Exeris.
 - **Compatibility Mode is bounded, not "all of Spring works."** It covers what this repo consumes from
   the framework, nothing broader.
+- **No graceful drain of in-flight requests at shutdown.** See the operational note below — this one
+  affects how you configure deployments, not just what you can call.
 
-### Known operational note
+### Known operational gap — shutdown drops in-flight requests
+
+On the pinned kernel (0.10.2), a request that is in flight when shutdown begins has its connection
+closed **without a response**. Clients that retry idempotent requests see the retry refused, because the
+listener is already gone.
+
+The kernel does implement a drain — `PaqsScheduler.close()` waits for its active stream count to reach
+zero with a 60 s hard deadline — but on 0.10.2 it is sequenced last: after the transport has closed the
+listening socket and every live channel, and after the reactor threads that write responses have exited.
+It therefore waits on work that can no longer respond. Confirmed kernel-side on 2026-08-02 and reordered
+upstream in kernel **0.11.0**; this release predates that bump.
+
+**What to do about it:** do not size `terminationGracePeriodSeconds` on the assumption that a drain
+window protects these requests. Take the instance out of load balancer rotation and let in-flight work
+finish *before* sending SIGTERM. What this release does guarantee is that ingress stops answering once
+shutdown has run.
+
+The wire-level coverage for drain (`ExerisWireLevelRuntimeIntegrationTest#pureMode_shutdownDrains…`) is
+`@Disabled` against 0.10.2 rather than deleted, and is re-enabled when the kernel pin moves.
+
+### Known operational note — version skew across modules
 
 The flow-step provider-scope fix is only correct when the **whole reactor** is redeployed together.
 A downstream bundle mixing pre-fix and post-fix modules produces sagas that never resolve, with no
