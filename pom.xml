@@ -80,6 +80,7 @@
         <maven.compiler.plugin.version>3.14.1</maven.compiler.plugin.version>
         <maven.surefire.plugin.version>3.2.5</maven.surefire.plugin.version>
         <maven.failsafe.plugin.version>3.2.5</maven.failsafe.plugin.version>
+        <maven.deploy.plugin.version>3.1.4</maven.deploy.plugin.version>
 
         <!-- Coverage quality gate (opt-in via -Pcoverage). 0.8.15 is the first
              JaCoCo with JDK 26 class-file support (major version 70) — see the
@@ -256,6 +257,30 @@
                     <version>${maven.failsafe.plugin.version}</version>
                     <configuration>
                         <argLine>@{coverage.argLine} ${test.jvm.args}</argLine>
+                    </configuration>
+                </plugin>
+                <!--
+                    deployAtEnd: hold every module's upload until the whole reactor has
+                    succeeded, instead of publishing each module as it passes.
+
+                    Without this, `mvn deploy` publishes module-by-module, so a failure part
+                    way through the reactor leaves the modules that already passed published
+                    and the rest not. That is tolerable for snapshots (they are mutable and
+                    get overwritten on the next push) but not for a release: release
+                    coordinates on GitHub Packages cannot be overwritten or withdrawn, so a
+                    half-published release version is unrecoverable — the only way forward is
+                    to burn the number and cut the next one.
+
+                    This is not hypothetical. Deploy run 30736662274 attempt 1 (2026-08-02)
+                    failed in `-web` on a flaky test, after parent, BOM, build-config,
+                    autoconfigure and actuator had already uploaded.
+                -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-deploy-plugin</artifactId>
+                    <version>${maven.deploy.plugin.version}</version>
+                    <configuration>
+                        <deployAtEnd>true</deployAtEnd>
                     </configuration>
                 </plugin>
             </plugins>
