@@ -1,9 +1,9 @@
 # Architecture Overview
 
 **Repository:** `exeris-spring-runtime`  
-**Version:** 0.5.0-SNAPSHOT (en route to `0.5.0-preview` release train — events + flow/saga preview)  
-**Status:** Phase 4B Step 2 closed (declarative + imperative flow surface). Phases 0 / 1 / 2 / 3 / 4A all closed; Phase 4B Step 3 (choreography bridge) and Step 4 (closure) outstanding. See `docs/roadmap-1.0-trl9.md` for the full release-train view.  
-**Kernel target:** `exeris-kernel` 0.7.0 (Java 26 with `--enable-preview`)
+**Version:** see the root `pom.xml` `<version>` for the current development coordinate. Release train: `0.7.0` (Phase 4C graph seam is the highest landed train; see [`CHANGELOG.md`](../../CHANGELOG.md)).  
+**Status:** Phases 0 / 1 / 2 / 3 (3A + 3C) / 3B-α / 4A / 4B / 4C all closed. Outstanding for 1.0: Spring Boot 4 dual matrix (0.8.0 train, ADR-028), Phase 5 edge gateway (0.9.0 train, ADR-021), Phase 3B-β/γ (kernel-gated, ADR-031). See `docs/roadmap-1.0-trl9.md` for the full release-train view.  
+**Kernel target:** `exeris-kernel` 0.10.2 (Java 26 with `--enable-preview`)
 
 ---
 
@@ -77,7 +77,8 @@ Every feature in this repository must declare which mode it belongs to.
 - Selected Spring Web programming model conveniences (`@RestController`, `@RequestMapping`, etc.).
 - Explicit registration required. Never activates automatically when pure mode is running.
 - Documented trade-off: increased heap churn, larger compatibility surface, reduced performance headroom.
-- Implementation deferred to Phase 2.
+- Delivered in Phase 2 (closed). Measured cost: Pure ≈ 176 B/dispatch vs Compat ≈ 5095 B/dispatch
+  (`ExerisCompatAllocationCostReportTest`). Activated by `exeris.runtime.web.mode=compatibility`.
 
 ---
 
@@ -106,7 +107,18 @@ Interpretation rules:
 - **Phase 0** proves bootstrap coexistence and Wall integrity.
 - **Phase 1** proves host-runtime legitimacy (Exeris-owned ingress path).
 - **Phase 2** adds explicitly scoped, opt-in Spring compatibility.
-- **Phase 3** expands into high-risk tx/context/persistence concerns.
+- **Phase 3** expands into high-risk tx/context/persistence concerns (3A tx, 3C JDBC bridge per ADR-017).
+- **Phase 3B-α** adds request scope + structured concurrency on `ScopedValue` (ADR-029). Kernel-independent.
+- **Phase 3B-β/γ** add W3C `traceparent` propagation and OTel emission (ADR-031). **Kernel-gated** — waits
+  on the kernel `TraceContext`/`ScopedValue` slot and `PrometheusOtlpTelemetrySink`; neither shipped as of
+  kernel 0.10.2.
+- **Phase 4A / 4B / 4C** add the events, flow/saga, and graph seams — each a separate opt-in module,
+  each default-off (ADR-027, ADR-030).
+- **Phase 5** adds the edge gateway (ADR-021). Not started; it is **not** a Spring Cloud Gateway bridge.
+
+Phases 4A–4C and 5 ship as **preview, default-off**. Graduation to bounded GA needs the phase invariants
+green **and** ≥1 downstream service running the module in production for a representative period —
+landing the code is not graduation.
 
 ---
 
@@ -123,28 +135,50 @@ exeris-spring-runtime-web
     └── exeris-kernel-spi
     └── exeris-kernel-core
     └── exeris-spring-boot-autoconfigure
-    └── spring-web (programming model only — NOT spring-webmvc)
+    └── exeris-spring-runtime-actuator          [optional]
+    └── spring-web (programming model only — NOT spring-webmvc;
+                    jakarta.servlet-api explicitly excluded)
+    └── spring-boot-starter-oauth2-resource-server  [optional — compat-mode security only]
 
 exeris-spring-runtime-tx
     └── exeris-kernel-spi
     └── spring-tx
     └── spring-context
 
-exeris-spring-runtime-data  [Phase 3 placeholder]
+exeris-spring-runtime-data  [Phase 3C — compat JDBC bridge, ADR-017]
     └── exeris-kernel-spi
+    └── exeris-kernel-community
+    └── exeris-spring-runtime-tx
     └── spring-tx
+    └── spring-jdbc
 
 exeris-spring-runtime-actuator
     └── exeris-kernel-spi
     └── exeris-spring-boot-autoconfigure
     └── spring-boot-actuator-autoconfigure
     └── micrometer-core (optional)
+
+exeris-spring-runtime-events  [Phase 4A]
+    └── exeris-kernel-spi
+    └── exeris-spring-boot-autoconfigure
+
+exeris-spring-runtime-flow  [Phase 4B]
+    └── exeris-kernel-spi
+    └── exeris-spring-boot-autoconfigure
+    └── exeris-spring-runtime-events            [choreography bridge consumes the events seam]
+
+exeris-spring-runtime-graph  [Phase 4C]
+    └── exeris-kernel-spi
+    └── exeris-spring-boot-autoconfigure
 ```
 
 Key constraints:
 - `web` must NOT depend on `data`
-- `tx` may depend on `data`, but `data` must NOT depend on `web`
+- `data` depends on `tx` (not the reverse), and `data` must NOT depend on `web`
 - `actuator` observes all, but must not own any execution path
+- `events` / `flow` / `graph` depend on SPI + autoconfigure only — never on `web`, `tx`, or `data`.
+  The single cross-runtime-module edge is `flow → events`, which exists so the choreography bridge
+  can subscribe to the kernel `EventBus` seam; it is not a Spring event bridge (ADR-027).
 - No module may import Spring types into `eu.exeris.kernel.*` packages
 
 ---
@@ -154,12 +188,24 @@ Key constraints:
 The Exeris kernel initialises subsystems in a strict DAG:
 
 ```
-Config → Memory → Exceptions
-                → Security + Persistence (parallel)
-                → Graph + Transport (parallel)
-                → Events + Flow (parallel)
-                → KERNEL READY
+FOUNDATION:  Memory (sequential)
+                ↓
+SERVICES:    Crypto + Persistence + Graph + Transport   (parallel, StructuredTaskScope)
+                ↓
+RUNTIME:     Events + Flow + HTTP                       (parallel)
+                ↓
+             KERNEL READY
 ```
+
+Two things this DAG deliberately does **not** contain:
+
+- **`Config` is not a DAG node.** It is resolved by `KernelBootstrap` via `ServiceLoader<ConfigProvider>`
+  *before* the orchestrator runs. This repo contributes `ExerisSpringConfigProvider` at priority 150.
+- **`Security` is not a boot node** — it is an L1 Citadel concept (ADR-012). `Exceptions` is not a
+  subsystem layer either.
+
+The canonical source is `exeris-kernel/docs/subsystems/bootstrap.md`; if this diagram and the kernel doc
+disagree, the kernel doc wins.
 
 The Spring `ApplicationContext` starts **after** the kernel reaches `READY` state (or in parallel for
 config-only phases). The lifecycle sequencing is managed by `ExerisRuntimeLifecycle` (in this repo)
@@ -202,9 +248,13 @@ Forbidden crossings:
 ```
 eu.exeris.spring.boot.autoconfigure.*   — Boot config, conditions, lifecycle wiring
 eu.exeris.spring.runtime.web.*          — Transport/request bridge, handlers, codecs
+eu.exeris.spring.runtime.web.scope.*    — Request scope + structured concurrency (Phase 3B-α)
 eu.exeris.spring.runtime.tx.*           — Transaction abstraction bridge
-eu.exeris.spring.runtime.data.*         — Persistence integration (Phase 3)
+eu.exeris.spring.runtime.data.*         — Persistence integration (Phase 3C, compat JDBC)
 eu.exeris.spring.runtime.actuator.*     — Health, metrics, diagnostics
+eu.exeris.spring.runtime.events.*       — EventBus seam (Phase 4A)
+eu.exeris.spring.runtime.flow.*         — Flow/saga seam (Phase 4B)
+eu.exeris.spring.runtime.graph.*        — GraphEngine seam (Phase 4C)
 ```
 
 These packages must never appear inside `eu.exeris.kernel.*`.
@@ -229,9 +279,19 @@ All integration code is adjacent to the kernel hot path. The following invariant
 
 | Phase | Status | Milestone |
 |:------|:-------|:----------|
-| Phase 0 | In Progress | Maven skeleton + ADR + bootstrap POC |
-| Phase 1 | Not Started | Exeris HTTP ingress + Spring bean handler |
-| Phase 2 | Not Started | Spring MVC compatibility bridge (opt-in) |
-| Phase 3 | Not Started | Transactions + context + persistence bridge |
+| Phase 0 | Closed (2026-05-09) | Maven skeleton + ADR + bootstrap coexistence + Wall integrity |
+| Phase 1 | Closed (2026-05-09) | Exeris-owned HTTP ingress, proven wire-level (`ExerisWireLevelRuntimeIntegrationTest`) |
+| Phase 2 | Closed (2026-05-09) | Compatibility-mode `@RestController` bridge, no `DispatcherServlet` |
+| Phase 3A / 3C | Closed (2026-05-09) | `ExerisPlatformTransactionManager`; ADR-017-bounded JDBC bridge |
+| Phase 3B-α | Closed (2026-05-17) | Request scope + structured concurrency (ADR-029) |
+| Phase 3B-β / γ | **Kernel-gated** | Waits on kernel `TraceContext` slot / OTLP sink (ADR-031) — absent in kernel 0.10.2 |
+| Phase 4A | Closed (2026-05-09) | Events seam, preview default-off |
+| Phase 4B | Closed (2026-05-11) | Flow/saga seam + durable snapshots, preview default-off |
+| Phase 4C | Closed (2026-05-17) | Graph seam, preview default-off, GA kernel-gated (ADR-030) |
+| SB4 matrix | Not started | Spring Boot 4 dual matrix (ADR-028), 0.8.0 train |
+| Phase 5 | Not started | Edge gateway (ADR-021), 0.9.0 train |
+
+"Closed" means the phase invariants are captured and green — **not** that the module is GA. Phases 4A–4C
+ship as preview default-off; see *Canonical Roadmap Semantics* above for the graduation criterion.
 
 See `docs/phases/` for detailed delivery plans per phase.

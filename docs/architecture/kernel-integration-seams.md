@@ -4,7 +4,8 @@ This is the primary engineering reference for how Exeris kernel SPI interfaces
 map to Spring integration points. Engineers implementing features in this
 repository must read this document first.
 
-**Kernel version:** 0.5.0-SNAPSHOT  
+**Kernel version:** 0.10.2 (pinned in the root `pom.xml` as `<exeris.kernel.version>`; a released
+coordinate, never a `-SNAPSHOT`)  
 **Kernel package root:** `eu.exeris.kernel.spi.*`
 
 ---

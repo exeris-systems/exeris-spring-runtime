@@ -1,6 +1,11 @@
 # Roadmap to 1.0 and TRL-9
 
-**Status basis:** repository state as of 2026-05-17 (Phase 4B closure 2026-05-11 via PR #27; ADR-021 amendment 2026-05-13; ADR-027/028/029/030 acceptance, 0.6.0/0.7.0/0.8.0/0.9.0-preview resequence, Phase 3B-α closed via PR #32, and Phase 4C closed via PRs #34/35/36/37/38 — all 2026-05-17)  
+**Status basis:** repository state as of 2026-08-02. Feature trains: Phase 4B closure 2026-05-11 (PR #27);
+ADR-021 amendment 2026-05-13; ADR-027/028/029/030 acceptance, 0.6.0/0.7.0/0.8.0/0.9.0 resequence,
+Phase 3B-α closed (PR #32), Phase 4C closed (PRs #34/35/36/37/38) — all 2026-05-17. Since then, no new
+feature train has landed; PRs #39–#50 are hardening and downstream-driven fixes (ADR-041 compat security
+under `web-application-type=none`, kernel provider scope re-binding for the compat security filter and
+flow steps, compat JDBC coverage ratchet, CI build + per-module JaCoCo gates, kernel bump to 0.10.2).  
 **Intent:** delivery planning and scope control, not a claim of production readiness.
 
 ---
@@ -91,7 +96,7 @@ The production 1.0 target should stay deliberately narrow:
 ### 0.5.0-preview
 - Land Phase 4A (events bridge) and 4B (flow/saga bridge) as opt-in modules: `exeris-spring-runtime-events` and `exeris-spring-runtime-flow`.
 - Default-off via `exeris.runtime.events.enabled` and `exeris.runtime.flow.enabled`; activation must remain explicit, never silently enabled.
-- **Durable flow snapshots are NOT in scope for 0.5.0-preview.** 4B ships with `persistenceEnabled=false`; flows live in process memory and are lost on restart. Kernel 0.7.0 added the Community `JdbcFlowSnapshotStore` (with `exeris_saga_state` DDL), so the kernel-side prerequisite is satisfied. The Spring-side bridge that binds it through `KernelProviders.FLOW_SNAPSHOT_STORE` is sequenced for Phase 4B Step 4 closure and depends on the Pure Mode persistence autoconfiguration ordering being settled. Activation flag is `exeris.runtime.flow.persistence-enabled` (kebab-cased; record field `persistenceEnabled`).
+- **Durable flow snapshots landed after all** — this bullet originally scoped them *out* of the 0.5.0 train, and Phase 4B Step 4 closure (PR #27, kernel 0.8.0 + ADR-022) brought them in. Current behaviour: `persistenceEnabled` defaults to **`true`** once `exeris.runtime.flow.enabled=true` is set; the community kernel auto-selects between `JdbcFlowSnapshotStore` (when a JDBC `PersistenceEngine` is bound) and the in-memory `CommunityFlowSnapshotStore`. Parked flows survive a JVM restart. Applications wanting pure fire-and-forget flows opt out via `exeris.runtime.flow.persistence-enabled=false` (kebab-cased; record field `persistenceEnabled`). See [`phase-4-events-flow.md`](phases/phase-4-events-flow.md) §4B for the authoritative description.
 - Keep Spring `ApplicationEventPublisher` and the Exeris `EventBus` separate; never wire one into the other.
 - Verify subscription cleanup at `SmartLifecycle.stop()`, choreography activation gated on `FlowEngineCapabilities.choreographySupport()`, and that step lambdas closing over Spring beans do not invert lifecycle ownership.
 - Do not promote 4A/4B to GA in 1.0 unless the single graduation criterion (gates clear **and** ≥1 production-run downstream service) is met — preview status is the safe default.
@@ -183,6 +188,27 @@ Splitting Phase 3B accordingly:
 ---
 
 ## Release Management Notes
+
+### Published version strings drop the `-preview` qualifier
+
+The train names in this document (`0.5.0-preview`, `0.7.0-preview`, …) are **planning labels**. The
+published Maven coordinate is the bare number — `0.7.0`, not `0.7.0-preview`.
+
+Reason: Maven's `ComparableVersion` treats `preview` as an *unknown* qualifier and sorts it **newer**
+than the unqualified release. Verified against `maven-artifact` 3.9.16:
+
+```
+0.7.0-preview  >  0.7.0          ← inverted relative to intent
+0.5.0-SNAPSHOT <  0.7.0-preview
+0.7.0-preview  <  0.8.0-preview
+```
+
+Within an all-`-preview` line the ordering is still monotonic, so the qualifier is only actively harmful
+if a bare `0.7.0` is ever published alongside it — at which point resolvers and version ranges would
+prefer the preview. Rather than depend on never making that mistake, preview status is carried where it
+is unambiguous: this roadmap, `CHANGELOG.md`, and the default-off property flags on each preview module.
+
+### General
 
 - Keep Pure Mode as the default and reference architecture.
 - Keep Compatibility Mode explicit and never silently enabled.

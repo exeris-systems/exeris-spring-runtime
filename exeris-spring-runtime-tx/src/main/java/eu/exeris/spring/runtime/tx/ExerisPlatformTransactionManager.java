@@ -42,8 +42,12 @@ import java.util.Objects;
  *   <li>{@code REQUIRED} — joins an existing transaction or starts a new one.</li>
  *   <li>{@code REQUIRES_NEW} — always opens a second independent connection.</li>
  *   <li>{@code MANDATORY} — requires an active transaction; throws if none.</li>
- *   <li>{@code NESTED}, {@code NOT_SUPPORTED} — {@code UnsupportedOperationException}
- *       (Phase 3 scope limit).</li>
+ *   <li>{@code NESTED} — {@code UnsupportedOperationException} (Phase 3 scope limit); there are
+ *       no savepoints on the kernel {@code PersistenceConnection} contract.</li>
+ *   <li>{@code NOT_SUPPORTED} — <strong>not</strong> rejected here. Spring's
+ *       {@code AbstractPlatformTransactionManager} suspends the current transaction and proceeds
+ *       without one before {@link #doBegin} is ever reached, so this manager never sees it.
+ *       The call runs non-transactionally rather than failing.</li>
  * </ul>
  *
  * <h2>Retry Gap</h2>
