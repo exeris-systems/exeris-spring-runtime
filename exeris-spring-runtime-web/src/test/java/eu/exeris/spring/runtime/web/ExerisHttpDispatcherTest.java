@@ -29,6 +29,7 @@ import eu.exeris.kernel.spi.http.HttpExchange;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpResponse;
+import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.telemetry.KernelEvent;
 import eu.exeris.kernel.spi.telemetry.TelemetrySink;
@@ -181,6 +182,30 @@ class ExerisHttpDispatcherTest {
         assertThat(handlerInvocations).hasValue(2);
         assertThat(firstExchange.response()).isNotNull();
         assertThat(secondExchange.response()).isNotNull();
+    }
+
+    @Test
+    void pureMode_resolvesHandler_whenRequestTargetCarriesQueryString() throws Exception {
+        AtomicReference<String> observedPath = new AtomicReference<>();
+
+        ExerisRequestHandler handler = request -> {
+            observedPath.set(request.path());
+            return ExerisServerResponse.ok().body("user");
+        };
+
+        ExerisHttpDispatcher dispatcher = new ExerisHttpDispatcher(
+                ExerisRouteRegistry.builder()
+                        .register(HttpMethod.GET, "/api/v1/user", handler)
+                        .build(),
+                new ExerisErrorMapper());
+
+        TestExchange exchange = TestExchange.get(HttpMethod.GET, "/api/v1/user?id=1", anyHttpVersion());
+        dispatcher.handle(exchange.proxy());
+
+        // The route resolves despite the query string — previously this fell through to 404.
+        assertThat(exchange.response().status()).isEqualTo(HttpStatus.OK);
+        // The handler still sees the raw request target, so query parameters remain readable.
+        assertThat(observedPath.get()).isEqualTo("/api/v1/user?id=1");
     }
 
     private static ExerisRouteRegistry routeRegistry(ExerisRequestHandler handler) {
