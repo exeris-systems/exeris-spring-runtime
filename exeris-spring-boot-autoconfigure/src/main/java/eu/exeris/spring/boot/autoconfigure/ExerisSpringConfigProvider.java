@@ -54,6 +54,9 @@ import eu.exeris.kernel.spi.config.KernelProfile;
  */
 public final class ExerisSpringConfigProvider implements ConfigProvider {
 
+    private static final System.Logger LOGGER =
+            System.getLogger(ExerisSpringConfigProvider.class.getName());
+
     /**
      * Bounded static holder populated by {@link #prepareBootstrap()} immediately before
      * {@code KernelBootstrap.boot()} and cleared in the corresponding finally block.
@@ -145,6 +148,49 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
         return Optional.ofNullable(System.getProperty(key));
     }
 
+    /**
+     * Parses a system-property fallback value as an {@link Integer}, degrading to
+     * {@link Optional#empty()} rather than propagating {@link NumberFormatException}.
+     *
+     * <p>Before the fallback existed, the no-{@link Environment} path answered every lookup with
+     * {@code Optional.empty()} and could not throw. Parsing raw system properties reintroduces a
+     * throwing path into a kernel SPI method called during bootstrap, where an unrelated stray
+     * property (e.g. {@code -Dexeris.runtime.network.port=abc}) would abort the boot instead of
+     * letting the kernel apply its own default. Returning empty restores the previous
+     * non-throwing contract.
+     *
+     * <p>The malformed value is logged rather than swallowed: silently booting on a default port
+     * because a supplied value was unparseable is precisely the kind of hidden cost this repo
+     * refuses to ship.
+     */
+    private static Optional<Integer> parseIntOrWarn(String key, String value) {
+        try {
+            return Optional.of(Integer.valueOf(value));
+        } catch (NumberFormatException ex) {
+            warnUnparseable(key, value, "int");
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * {@link Long} counterpart of {@link #parseIntOrWarn(String, String)}; same rationale.
+     */
+    private static Optional<Long> parseLongOrWarn(String key, String value) {
+        try {
+            return Optional.of(Long.valueOf(value));
+        } catch (NumberFormatException ex) {
+            warnUnparseable(key, value, "long");
+            return Optional.empty();
+        }
+    }
+
+    private static void warnUnparseable(String key, String value, String targetType) {
+        LOGGER.log(System.Logger.Level.WARNING,
+                () -> "Exeris kernel config key '" + key + "' has system-property value '" + value
+                        + "' which is not a valid " + targetType
+                        + "; ignoring it and letting the kernel apply its default.");
+    }
+
     @Override
     public Supplier<KernelSettings> kernelSettings() {
         return () -> {
@@ -213,7 +259,7 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
     @Override
     public Optional<Integer> getInt(String key) {
         if (environment == null) {
-            return systemPropertyFallback(key).map(Integer::valueOf);
+            return systemPropertyFallback(key).flatMap(value -> parseIntOrWarn(key, value));
         }
         Integer direct = environment.getProperty(key, Integer.class);
         if (direct != null) {
@@ -230,7 +276,7 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
     @Override
     public Optional<Long> getLong(String key) {
         if (environment == null) {
-            return systemPropertyFallback(key).map(Long::valueOf);
+            return systemPropertyFallback(key).flatMap(value -> parseLongOrWarn(key, value));
         }
         Long direct = environment.getProperty(key, Long.class);
         if (direct != null) {
@@ -260,10 +306,14 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
                 return systemPropertyFallback(key).map(type::cast);
             }
             if (type == Integer.class) {
-                return systemPropertyFallback(key).map(Integer::valueOf).map(type::cast);
+                return systemPropertyFallback(key)
+                        .flatMap(value -> parseIntOrWarn(key, value))
+                        .map(type::cast);
             }
             if (type == Long.class) {
-                return systemPropertyFallback(key).map(Long::valueOf).map(type::cast);
+                return systemPropertyFallback(key)
+                        .flatMap(value -> parseLongOrWarn(key, value))
+                        .map(type::cast);
             }
             if (type == Boolean.class) {
                 return systemPropertyFallback(key).map(Boolean::valueOf).map(type::cast);

@@ -439,6 +439,25 @@ class ExerisSpringConfigProviderTest {
     }
 
     @Test
+    void noEnvironment_malformedNumericValue_degradesToEmptyInsteadOfThrowing() {
+        // Before the system-property fallback existed this path could not throw — it answered
+        // empty for everything. Parsing raw system properties must not reintroduce a throwing
+        // path into a kernel SPI method called during bootstrap: a stray unparseable property
+        // would abort the boot instead of letting the kernel apply its own default.
+        System.setProperty("exeris.test.noenv.bad", "abc");
+        try {
+            ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider((org.springframework.core.env.Environment) null);
+
+            assertThat(provider.getInt("exeris.test.noenv.bad")).isEmpty();
+            assertThat(provider.getLong("exeris.test.noenv.bad")).isEmpty();
+            assertThat(provider.get("exeris.test.noenv.bad", Integer.class)).isEmpty();
+            assertThat(provider.get("exeris.test.noenv.bad", Long.class)).isEmpty();
+        } finally {
+            System.clearProperty("exeris.test.noenv.bad");
+        }
+    }
+
+    @Test
     void noEnvironment_reportsDeferringPriority_whileSpringBackedInstanceOutranksIt() {
         ExerisSpringConfigProvider fixtureInstance = new ExerisSpringConfigProvider((org.springframework.core.env.Environment) null);
         ExerisSpringConfigProvider springInstance = new ExerisSpringConfigProvider(new MockEnvironment());
