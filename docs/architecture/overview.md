@@ -150,7 +150,7 @@ exeris-spring-runtime-data  [Phase 3C — compat JDBC bridge, ADR-017]
     └── exeris-kernel-community
     └── exeris-spring-runtime-tx
     └── spring-tx
-    └── spring-jdbc
+    (NOT spring-jdbc — see note below)
 
 exeris-spring-runtime-actuator
     └── exeris-kernel-spi
@@ -179,6 +179,11 @@ Key constraints:
 - `events` / `flow` / `graph` depend on SPI + autoconfigure only — never on `web`, `tx`, or `data`.
   The single cross-runtime-module edge is `flow → events`, which exists so the choreography bridge
   can subscribe to the kernel `EventBus` seam; it is not a Spring event bridge (ADR-027).
+- **`data` must NOT put `spring-jdbc` on its compile classpath.** The dependency is present but
+  commented out in `exeris-spring-runtime-data/pom.xml`, and `ExerisDataAutoConfiguration` orders itself
+  ahead of Spring Boot's `DataSourceAutoConfiguration` using `@AutoConfiguration(beforeName = "…")` with
+  the FQN as a *string* rather than a class literal, specifically so the compile classpath stays clean.
+  Adding `spring-jdbc` back is an architectural decision under ADR-017, not a convenience.
 - No module may import Spring types into `eu.exeris.kernel.*` packages
 
 ---
