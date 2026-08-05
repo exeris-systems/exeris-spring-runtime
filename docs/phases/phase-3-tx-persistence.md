@@ -152,6 +152,16 @@ a `DataSource` adapter backed by Exeris Community `JdbcPersistenceConnection`.
 | 10 | `ExerisDataAutoConfiguration` — `@ConditionalOnProperty("exeris.runtime.data.compat-datasource.enabled")` | `data` | ✅ | `ExerisDataAutoConfigurationTest` |
 | 11 | ADR-017 — JDBC Compatibility Scope (ACCEPTED 2026-04-07) | docs/adr | ✅ | governs all `data` module classes |
 | 12 | `DataModuleBoundaryTest` — ArchUnit guard for ADR-017 §7 Rules (JDBC adapter classes must reside in `*.data.compat.*`) | `data` (test) | ✅ | enforced |
+| 13 | `ExerisHibernateBootstrapCustomizer` — supplies `hibernate.boot.allow_jdbc_metadata_access=false` and derives `hibernate.dialect` from `exeris.runtime.persistence.jdbc-url`, so a JPA application does not carry this runtime's bootstrap-ordering constraint in its own configuration | `data` (`compat`) | ✅ | `ExerisHibernateBootstrapCustomizerTest`, `ExerisDataAutoConfigurationTest` |
+
+**Why item 13 exists (added 2026-08-05).** Hibernate opens a JDBC connection during
+`EntityManagerFactory` construction to infer its dialect. That runs inside Spring `refresh()`,
+before `ExerisRuntimeLifecycle.start()` creates the kernel persistence engine, so `ExerisDataSource`
+cannot serve it. Until this landed, the application had to set both Hibernate properties by hand and
+`kernel-integration-seams.md` called that the canonical configuration — placing a runtime ordering
+constraint inside application persistence config. It rides the same opt-in as the rest of Level 2,
+never overrides an application that has stated either setting itself, and derives dialects for
+PostgreSQL and H2 only, failing startup rather than guessing for anything else.
 
 **Connection sharing semantics:** When `ExerisPlatformTransactionManager` starts a new
 transaction, it calls `ExerisDataSource.bindTransactionConnection(...)` via the
