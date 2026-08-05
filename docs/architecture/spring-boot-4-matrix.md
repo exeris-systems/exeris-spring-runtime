@@ -8,7 +8,11 @@ records **what the SB4 line actually costs**, measured rather than anticipated, 
 | **SB3 pin** | `3.5.14` (`matrix-sb3`, default) |
 | **SB4 pin** | `4.1.0` (`matrix-sb4`) |
 | **SB3 line** | ✅ green — full reactor |
-| **SB4 line** | ❌ red — 1 of 3 friction areas closed (see inventory) |
+| **SB4 line** | ❌ red — 3 of 4 friction areas closed; `actuator` remains, and it blocks the reactor (every later module is SKIPPED) |
+
+> **Measure with `clean`.** An incremental `-Pmatrix-sb4 install` can report SUCCESS on stale classes
+> left by an SB3 build. The first run of this kind here did exactly that, and it looked like the
+> actuator problem had solved itself. Always `clean` when switching profiles.
 
 ```bash
 mvn -s .github/maven-settings.xml install                 # SB3 (default)
@@ -25,8 +29,12 @@ mvn -s .github/maven-settings.xml -Pmatrix-sb4 install     # SB4
 
 ## Friction inventory (measured 2026-08-05 against Spring Boot 4.1.0)
 
-ADR-028 §Context anticipated two of these from a package-level grep. The third was not anticipated and
-is the one that constrains the bridge design.
+ADR-028 §Context anticipated two of these from a package-level grep. Item 3 was not anticipated. Item 4
+did not exist when the ADR was written — this runtime introduced it in 0.7.0.
+
+**Three of the four closed with no bridge and no reflection.** The recurring lesson is in the
+§"What this means" section below: a relocation and a signature change look alike from an import list,
+and they are not.
 
 ### 1. `actuator` — health types moved module *and* package — ❌ open
 
@@ -44,7 +52,7 @@ Class names and nesting are unchanged, so the bridge is a pure relocation proble
 an interface **we implement**, which rules out the cheapest reflective shapes: a version-neutral class
 cannot declare `implements` against a type it cannot name.
 
-### 2. `web` — `OAuth2ResourceServerProperties` moved module *and* package — ❌ open
+### 2. `web` — `OAuth2ResourceServerProperties` moved module *and* package — ✅ closed, no bridge needed
 
 | | |
 |:---|:---|
@@ -57,13 +65,23 @@ Worth flagging against ADR-028 obligation 6: the "Security is a separate axis" c
 this. The type we lost is Boot's property binding for the resource server, and ADR-041 built on it
 deliberately ("the public-factory mirror tracks **public** API"). That mirror now needs a second shape.
 
-There is a third option here that ADR-041 had no reason to consider, and it may beat a bridge: **bind
-the properties ourselves**. The factory needs `jwk-set-uri`, `issuer-uri` and `public-key-location` —
-three strings under `spring.security.oauth2.resourceserver.jwt.*`. Those *property names* are the public
-contract and did not move; only the class that binds them did. Reading them straight from the
-`Environment` removes the version-specific type from the compile path entirely, on both lines, with no
-reflection. The cost is that we restate three property names Boot also declares. To be decided in the
-implementing slice.
+**Resolved by binding the properties ourselves**, not by bridging the relocated type. What did *not*
+move is the **property names** — `spring.security.oauth2.resourceserver.jwt.*` is the contract an
+application writes against, identical on both lines, and `OnResourceServerJwtConfiguredCondition` in
+this same feature was already reading them as literals. `ExerisResourceServerJwtProperties` binds the
+five settings the factory consumes (`jwk-set-uri`, `issuer-uri`, `public-key-location`, `audiences`,
+`jws-algorithms`) through Spring's `Binder`, so relaxed and list binding stay identical to Boot's.
+`public-key-location` binds as a `String` and resolves through the application's `ResourceLoader`,
+which is why no resource-aware conversion service is needed.
+
+The version-specific type leaves the compile path entirely: no reflection, no `@SbCompat` bridge,
+nothing to delete when the SB3 line is dropped. The cost is restating five property names Boot also
+declares — a smaller and more visible surface than a reflective shim over a class whose package
+differs per line, and the more stable half of the pair, since Boot moved the class while the names
+stayed put.
+
+*(An earlier revision of this entry called it "three strings". The factory reads five settings,
+including two lists — counted properly while implementing it.)*
 
 ### 3. `web` — `HttpHeaders` is no longer a `Map` — ✅ closed, no bridge needed
 
@@ -94,20 +112,34 @@ Pure Mode hot path, and the allocation is proportional to one request's header c
 ## What this means for the bridge design
 
 ADR-028 obligation 4 offers three forms — `bridge.sb4.*` sub-package, `compat.sb4.*` sub-package, or an
-inline guard. For the two open items, **the sub-package forms do not solve the compile problem**, and
-that is worth stating before the implementing slice picks them up:
+inline guard. For the one open item, **the sub-package forms do not solve the compile problem**, and
+that is worth stating before the implementing slice picks it up:
 
 > A class that imports an SB4-only type cannot compile under `matrix-sb3`, and vice versa. Since both
 > profiles compile the *same* source tree (obligation 1, "no `src/sb3`, no `src/sb4`"), any class
 > naming a version-specific type breaks one of the two lines — regardless of which package it sits in.
 
 The sub-package forms are therefore about **where a bridge lives once it exists**, not about how it
-dodges the compile problem. Items 1 and 2 need either obligation 4's third form (reflection, or an
-interface we own resolved at runtime) or — for item 2 specifically — removal of the dependency on the
-relocated type altogether.
+dodges the compile problem.
 
-Item 3 is the counter-example worth keeping in view while doing them: **check for a common API before
-reaching for a bridge.** A relocation genuinely has no common form; a signature change might.
+Items 2, 3 and 4 all closed **without** a bridge, by three different routes, and the pattern is worth
+naming because the reflex in each case was to reach for reflection first:
+
+| Item | Shape | What removed the need for a bridge |
+|---|---|---|
+| 3 `HttpHeaders` | signature change | A method present on **both** versions (`forEach`) — found by diffing the two APIs instead of inferring from the import |
+| 2 `OAuth2ResourceServerProperties` | relocation | The **property names** did not move, only the class binding them. Bind them ourselves and the type leaves the compile path |
+| 4 `HibernatePropertiesCustomizer` | relocation | The interface was only a delivery mechanism for two settings. Contribute them as ordinary properties and the interface is not needed |
+
+So a relocation does not automatically mean a bridge either: ask what the relocated type was *for*. If
+it carried data that also exists as configuration, or if a version-neutral extension point delivers the
+same effect, the dependency can be dropped rather than bridged.
+
+Item 1 is where that reasoning runs out. `HealthIndicator` is not a carrier of data we could source
+elsewhere — it is an interface **we implement**, and the framework discovers our implementation by
+type. A version-neutral class cannot declare `implements` against a type it cannot name, so this one
+needs obligation 4's third form for real: a runtime-created proxy against whichever interface is
+present, or an equivalent.
 
 ---
 

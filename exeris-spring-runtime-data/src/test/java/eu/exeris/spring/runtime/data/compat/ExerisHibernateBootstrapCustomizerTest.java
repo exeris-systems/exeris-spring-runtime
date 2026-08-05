@@ -7,9 +7,9 @@
 package eu.exeris.spring.runtime.data.compat;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.mock.env.MockEnvironment;
 
-import java.util.HashMap;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -22,39 +22,49 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>The behaviour under test is what a brownfield JPA application no longer has to write by hand.
  * The two things that matter most are that it fills the gap, and that it never overrules an
  * application that has already stated an answer.
+ *
+ * <p>Most assertions drive {@code buildContribution} directly rather than
+ * {@code postProcessBeanFactory}: the latter is gated on Hibernate being on the classpath, and
+ * Hibernate is deliberately absent here (ADR-017 keeps JPA off this module's test classpath). The
+ * gate itself is covered by {@link #contributesNothing_whenHibernateIsAbsent()}, which is
+ * non-vacuous precisely because of that absence.
  */
 class ExerisHibernateBootstrapCustomizerTest {
 
     private static final String PG_URL = "jdbc:postgresql://localhost:5432/app";
     private static final String H2_URL = "jdbc:h2:mem:app;DB_CLOSE_DELAY=-1";
 
+    private static final String METADATA_KEY =
+            "spring.jpa.properties.hibernate.boot.allow_jdbc_metadata_access";
+    private static final String DIALECT_KEY = "spring.jpa.properties.hibernate.dialect";
+
     @Test
     void disablesTheMetadataProbe_andDerivesTheDialect() {
-        Map<String, Object> properties = customize(new MockEnvironment()
-                .withProperty("exeris.runtime.persistence.jdbc-url", PG_URL));
+        Map<String, Object> contributed = ExerisHibernateBootstrapCustomizer.buildContribution(
+                new MockEnvironment().withProperty("exeris.runtime.persistence.jdbc-url", PG_URL));
 
-        assertThat(properties)
-                .containsEntry("hibernate.boot.allow_jdbc_metadata_access", "false")
-                .containsEntry("hibernate.dialect", "org.hibernate.dialect.PostgreSQLDialect");
+        assertThat(contributed)
+                .containsEntry(METADATA_KEY, "false")
+                .containsEntry(DIALECT_KEY, "org.hibernate.dialect.PostgreSQLDialect");
     }
 
     @Test
     void derivesTheH2Dialect() {
-        Map<String, Object> properties = customize(new MockEnvironment()
-                .withProperty("exeris.runtime.persistence.jdbc-url", H2_URL));
+        Map<String, Object> contributed = ExerisHibernateBootstrapCustomizer.buildContribution(
+                new MockEnvironment().withProperty("exeris.runtime.persistence.jdbc-url", H2_URL));
 
-        assertThat(properties).containsEntry("hibernate.dialect", "org.hibernate.dialect.H2Dialect");
+        assertThat(contributed).containsEntry(DIALECT_KEY, "org.hibernate.dialect.H2Dialect");
     }
 
     @Test
     void urlSchemeMatchIsCaseInsensitive() {
-        // JDBC URLs are not case-normalised anywhere on the way in; a config file carrying
-        // JDBC:PostgreSQL: is unusual but legal, and failing startup over its casing would be
-        // an absurd way to meet the caller.
-        Map<String, Object> properties = customize(new MockEnvironment()
-                .withProperty("exeris.runtime.persistence.jdbc-url", "JDBC:POSTGRESQL://db:5432/app"));
+        // JDBC URLs are not case-normalised anywhere on the way in; failing startup over the casing
+        // of a legal URL would be an absurd way to meet the caller.
+        Map<String, Object> contributed = ExerisHibernateBootstrapCustomizer.buildContribution(
+                new MockEnvironment()
+                        .withProperty("exeris.runtime.persistence.jdbc-url", "JDBC:POSTGRESQL://db:5432/app"));
 
-        assertThat(properties).containsEntry("hibernate.dialect", "org.hibernate.dialect.PostgreSQLDialect");
+        assertThat(contributed).containsEntry(DIALECT_KEY, "org.hibernate.dialect.PostgreSQLDialect");
     }
 
     // =========================================================================
@@ -62,43 +72,49 @@ class ExerisHibernateBootstrapCustomizerTest {
     // =========================================================================
 
     @Test
-    void explicitHibernateDialectProperty_isLeftAlone() {
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("hibernate.dialect", "com.example.CustomDialect");
-
-        customizeInto(properties, new MockEnvironment()
-                .withProperty("exeris.runtime.persistence.jdbc-url", PG_URL));
-
-        assertThat(properties).containsEntry("hibernate.dialect", "com.example.CustomDialect");
-    }
-
-    @Test
     void explicitSpringDatabasePlatform_standsDownWithoutSettingTheDialect() {
-        // spring.jpa.database-platform is Spring's own way of stating the dialect; it reaches
-        // Hibernate through the vendor adapter rather than this map, so "the map has no dialect"
-        // does NOT mean the application failed to specify one. Writing ours here would silently
-        // beat a setting the application believes is in force.
-        Map<String, Object> properties = customize(new MockEnvironment()
-                .withProperty("exeris.runtime.persistence.jdbc-url", PG_URL)
-                .withProperty("spring.jpa.database-platform", "com.example.CustomDialect"));
+        // spring.jpa.database-platform reaches Hibernate through the vendor adapter, not through the
+        // property map, so "no dialect among the JPA properties" does NOT mean the application failed
+        // to specify one. Contributing ours would silently beat a setting it believes is in force.
+        Map<String, Object> contributed = ExerisHibernateBootstrapCustomizer.buildContribution(
+                new MockEnvironment()
+                        .withProperty("exeris.runtime.persistence.jdbc-url", PG_URL)
+                        .withProperty("spring.jpa.database-platform", "com.example.CustomDialect"));
 
-        assertThat(properties).doesNotContainKey("hibernate.dialect");
-        assertThat(properties)
-                .as("the ordering fix is still required regardless of who supplies the dialect")
-                .containsEntry("hibernate.boot.allow_jdbc_metadata_access", "false");
+        assertThat(contributed).doesNotContainKey(DIALECT_KEY);
+        assertThat(contributed)
+                .as("the ordering fix is required regardless of who supplies the dialect")
+                .containsEntry(METADATA_KEY, "false");
     }
 
     @Test
-    void explicitMetadataAccessSetting_isLeftAlone() {
-        // An application that supplies its own DataSource alongside the compat bridge may legitimately
-        // want the probe on.
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("hibernate.boot.allow_jdbc_metadata_access", "true");
+    void explicitJpaPropertiesDialect_standsDown() {
+        Map<String, Object> contributed = ExerisHibernateBootstrapCustomizer.buildContribution(
+                new MockEnvironment()
+                        .withProperty("exeris.runtime.persistence.jdbc-url", PG_URL)
+                        .withProperty(DIALECT_KEY, "com.example.CustomDialect"));
 
-        customizeInto(properties, new MockEnvironment()
-                .withProperty("exeris.runtime.persistence.jdbc-url", PG_URL));
+        assertThat(contributed).doesNotContainKey(DIALECT_KEY);
+    }
 
-        assertThat(properties).containsEntry("hibernate.boot.allow_jdbc_metadata_access", "true");
+    @Test
+    void contributedSourceHasLowestPrecedence_soApplicationValuesWin() {
+        // The "never overrule" guarantee is enforced by property-source ordering, not by a key check,
+        // so it must hold for a value the application set anywhere — including the metadata switch,
+        // which buildContribution always emits.
+        MockEnvironment environment = new MockEnvironment()
+                .withProperty("exeris.runtime.persistence.jdbc-url", PG_URL)
+                .withProperty(METADATA_KEY, "true");
+
+        ExerisHibernateBootstrapCustomizer customizer = new ExerisHibernateBootstrapCustomizer();
+        customizer.setEnvironment(environment);
+        environment.getPropertySources().addLast(new org.springframework.core.env.MapPropertySource(
+                ExerisHibernateBootstrapCustomizer.PROPERTY_SOURCE_NAME,
+                ExerisHibernateBootstrapCustomizer.buildContribution(environment)));
+
+        assertThat(environment.getProperty(METADATA_KEY))
+                .as("an application-set value must survive our lower-precedence contribution")
+                .isEqualTo("true");
     }
 
     // =========================================================================
@@ -107,8 +123,9 @@ class ExerisHibernateBootstrapCustomizerTest {
 
     @Test
     void unknownDatabase_failsWithAMessageNamingTheProperty() {
-        assertThatThrownBy(() -> customize(new MockEnvironment()
-                .withProperty("exeris.runtime.persistence.jdbc-url", "jdbc:oracle:thin:@db:1521:app")))
+        assertThatThrownBy(() -> ExerisHibernateBootstrapCustomizer.buildContribution(
+                new MockEnvironment()
+                        .withProperty("exeris.runtime.persistence.jdbc-url", "jdbc:oracle:thin:@db:1521:app")))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("jdbc:oracle:thin:@db:1521:app")
                 .hasMessageContaining("spring.jpa.database-platform");
@@ -116,31 +133,40 @@ class ExerisHibernateBootstrapCustomizerTest {
 
     @Test
     void missingJdbcUrl_failsWithAMessageNamingTheProperty() {
-        assertThatThrownBy(() -> customize(new MockEnvironment()))
+        assertThatThrownBy(() -> ExerisHibernateBootstrapCustomizer.buildContribution(new MockEnvironment()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("spring.jpa.database-platform");
     }
 
     @Test
     void unknownDatabase_isNotAFailureWhenTheApplicationSuppliedTheDialect() {
-        // Non-vacuity guard for the two failures above: the refusal is specifically about *deriving*
-        // a dialect nobody stated. An Oracle deployment that names its own dialect is fine, and must
-        // not be blocked by this class.
-        assertThatCode(() -> customize(new MockEnvironment()
-                .withProperty("exeris.runtime.persistence.jdbc-url", "jdbc:oracle:thin:@db:1521:app")
-                .withProperty("spring.jpa.database-platform", "org.hibernate.dialect.OracleDialect")))
+        // Non-vacuity guard for the two failures above: the refusal is about *deriving* a dialect
+        // nobody stated. An Oracle deployment naming its own dialect must not be blocked.
+        assertThatCode(() -> ExerisHibernateBootstrapCustomizer.buildContribution(
+                new MockEnvironment()
+                        .withProperty("exeris.runtime.persistence.jdbc-url", "jdbc:oracle:thin:@db:1521:app")
+                        .withProperty("spring.jpa.database-platform", "org.hibernate.dialect.OracleDialect")))
                 .doesNotThrowAnyException();
     }
 
     // =========================================================================
+    // The Hibernate gate
+    // =========================================================================
 
-    private static Map<String, Object> customize(MockEnvironment environment) {
-        Map<String, Object> properties = new HashMap<>();
-        customizeInto(properties, environment);
-        return properties;
-    }
+    @Test
+    void contributesNothing_whenHibernateIsAbsent() {
+        // Hibernate is not on this module's test classpath by design, so this exercises the real
+        // gate rather than a simulated one: an application using the compat datasource without JPA
+        // must be untouched — including the unknown-dialect failure, which must not fire.
+        MockEnvironment environment = new MockEnvironment()
+                .withProperty("exeris.runtime.persistence.jdbc-url", "jdbc:oracle:thin:@db:1521:app");
 
-    private static void customizeInto(Map<String, Object> properties, MockEnvironment environment) {
-        new ExerisHibernateBootstrapCustomizer(environment).customize(properties);
+        ExerisHibernateBootstrapCustomizer customizer = new ExerisHibernateBootstrapCustomizer();
+        customizer.setEnvironment(environment);
+
+        assertThatCode(() -> customizer.postProcessBeanFactory(new DefaultListableBeanFactory()))
+                .doesNotThrowAnyException();
+        assertThat(environment.getPropertySources()
+                .contains(ExerisHibernateBootstrapCustomizer.PROPERTY_SOURCE_NAME)).isFalse();
     }
 }
