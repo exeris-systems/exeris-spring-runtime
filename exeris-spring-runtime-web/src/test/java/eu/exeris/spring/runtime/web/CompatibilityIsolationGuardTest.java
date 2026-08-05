@@ -28,6 +28,8 @@ import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
  *       {@code *.compat.*} class.</li>
  *   <li>{@code ThreadLocal}-bearing compatibility bindings must live exclusively
  *       in {@code *.compat.context.*}.</li>
+ *   <li>Every top-level type in {@code *.compat.*} carries {@link CompatibilityMode}
+ *       (ADR-011).</li>
  * </ol>
  */
 class CompatibilityIsolationGuardTest {

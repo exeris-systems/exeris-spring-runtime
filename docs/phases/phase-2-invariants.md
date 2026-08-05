@@ -100,18 +100,33 @@ cost is acknowledged and tracked, not constrained.
   which lowers Pure absolute numbers in this fixture; the relative magnitude
   of the Compat overhead is the load-bearing reading.
 
-## 8. `@CompatibilityMode` marker on top-level Compat entry classes
+## 8. `@CompatibilityMode` marker on every Compat class
 
-Compat entry classes carry the `@CompatibilityMode` annotation as a
-discoverability marker. Currently applied to `ExerisCompatDispatcher`,
-`ExerisSpringMvcBridge`, and `ExerisCompatAutoConfiguration`. Inner mechanics
-(argument resolvers, return-value handlers, filters) inherit Compat status
-from their package location and need not be marked individually.
+Every top-level type in a `*.compat.*` package carries the `@CompatibilityMode`
+annotation — entry classes and inner mechanics alike: dispatcher, MVC bridge,
+autoconfiguration, argument resolvers, return-value handlers, filters, events,
+exceptions. ADR-011 states the benefit this buys: "a grep for
+`@CompatibilityMode` shows the full surface of compat-only behaviour". A partial
+application defeats exactly that, because the grep then under-reports while
+still reading as authoritative.
 
-The marker is documentation, not enforcement — architectural isolation is
-enforced by the package convention (`*.compat.*`) and the isolation guard
-test set. New top-level Compat entry classes added in future PRs SHOULD be
-marked.
+The marker is a discoverability aid, not the isolation mechanism — architectural
+isolation is enforced by the package convention (`*.compat.*`) and the isolation
+guard test set. But it *is* enforced as a convention:
+`CompatibilityIsolationGuardTest#everyCompatClass_carriesTheCompatibilityModeMarker`
+fails the build for any unmarked top-level type in `web.compat..`. Member, local
+and anonymous classes are out of scope — they are not independently greppable.
+
+> **Corrected 2026-08-05.** This section previously said the marker applied only
+> to "top-level Compat entry classes", named just three, and stated that inner
+> mechanics "need not be marked individually". That was drift from ADR-011, which
+> requires the marker on compat features without that carve-out; it propagated
+> from `CompatibilityMode`'s own Javadoc, which carried the same carve-out. The
+> practical result was 3 of 26 compat classes marked. See ADR-011 §"Status
+> correction" for how the stale `PROPOSED` status on that ADR let the divergence
+> run unnoticed, and for the two gaps still open (the marker lives in the `web`
+> module, so the 5 compat classes in `data` and `actuator` cannot be marked or
+> guarded yet).
 
 ## 9. Heap allocation acknowledged, never claimed away
 
