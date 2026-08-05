@@ -6,6 +6,8 @@
  */
 package eu.exeris.spring.runtime.web.compat.security;
 
+import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
+
 /**
  * Raised when a request presents a Bearer token that cannot be decoded or validated.
  *
@@ -20,6 +22,7 @@ package eu.exeris.spring.runtime.web.compat.security;
  *
  * @since 0.7.0
  */
+@CompatibilityMode
 public final class InvalidBearerTokenException extends RuntimeException {
 
     private static final long serialVersionUID = 1L;

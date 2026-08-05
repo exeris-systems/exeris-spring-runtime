@@ -6,6 +6,8 @@
  */
 package eu.exeris.spring.runtime.web.compat.security;
 
+import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
+
 import jdk.jfr.Category;
 import jdk.jfr.Event;
 import jdk.jfr.EventType;
@@ -36,6 +38,7 @@ import jdk.jfr.StackTrace;
 @Label("Bearer Token Rejected")
 @Category({"Exeris Spring Runtime", "Web", "Security"})
 @StackTrace(false)
+@CompatibilityMode
 public final class BearerTokenRejectedEvent extends Event {
 
     private static final EventType EVENT_TYPE =

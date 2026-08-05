@@ -6,6 +6,8 @@
  */
 package eu.exeris.spring.runtime.web.compat.security;
 
+import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
+
 import org.springframework.beans.factory.BeanDefinitionStoreException;
 
 /**
@@ -17,6 +19,7 @@ import org.springframework.beans.factory.BeanDefinitionStoreException;
  *
  * @since 0.7.0
  */
+@CompatibilityMode
 public final class UnenforcedSecurityFilterChainException extends BeanDefinitionStoreException {
 
     private static final long serialVersionUID = 1L;

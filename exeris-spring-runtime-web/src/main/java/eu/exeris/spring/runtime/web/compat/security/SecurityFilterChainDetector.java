@@ -6,6 +6,8 @@
  */
 package eu.exeris.spring.runtime.web.compat.security;
 
+import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
+
 import org.springframework.beans.factory.FactoryBean;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 
@@ -30,6 +32,7 @@ import java.util.Optional;
  *
  * @since 0.7.0
  */
+@CompatibilityMode
 public final class SecurityFilterChainDetector {
 
     private static final String SECURITY_FILTER_CHAIN_TYPE =
