@@ -117,6 +117,19 @@ These landed after the last feature train and are the reason the snapshot line m
   providers resolved from `ScopedValue` slots are visible on the request/step path.
 - Compat datasource made usable under load: request-path scope re-binding, SPI unwrap, pool warmup and
   connection-timeout plumbing.
+- **A JPA application no longer has to configure Hibernate around the bootstrap order.** Hibernate
+  opens a JDBC connection during `EntityManagerFactory` construction to infer its dialect; that
+  happens inside Spring `refresh()`, before the kernel exists, so the compat datasource cannot serve
+  it. Applications had to know this and set two Hibernate internals by hand — a runtime ordering
+  constraint living in application configuration, and the last thing standing between Compatibility
+  Mode and "add the dependency, maybe change configuration". `ExerisHibernateBootstrapCustomizer`,
+  registered by the same `exeris.runtime.data.compat-datasource.enabled` opt-in, now sets
+  `hibernate.boot.allow_jdbc_metadata_access=false` and derives `hibernate.dialect` from
+  `exeris.runtime.persistence.jdbc-url`. An application that states either itself — via
+  `spring.jpa.properties.hibernate.*` or `spring.jpa.database-platform` — is left untouched. Dialects
+  are derived for PostgreSQL and H2 only; any other URL fails startup with a message naming
+  `spring.jpa.database-platform` rather than guessing, because a wrong dialect does not fail, it
+  generates subtly wrong SQL.
 - **`exeris.runtime.persistence.max-pool-size` now actually reaches the connection pool.** The kernel
   resolves pool sizing from raw config keys only — it does not read the typed settings record this
   runtime was populating — so the property was silently inert and the pool was sized from

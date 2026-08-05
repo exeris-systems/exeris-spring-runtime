@@ -526,11 +526,28 @@ compat bridge obtains the raw `java.sql.Connection` via the SPI `PersistenceConn
 java.sql.Connection.class)` (added in kernel 0.8.1; the forwarding wrapper delegates `unwrap`).
 `ExerisDataSource` no longer depends on the community-concrete `JdbcPersistenceConnection` type —
 it unwraps through the SPI, keeping the engine swappable. Against kernel < 0.8.1 the bridge fails
-because the request-session wrapper is neither the concrete connection nor unwrappable. The startup-time dialect
-probe is a separate concern: with a lazily-bound `DataSource`, set `hibernate.dialect` explicitly
-and `hibernate.boot.allow_jdbc_metadata_access=false` so Hibernate does not call `getConnection()`
-during `EntityManagerFactory` construction (which happens during Spring `refresh()`, before the
-kernel has booted). This is the canonical compat-datasource configuration, not a workaround.
+because the request-session wrapper is neither the concrete connection nor unwrappable.
+
+**Hibernate's startup metadata probe — handled by the runtime, not by the application.** By default
+Hibernate opens a JDBC connection during `EntityManagerFactory` construction to infer its dialect from
+database metadata. That construction happens inside Spring `refresh()`, and the kernel persistence
+engine does not exist until `ExerisRuntimeLifecycle.start()` runs afterwards, so `ExerisDataSource`
+cannot serve it. Two Hibernate settings resolve it — disable the probe, state the dialect — and until
+0.7.0 the application had to supply both, with this document calling that "the canonical
+compat-datasource configuration".
+
+That placed a runtime ordering constraint in the application's persistence configuration.
+`ExerisHibernateBootstrapCustomizer` (registered by the same
+`exeris.runtime.data.compat-datasource.enabled` opt-in) now sets
+`hibernate.boot.allow_jdbc_metadata_access=false` and derives `hibernate.dialect` from
+`exeris.runtime.persistence.jdbc-url` — the same URL the kernel pool is configured from, so the two
+cannot disagree. An application that states either setting itself, via
+`spring.jpa.properties.hibernate.*` or `spring.jpa.database-platform`, is left untouched.
+
+Dialects are derived only for PostgreSQL and H2, which are what the Community persistence engine
+supports. For any other URL the context fails at startup with a message naming
+`spring.jpa.database-platform`, rather than guessing: a wrong dialect does not fail, it generates
+subtly wrong SQL, and the symptom appears later at a call site that looks correct.
 
 **Shared-pool sizing and warmup (cold-start avoidance):** The kernel owns the connection pool
 (`exeris-community-shared`). Its `CommunityPersistenceConfigResolver` reads pool sizing, min-idle and

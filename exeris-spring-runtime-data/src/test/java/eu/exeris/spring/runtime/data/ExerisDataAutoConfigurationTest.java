@@ -11,7 +11,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import javax.sql.DataSource;
 
 import eu.exeris.spring.runtime.data.compat.ExerisDataSource;
+import eu.exeris.spring.runtime.data.compat.ExerisHibernateBootstrapCustomizer;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.env.MockEnvironment;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -34,6 +36,47 @@ class ExerisDataAutoConfigurationTest {
         try (AnnotationConfigApplicationContext context =
                      createContext("exeris.runtime.data.compat-datasource.enabled=true")) {
             assertThat(context.getBeansOfType(ExerisDataSource.class)).hasSize(1);
+        }
+    }
+
+    @Test
+    void hibernateBootstrapCustomizer_ridesTheSameOptIn() {
+        // The Hibernate ordering fix is part of what opting into the compat datasource buys. It must
+        // not appear without it: an application not using the bridge has a DataSource that can serve
+        // a connection during refresh(), so disabling the metadata probe there would remove working
+        // dialect discovery for no reason.
+        try (AnnotationConfigApplicationContext context = createContext()) {
+            assertThat(context.getBeansOfType(ExerisHibernateBootstrapCustomizer.class)).isEmpty();
+        }
+
+        try (AnnotationConfigApplicationContext context =
+                     createContext("exeris.runtime.data.compat-datasource.enabled=true")) {
+            assertThat(context.getBeansOfType(ExerisHibernateBootstrapCustomizer.class)).hasSize(1);
+        }
+    }
+
+    @Test
+    void applicationSuppliedCustomizer_wins() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(ExerisDataAutoConfiguration.class))
+                .withUserConfiguration(UserHibernateCustomizerConfig.class)
+                .withPropertyValues("exeris.runtime.data.compat-datasource.enabled=true")
+                .run(context -> assertThat(context)
+                        .as("@ConditionalOnMissingBean must leave an application-declared customizer alone")
+                        .hasSingleBean(ExerisHibernateBootstrapCustomizer.class)
+                        .getBean(ExerisHibernateBootstrapCustomizer.class)
+                        .isSameAs(UserHibernateCustomizerConfig.INSTANCE));
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class UserHibernateCustomizerConfig {
+
+        static final ExerisHibernateBootstrapCustomizer INSTANCE =
+                new ExerisHibernateBootstrapCustomizer(new MockEnvironment());
+
+        @Bean
+        ExerisHibernateBootstrapCustomizer exerisHibernateBootstrapCustomizer() {
+            return INSTANCE;
         }
     }
 
