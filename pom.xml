@@ -67,13 +67,30 @@
              ConfigProvider on the classpath, so it is the only one that sees the tie. See
              ExerisSpringConfigProvider.priority() / systemPropertyFallback(...). -->
         <exeris.kernel.version>0.10.2</exeris.kernel.version>
-        <!-- Spring Boot 3.5.14 ships fixes for SNYK-JAVA-ORGSPRINGFRAMEWORKBOOT-16191649
+        <!--
+             Dual matrix per ADR-028. Each line is pinned here; the matrix-sb3 /
+             matrix-sb4 profiles below select which one ${spring.boot.version} resolves
+             to. Bump the line pins here, never the selector.
+
+             The SB4 pin is 4.1.x, not the 4.0.x named in ADR-028's "Matrix at a glance"
+             table: that table was written 2026-05-17 when 4.0 was current, while the
+             decision text itself commits to "Spring Boot 4.x". Tracking the current 4.x
+             release is what makes the matrix invariant load-bearing — pinning a line
+             upstream has moved past would let the CI axis go green against a version no
+             customer is on.
+        -->
+        <!-- 3.5.14 ships fixes for SNYK-JAVA-ORGSPRINGFRAMEWORKBOOT-16191649
              (CWE-338 Weak PRNG, CVE-2026-40975), -16198880 (CWE-377 Insecure Temp File,
              CVE-2026-40973), -16201011 (CWE-59 Symlink Attack, CVE-2026-40977),
              -16191022 + -16200231 (CWE-297 Cert Hostname Mismatch, CVE-2026-40974 / -40971).
              The same bump pulls spring-web through the BOM to a version that addresses
              SNYK-JAVA-ORGSPRINGFRAMEWORK-16109615 (CWE-459 Incomplete Cleanup, CVE-2026-22740). -->
-        <spring.boot.version>3.5.14</spring.boot.version>
+        <spring.boot.sb3.version>3.5.14</spring.boot.sb3.version>
+        <spring.boot.sb4.version>4.1.0</spring.boot.sb4.version>
+        <!-- Fallback for a build that somehow activates neither matrix profile (e.g. a
+             tool invoking Maven with -P!matrix-sb3). Keeps the reactor resolvable rather
+             than failing with an unhelpful "version is missing" on every module. -->
+        <spring.boot.version>${spring.boot.sb3.version}</spring.boot.version>
         <spring.framework.version>6.2.4</spring.framework.version>
 
         <!-- Build tooling -->
@@ -288,6 +305,44 @@
     </build>
 
     <profiles>
+        <!-- ==========================================================================
+             Spring Boot dual matrix (ADR-028 obligation 1).
+
+             The reactor source tree is IDENTICAL across both profiles. Only the
+             spring-boot-dependencies import differs — no src/sb3, no src/sb4, no
+             source-level fork. That is the whole point: a support statement that
+             says "SB3 and SB4" has to be one codebase, or it is two products.
+
+             matrix-sb3 is the default (activeByDefault) so a bare `mvn install`
+             behaves exactly as before this profile pair existed.
+
+                 mvn -Pmatrix-sb3 ...   (or nothing at all)
+                 mvn -Pmatrix-sb4 ...
+
+             Note on activeByDefault: it is disabled the moment ANY other profile in
+             this POM is activated on the command line — including -Pcoverage. So the
+             SB3 line must be selected explicitly whenever another profile is named:
+             `mvn -Pmatrix-sb3,coverage verify`, never `mvn -Pcoverage verify` alone if
+             the SB3 pin matters. CI names the matrix profile explicitly for exactly
+             this reason.
+             ========================================================================== -->
+        <profile>
+            <id>matrix-sb3</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <properties>
+                <spring.boot.version>${spring.boot.sb3.version}</spring.boot.version>
+            </properties>
+        </profile>
+
+        <profile>
+            <id>matrix-sb4</id>
+            <properties>
+                <spring.boot.version>${spring.boot.sb4.version}</spring.boot.version>
+            </properties>
+        </profile>
+
         <!-- Coverage quality gate. Opt-in (CI activates it explicitly, e.g.
              `mvn -Pcoverage verify`) so the default build stays agent-free:
              no per-class instrumentation overhead on the hot-path-adjacent
