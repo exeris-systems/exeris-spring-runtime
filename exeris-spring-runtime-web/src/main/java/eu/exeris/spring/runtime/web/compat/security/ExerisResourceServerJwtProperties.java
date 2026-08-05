@@ -60,7 +60,7 @@ import java.util.List;
  * @param audiences         {@code audiences} — accepted {@code aud} claim values; empty means no
  *                          audience validation
  * @param jwsAlgorithms     {@code jws-algorithms} — accepted signature algorithms; empty means RS256
- * @since 0.8.0
+ * @since 0.7.0
  */
 @CompatibilityMode
 public record ExerisResourceServerJwtProperties(

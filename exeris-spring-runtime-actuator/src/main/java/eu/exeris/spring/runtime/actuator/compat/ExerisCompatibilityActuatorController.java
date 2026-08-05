@@ -7,9 +7,9 @@
 package eu.exeris.spring.runtime.actuator.compat;
 
 import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeProperties;
+import eu.exeris.spring.runtime.actuator.ExerisRuntimeHealth;
 import eu.exeris.spring.runtime.actuator.ExerisRuntimeHealthIndicator;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.info.Info;
 import org.springframework.boot.actuate.info.InfoContributor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -48,16 +48,19 @@ public final class ExerisCompatibilityActuatorController {
 
     @GetMapping({"/actuator/health", "/health"})
     public Map<String, Object> health() {
-        Health health = healthIndicator.health();
+        // Reads the runtime's own health type, not Spring Boot's: the Boot Health class moved
+        // package and artifact in Spring Boot 4, and this controller must compile on both matrix
+        // lines (ADR-028 obligation 1). The rendered JSON is unchanged.
+        ExerisRuntimeHealth health = healthIndicator.health();
 
         Map<String, Object> component = new LinkedHashMap<>();
-        component.put("status", health.getStatus().getCode());
-        if (!health.getDetails().isEmpty()) {
-            component.put("details", health.getDetails());
+        component.put("status", health.status());
+        if (!health.details().isEmpty()) {
+            component.put("details", health.detailsAsObjects());
         }
 
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("status", health.getStatus().getCode());
+        body.put("status", health.status());
         body.put("components", Map.of("exerisRuntime", component));
         return body;
     }

@@ -1,14 +1,20 @@
 # Spring Boot 4 dual matrix — status and friction inventory
 
-Working document for the ADR-028 dual-matrix work (0.8.0 train). ADR-028 is the decision; this file
-records **what the SB4 line actually costs**, measured rather than anticipated, and what has landed.
+Working document for the ADR-028 dual-matrix work. ADR-028 is the decision; this file records **what
+the SB4 line actually costs**, measured rather than anticipated, and what has landed.
+
+> **Release train.** ADR-028 scheduled this for `0.8.0-preview`. It is landing in **0.7.0**, because
+> 0.7.0 has not been tagged — it is held for the kernel 0.11 drain fix
+> ([`exeris-kernel#282`](https://github.com/exeris-systems/exeris-kernel/issues/282)) — so work merged
+> now ships there. The ADR's train label is a scheduling estimate, not a decision; recorded here rather
+> than silently relabelled in the ADR.
 
 | | |
 |:---|:---|
 | **SB3 pin** | `3.5.14` (`matrix-sb3`, default) |
 | **SB4 pin** | `4.1.0` (`matrix-sb4`) |
-| **SB3 line** | ✅ green — full reactor |
-| **SB4 line** | ❌ red — 3 of 4 friction areas closed; `actuator` remains, and it blocks the reactor (every later module is SKIPPED) |
+| **SB3 line** | ✅ green — full reactor, tests included |
+| **SB4 line** | ⚠️ **compiles end to end**; tests red in `web` only — friction item 5 (Jackson 2 vs 3) |
 
 > **Measure with `clean`.** An incremental `-Pmatrix-sb4 install` can report SUCCESS on stale classes
 > left by an SB3 build. The first run of this kind here did exactly that, and it looked like the
@@ -29,14 +35,18 @@ mvn -s .github/maven-settings.xml -Pmatrix-sb4 install     # SB4
 
 ## Friction inventory (measured 2026-08-05 against Spring Boot 4.1.0)
 
-ADR-028 §Context anticipated two of these from a package-level grep. Item 3 was not anticipated. Item 4
-did not exist when the ADR was written — this runtime introduced it in 0.7.0.
+ADR-028 §Context anticipated items 1, 2 and 5 from a package-level grep. Item 3 was not anticipated.
+Item 4 did not exist when the ADR was written — this runtime introduced it in the same release.
 
-**Three of the four closed with no bridge and no reflection.** The recurring lesson is in the
-§"What this means" section below: a relocation and a signature change look alike from an import list,
-and they are not.
+**Compiling is not passing.** Items 1–4 were all found by compiling. Item 5 only appears when the
+tests run, because it is a *runtime* dependency mismatch rather than a missing symbol. ADR-028
+obligation 2's "run both axes in full" earns its keep here: a compile-only matrix would have reported
+the SB4 line healthy while every compat dispatch failed.
 
-### 1. `actuator` — health types moved module *and* package — ❌ open
+**Three of the five closed with no bridge and no reflection**; one needed a real reflective bridge;
+one is open. The recurring lesson is in the §"What this means" section below.
+
+### 1. `actuator` — health types moved module *and* package — ✅ closed, reflective bridge
 
 | | |
 |:---|:---|
@@ -48,9 +58,28 @@ and they are not.
 The artifact split matters as much as the package move: `spring-boot-actuator` 4.1.0 contains no health
 package at all, so this is not a rename an IDE can follow — the dependency itself changes.
 
-Class names and nesting are unchanged, so the bridge is a pure relocation problem. `HealthIndicator` is
-an interface **we implement**, which rules out the cheapest reflective shapes: a version-neutral class
-cannot declare `implements` against a type it cannot name.
+**Closed with the one genuinely reflective bridge in this train.** This is where "drop the dependency
+instead of bridging it" runs out: `HealthIndicator` is not a carrier of data available elsewhere, it is
+an interface Spring Boot discovers **by type**, and something must implement it.
+
+The health decision moved into `ExerisRuntimeHealth` / `ExerisRuntimeHealthIndicator`, which name no
+framework type at all — so the compat actuator controller and the indicator's own tests are
+version-neutral for free. `SpringBootHealthIndicatorFactory` then creates a JDK proxy against whichever
+`HealthIndicator` interface is present and converts through the `Health` builder, whose API is
+identical in shape on both lines. Registration goes through a `BeanDefinitionRegistryPostProcessor`
+rather than a `@Bean` method: Boot finds contributors with `getBeansOfType(HealthIndicator.class)`,
+which resolves a factory method's *declared* return type before instantiating it, so an
+`Object`-returning `@Bean` would never match and the indicator would silently never appear. The
+definition's target type is set explicitly instead.
+
+Resolution failure stands the indicator down with a log line rather than throwing — an actuator that
+cannot register must not stop the application serving traffic.
+
+Worth recording against ADR-028: obligation 4 names exactly this case as the canonical `bridge.sb4.*`
+sub-package example. A sub-package cannot solve it. The problem is that the type is unnameable at
+compile time under one line, and the package a class sits in does not change that. The bridge is also
+not SB4-specific — it runs on both lines — so it lives in `actuator.bridge`, where an `sb4` label would
+misdescribe when it is in play.
 
 ### 2. `web` — `OAuth2ResourceServerProperties` moved module *and* package — ✅ closed, no bridge needed
 
@@ -106,6 +135,21 @@ call sites now iterate through it and one source compiles under both profiles.
 The cost of neutrality is one intermediate `ArrayList` in `getHeaderNames()`, where `keySet().iterator()`
 had been a view. That is a Compatibility Mode accessor called by Spring's own argument resolvers, not a
 Pure Mode hot path, and the allocation is proportional to one request's header count.
+
+### 5. `web` — Spring Boot 4 ships Jackson 3, the compat bridge builds a Jackson 2 converter — ❌ open
+
+| | |
+|:---|:---|
+| **Was** | `MappingJackson2HttpMessageConverter`, backed by `com.fasterxml.jackson.core:jackson-databind` (Jackson 2) |
+| **Is** | SB4 ships `tools.jackson.core:jackson-databind:3.1.1` and only `jackson-annotations:2.21` from the 2.x line. The SF7 class still exists but its Jackson 2 core does not, so construction fails with `NoClassDefFoundError: com/fasterxml/jackson/core/util/DefaultPrettyPrinter$Indenter`. SF7 offers `JacksonJsonHttpMessageConverter` for Jackson 3 |
+| **Affects** | `ExerisCompatAutoConfiguration#exerisCompatJacksonConverter` and everything downstream of it — 33 test failures in `web`, all one cause |
+| **Anticipated?** | Yes — ADR-028's `org.springframework.http` row named `MappingJackson2HttpMessageConverter` as the expected friction there |
+
+Only found by running tests: the class compiles on both lines, and the mismatch is in what is on the
+classpath at construction time. `HttpMessageConverter<?>` is a type present on both, so the shape of a
+fix is likely "choose the implementation by what Jackson is present, declare the bean as the common
+interface" — the same move as item 1 but without needing a proxy, since we construct rather than
+implement. Not attempted in this slice.
 
 ---
 

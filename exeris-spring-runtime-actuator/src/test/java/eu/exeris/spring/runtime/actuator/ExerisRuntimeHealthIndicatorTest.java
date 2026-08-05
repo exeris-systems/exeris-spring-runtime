@@ -9,8 +9,6 @@ package eu.exeris.spring.runtime.actuator;
 import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
 import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeProperties;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.actuate.health.Health;
-import org.springframework.boot.actuate.health.Status;
 
 import java.util.Optional;
 
@@ -36,11 +34,12 @@ class ExerisRuntimeHealthIndicatorTest {
         ExerisRuntimeHealthIndicator indicator =
                 new ExerisRuntimeHealthIndicator(notRunningLifecycle());
 
-        Health health = indicator.health();
+        ExerisRuntimeHealth health = indicator.health();
 
-        assertThat(health.getStatus()).isEqualTo(Status.DOWN);
-        assertThat(health.getDetails()).containsKey("runtime");
-        assertThat(health.getDetails()).containsKey("reason");
+        assertThat(health.up()).isFalse();
+        assertThat(health.status()).isEqualTo(ExerisRuntimeHealth.DOWN);
+        assertThat(health.details()).containsKey("runtime");
+        assertThat(health.details()).containsKey("reason");
     }
 
     @Test
@@ -48,7 +47,7 @@ class ExerisRuntimeHealthIndicatorTest {
         ExerisRuntimeHealthIndicator indicator =
                 new ExerisRuntimeHealthIndicator(notRunningLifecycle());
 
-        assertThat(indicator.health().getDetails().get("runtime")).isEqualTo("exeris");
+        assertThat(indicator.health().details().get("runtime")).isEqualTo("exeris");
     }
 
     @Test
