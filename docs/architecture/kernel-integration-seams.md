@@ -144,21 +144,38 @@ The `ExerisSpringConfigProvider` is registered in:
 This makes Spring the configuration source for the kernel — without making the kernel
 aware of Spring. The kernel only knows about `ConfigProvider`.
 
-**Raw-key aliasing (typed record gap):** Beyond the typed `KernelSettings`/`PersistenceSettings`
-record, kernel subsystems also read individual raw keys through the `getInt`/`getBoolean`/`getString`
-SPI accessors. Some kernel settings have **no field on the typed bridge record**, so the record path
-cannot carry them — they are reachable only by raw key. `ExerisSpringConfigProvider` bridges those:
+**Raw-key aliasing (the typed record is the exception, not the rule):** Beyond the typed
+`KernelSettings`/`PersistenceSettings` record, kernel subsystems read individual raw keys through the
+`getInt`/`getBoolean`/`getString`/`getLong` SPI accessors — and for most settings that raw-key path is
+the *only* one. Across the Community subsystems the typed record is consulted in exactly three
+places (`CommunityMemorySubsystem`, `CommunityTransportSubsystem`, and
+`CommunityPersistenceConfigResolver` for `jdbcUrl`/`username`/`password`/`runMigrations`). Everything
+else — pool sizing, timeouts, tenancy, events, graph, HTTP limits — arrives by raw key.
+
+This matters because `KernelBootstrap.resolveConfigProvider()` selects a **single** winner via
+`Stream.max(comparingInt(ConfigProvider::priority))`. At priority 150 `ExerisSpringConfigProvider`
+displaces `CommunityConfigProvider` outright rather than layering over it, so **any raw key this
+provider answers `Optional.empty()` for is a key the application cannot configure at all** — the
+kernel silently applies its own default and neither side warns. The alias table must therefore mirror
+the kernel's raw-key surface, not the subset we have happened to need:
 
 - `flowKernelKeyAlias` — maps `flow.*` kernel keys onto `exeris.runtime.flow.*` (Phase 4B Step 4).
-- `persistenceKernelKeyAlias` — maps the shared-pool keys the kernel's
-  `CommunityPersistenceConfigResolver` queries (`persistence.minIdleConnections` /
-  `persistence.pool.minSize`, `persistence.pool.warmup.{enabled,connections}` and the bare
-  `pool.warmup.*` aliases, and `persistence.connectionTimeoutMs` via `getLong`) onto
-  `exeris.runtime.persistence.{min-pool-size, pool-warmup-enabled, pool-warmup-connections,
-  connection-timeout-ms}`. `PersistenceSettings` carries only `maxPoolSize`, so without this alias
-  min-idle/warmup never reach the shared pool (it starts cold) and the acquire timeout cannot be
-  raised — the compat pool fail-fasts to 500 where a default Spring/Hikari pool blocks ~30s, making
-  cross-target comparisons unfair (see Seam 9 and Phase 3 invariant #14).
+- `persistenceKernelKeyAlias` — maps `persistence.*` onto `exeris.runtime.persistence.*`. Keys whose
+  Spring-side name is not a mechanical translation are listed explicitly (pool sizing is exposed as
+  `min-pool-size` / `max-pool-size`; warmup is flattened to `pool-warmup-{enabled,connections}` and is
+  also read by the kernel without the `persistence.` prefix); everything else falls through a generic
+  tail that tries camelCase then kebab-case, so newly-read kernel keys keep working without a code
+  change here.
+
+**Pool sizing is raw-key only — including `maxPoolSize`.** `CommunityPersistenceConfigResolver`
+resolves the maximum from `persistence.maxPoolSize`, then `persistence.pool.maxSize`, then a fallback
+of `clamp(availableProcessors() * 2, 2, 32)`. It never reads `PersistenceSettings.maxPoolSize()` —
+that field is populated by `kernelSettings()` and read by no kernel code at all. Both pool keys are
+declared as constants in the resolver rather than inline literals, which is why grepping the kernel
+for quoted key names does not surface them. With min-idle aliased and max not, an application
+configuring `16/256` had its min honoured and its max derived from the host's visible CPU count; on a
+container pinned to four CPUs that yields `maxPoolSize=8` and `PersistenceConfig` rejects the pair at
+boot (`minIdleConnections (16) > maxPoolSize (8)`). See Seam 9 and Phase 3 invariant #14.
 
 ---
 
@@ -515,12 +532,15 @@ and `hibernate.boot.allow_jdbc_metadata_access=false` so Hibernate does not call
 during `EntityManagerFactory` construction (which happens during Spring `refresh()`, before the
 kernel has booted). This is the canonical compat-datasource configuration, not a workaround.
 
-**Shared-pool warmup (cold-start avoidance):** The kernel owns the connection pool
-(`exeris-community-shared`). Its `CommunityPersistenceConfigResolver` supports min-idle and
-pool-warmup, but only `maxPoolSize` rides the typed `PersistenceSettings` record — min-idle/warmup
-are raw-key only. `ExerisSpringConfigProvider.persistenceKernelKeyAlias` plumbs them from
-`exeris.runtime.persistence.{min-pool-size, pool-warmup-enabled, pool-warmup-connections}` (see
-Seam 3 and Phase 3 invariant #14). Set `min-pool-size` to pre-warm the pool; otherwise it starts
+**Shared-pool sizing and warmup (cold-start avoidance):** The kernel owns the connection pool
+(`exeris-community-shared`). Its `CommunityPersistenceConfigResolver` reads pool sizing, min-idle and
+pool-warmup **entirely by raw key** — the typed `PersistenceSettings` record carries `maxPoolSize` but
+the resolver does not read it. `ExerisSpringConfigProvider.persistenceKernelKeyAlias` plumbs the whole
+set from `exeris.runtime.persistence.{max-pool-size, min-pool-size, pool-warmup-enabled,
+pool-warmup-connections}` (see Seam 3 and Phase 3 invariant #14). Set `max-pool-size` explicitly:
+unset, the kernel derives it from `availableProcessors()`, so a CPU-pinned container silently gets a
+different pool than an unpinned one — and a min-idle above that derived max fails the boot. Set
+`min-pool-size` to pre-warm the pool; otherwise it starts
 near-empty and a startup request burst can exhaust acquisition (`connectionExhausted` → 500) until
 the pool grows. This is the runtime's equivalent of a Spring/Hikari `minimum-idle` knob.
 

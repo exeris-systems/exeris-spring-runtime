@@ -249,25 +249,47 @@ throws `UnsupportedOperationException` directing to the enterprise tier.
 - **Guard:** `ExerisDataSourceTest` (non-JDBC stub → `UnsupportedOperationException`),
   `ExerisConnectionProxyTest`.
 
-## 14. Shared-pool min-idle and warmup are plumbed through the config provider
+## 14. The whole kernel persistence raw-key surface is plumbed through the config provider
 
 The kernel's `CommunityPersistenceConfigResolver` builds its `PersistenceConfig` by asking the
-active `ConfigProvider` for raw keys, including `persistence.minIdleConnections` (alias
-`persistence.pool.minSize`) and `persistence.pool.warmup.{enabled,connections}` (bare aliases
-`pool.warmup.*`). The typed `ConfigProvider.PersistenceSettings` bridge record only carries
-`maxPoolSize` — so `max-pool-size` flows through `kernelSettings()`, but min-idle and warmup have
-**no typed field** and their only path is the raw-key API. Without an alias, those lookups miss,
-the kernel falls back to its default min-idle (~1), and the shared pool (`exeris-community-shared`)
-starts **cold**: a startup burst of concurrent virtual threads races pool growth from 1 → max and
-some acquisitions time out (`PersistenceProviderException.connectionExhausted` → 500) until it warms.
+active `ConfigProvider` for raw keys. The typed `ConfigProvider.PersistenceSettings` bridge record is
+read for `jdbcUrl` / `username` / `password` / `runMigrations` **only** — everything else, pool sizing
+included, arrives by raw key. `PersistenceSettings.maxPoolSize()` is populated by `kernelSettings()`
+and read by no kernel code at all.
 
-`ExerisSpringConfigProvider.persistenceKernelKeyAlias` maps those raw kernel keys onto the Spring
-surface `exeris.runtime.persistence.{min-pool-size, pool-warmup-enabled, pool-warmup-connections,
-connection-timeout-ms}` (symmetric with the `flowKernelKeyAlias` bridge). This lets an application
-pre-warm the shared pool through its own min-idle knob, the same way a Spring/Hikari or
-Quarkus/Agroal deployment does — the fix is config plumbing in the runtime, not a kernel change and
-not an app-side workaround. The knob is mode-neutral (`MIXED`): it governs the kernel-owned pool
-identically for pure and compat paths.
+This is load-bearing because `KernelBootstrap.resolveConfigProvider()` picks a **single** winner via
+`Stream.max(comparingInt(ConfigProvider::priority))`. At priority 150 `ExerisSpringConfigProvider`
+displaces `CommunityConfigProvider` rather than layering over it, so every raw key it answers
+`Optional.empty()` for is a key the application cannot configure — the kernel applies its own default
+and nothing warns on either side. **The alias table must mirror the kernel's raw-key surface, not the
+subset we have needed so far.**
+
+**The regression this invariant was tightened for.** Pool sizing is resolved from
+`persistence.maxPoolSize`, then `persistence.pool.maxSize`, then a fallback of
+`clamp(availableProcessors() * 2, 2, 32)`. Min-idle was aliased; max was not — the assumption being
+that `max-pool-size` rode the typed record. It does not. An application configuring
+`min-pool-size=16` with `max-pool-size=256` therefore had its min honoured and its max derived from
+the host's visible CPU count. On a container pinned to four CPUs that yields `maxPoolSize=8`, and
+`PersistenceConfig` rejects the pair during bootstrap:
+`IllegalArgumentException: minIdleConnections (16) > maxPoolSize (8)`. Where the derived max happened
+to clear the configured min, there was no crash — just a pool sized by CPU pinning instead of by
+configuration, which quietly invalidates any cross-target performance comparison. The asymmetry was
+ours: a clean kernel resolves both halves from one source and cannot split them.
+
+`ExerisSpringConfigProvider.persistenceKernelKeyAlias` now maps the full surface onto
+`exeris.runtime.persistence.*` (symmetric with the `flowKernelKeyAlias` bridge). Keys whose
+Spring-side name is not a mechanical translation stay explicit — `max-pool-size`, `min-pool-size`,
+`pool-warmup-{enabled,connections}` (which the kernel also reads without the `persistence.` prefix),
+`connection-timeout-ms` — and a generic tail carries the rest (`idleTimeoutMs`, `maxLifetimeMs`,
+`maxTenantPools`, `rlsEnabled`, `perTenantPooling`, `useTls`), trying camelCase then kebab-case so it
+works with and without Spring relaxed binding. This lets an application size and pre-warm the shared
+pool through its own knobs, the same way a Spring/Hikari or Quarkus/Agroal deployment does — the fix
+is config plumbing in the runtime, not a kernel change and not an app-side workaround. The knobs are
+mode-neutral (`MIXED`): they govern the kernel-owned pool identically for pure and compat paths.
+
+**Deployments should set `max-pool-size` explicitly.** Left unset it is derived from
+`availableProcessors()`, so the same image gets a different pool depending on CPU pinning — and a
+min-idle above that derived max fails the boot rather than degrading.
 
 **Connection-timeout and fair-leveling.** Pre-warm blunts cold-start, but a *sustained* error spike
 can remain under load. The kernel pool fail-fasts on acquisition (a short acquire timeout →
@@ -279,9 +301,15 @@ latency). The alias now maps it to `exeris.runtime.persistence.connection-timeou
 deployment can set the same acquire timeout on both sides and contention shows up as latency, not
 compat-only 500s.
 
-- **Guard:** `ExerisSpringConfigProviderTest` (min-idle, warmup, and connection-timeout raw keys +
-  bare aliases resolve to the `exeris.runtime.persistence.*` properties; `getLong` path for the
-  timeout; literal-key precedence; empty when unset; null-environment safety).
+- **Guard:** `ExerisSpringConfigProviderTest` (max-pool-size, min-idle, warmup and
+  connection-timeout raw keys + bare aliases resolve to the `exeris.runtime.persistence.*`
+  properties; generic tail for the remaining resolver keys; `getLong` path for the timeout;
+  literal-key precedence; empty when unset; null-environment safety) **and**
+  `ExerisPersistenceConfigBridgeIntegrationTest`, which boots a real kernel and reads the pool
+  sizing back off `PersistenceEngine.stats()`. The unit test alone cannot catch this class of
+  defect: it asserts the mapping against key strings we also wrote, so a key the kernel reads and we
+  never mapped stays invisible to it. The integration test uses an odd pool size, which the kernel's
+  even `cores * 2` fallback cannot produce on any host.
 
 ---
 
@@ -301,7 +329,7 @@ compat-only 500s.
 | Phase 3B graduated 2026-05-17 — 3B-α at 0.6.0-preview (ADR-029); 3B-β/γ kernel-gated (ADR-031) | `phase-3b-alpha-invariants.md` carries 3B-α invariants; the 2026-05-17 graduation is documented above (invariant #10) |
 | Exeris adapter wins over Spring Boot `DataSourceAutoConfiguration` when opted in | `ExerisDataAutoConfigurationTest` — three cases covering the annotation declaration, the `@Primary` marker, and stand-down on user-supplied `DataSource` (see invariant #11 for the named test methods) |
 | Request-path provider slots re-bound on carrier thread | `KernelProviderBinderTest`; `ExerisPureModeRequestPathIntegrationTest`, `ExerisCompatMvcIntegrationTest` |
-| Shared-pool min-idle / warmup plumbed through the config provider | `ExerisSpringConfigProviderTest` (persistence raw-key aliases → `exeris.runtime.persistence.*`) |
+| Kernel persistence raw-key surface plumbed through the config provider | `ExerisSpringConfigProviderTest` (persistence raw-key aliases → `exeris.runtime.persistence.*`), `ExerisPersistenceConfigBridgeIntegrationTest` (real kernel: configured pool size reaches `PersistenceEngine.stats()`) |
 
 These tests must stay green. A failure indicates a real architectural regression;
 the test is not the bug.
