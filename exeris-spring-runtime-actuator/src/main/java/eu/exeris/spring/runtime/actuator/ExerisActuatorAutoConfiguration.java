@@ -92,7 +92,17 @@ public class ExerisActuatorAutoConfiguration {
         private static final System.Logger LOGGER =
                 System.getLogger(ExerisHealthIndicatorRegistrar.class.getName());
 
+        private final ClassLoader classLoader;
         private BeanFactory beanFactory;
+
+        ExerisHealthIndicatorRegistrar() {
+            this(ExerisActuatorAutoConfiguration.class.getClassLoader());
+        }
+
+        /** Package-private seam: lets a test drive the stand-down branch with a loader that resolves nothing. */
+        ExerisHealthIndicatorRegistrar(ClassLoader classLoader) {
+            this.classLoader = classLoader;
+        }
 
         @Override
         public void setBeanFactory(BeanFactory beanFactory) {
@@ -104,7 +114,6 @@ public class ExerisActuatorAutoConfiguration {
             if (registry.containsBeanDefinition(BEAN_NAME)) {
                 return;
             }
-            ClassLoader classLoader = ExerisActuatorAutoConfiguration.class.getClassLoader();
             Optional<Class<?>> indicatorType =
                     SpringBootHealthIndicatorFactory.healthIndicatorInterface(classLoader);
             if (indicatorType.isEmpty()) {
@@ -124,7 +133,7 @@ public class ExerisActuatorAutoConfiguration {
         private Object createIndicator() {
             ExerisRuntimeHealthIndicator source = beanFactory.getBean(ExerisRuntimeHealthIndicator.class);
             return SpringBootHealthIndicatorFactory
-                    .createHealthIndicator(source, ExerisActuatorAutoConfiguration.class.getClassLoader())
+                    .createHealthIndicator(source, classLoader)
                     .orElseThrow(() -> new IllegalStateException(
                             "Spring Boot HealthIndicator interface resolved but its Health builder API "
                                     + "did not match either known Spring Boot line"));

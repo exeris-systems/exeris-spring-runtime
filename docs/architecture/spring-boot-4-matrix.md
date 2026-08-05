@@ -137,6 +137,25 @@ The cost of neutrality is one intermediate `ArrayList` in `getHeaderNames()`, wh
 had been a view. That is a Compatibility Mode accessor called by Spring's own argument resolvers, not a
 Pure Mode hot path, and the allocation is proportional to one request's header count.
 
+### 4. `data` — `HibernatePropertiesCustomizer` moved module *and* package — ✅ closed, no bridge needed
+
+| | |
+|:---|:---|
+| **Was** | `org.springframework.boot.autoconfigure.orm.jpa.HibernatePropertiesCustomizer`, in `spring-boot-autoconfigure` |
+| **Is** | `org.springframework.boot.hibernate.autoconfigure.HibernatePropertiesCustomizer`, in a **new artifact**, `spring-boot-hibernate` |
+| **Affects** | `ExerisHibernateBootstrapCustomizer` |
+| **Anticipated?** | **Could not have been.** This runtime introduced the dependency itself, in the same release, while the matrix work was pending |
+
+**Resolved by dropping the interface.** It was only a delivery mechanism for two settings, so the class
+now contributes them as ordinary `spring.jpa.properties.*` entries from a `BeanFactoryPostProcessor`.
+Spring Boot binds those into the very map the customizer would have handed us — identical effect, and
+nothing version-specific on the compile path.
+
+The rework improved the guarantee it was written for. "Never overrule an application that has already
+spoken" is now enforced by **property-source precedence** — the contribution is added last — rather
+than by an explicit key check, so a value the application sets anywhere wins automatically, including
+the metadata switch that previously had no such protection.
+
 ### 5. `web` — Spring Boot 4 ships Jackson 3, the compat bridge built a Jackson 2 converter — ✅ closed
 
 | | |

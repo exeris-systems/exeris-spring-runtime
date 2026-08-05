@@ -113,13 +113,21 @@ public final class SpringBootHealthIndicatorFactory {
         Object proxy = Proxy.newProxyInstance(
                 classLoader,
                 new Class<?>[] { indicatorType.get() },
-                (_, method, args) -> switch (method.getName()) {
-                    case "health" -> converter.toBootHealth(source.health());
-                    case "getHealth" -> converter.toBootHealth(source.health());
+                (proxyInstance, method, args) -> switch (method.getName()) {
+                    // health() on both lines, plus the interface's default overload — SB3 names it
+                    // getHealth(boolean), SB4 names it health(boolean). A JDK proxy routes default
+                    // methods through the handler rather than running them, so both land here. The
+                    // includeDetails argument is ignored: this indicator's two details are a fixed
+                    // label and a stopped-reason, neither of which is sensitive enough to redact, and
+                    // suppressing them would leave a bare status that says nothing.
+                    case "health", "getHealth" -> converter.toBootHealth(source.health());
                     case "toString" -> "ExerisRuntimeHealthIndicator(proxy)";
-                    case "hashCode" -> System.identityHashCode(source);
-                    case "equals" -> args != null && args.length == 1 && args[0] != null
-                            && Proxy.isProxyClass(args[0].getClass());
+                    // Identity equality, the standard shape for a dynamic proxy. An earlier version
+                    // returned true for ANY proxy instance, which is both wrong and inconsistent with
+                    // the identity hashCode beside it: two proxies over different sources compared
+                    // equal while hashing differently, breaking the equals/hashCode contract.
+                    case "hashCode" -> System.identityHashCode(proxyInstance);
+                    case "equals" -> args != null && args.length == 1 && proxyInstance == args[0];
                     default -> throw new UnsupportedOperationException(
                             "Unexpected HealthIndicator method: " + method);
                 });

@@ -86,6 +86,41 @@ class ExerisCompatJwtDecoderFactoryTest {
                 .isNotInstanceOf(SupplierJwtDecoder.class);
     }
 
+    @Test
+    void build_withPublicKeyLocation_resolvesThroughTheResourceLoader() throws Exception {
+        // The third key source, and the only one that touches the ResourceLoader — the parameter added
+        // when this factory stopped taking Spring Boot's properties type (which bound a Resource for
+        // us). It had no coverage before, so a broken location→Resource hop would not have failed here.
+        java.nio.file.Path pem = java.nio.file.Files.createTempFile("exeris-test-key", ".pem");
+        pem.toFile().deleteOnExit();
+        java.nio.file.Files.writeString(pem, publicKeyPem());
+
+        JwtDecoder decoder = ExerisCompatJwtDecoderFactory.build(
+                jwt(null, null, pem.toUri().toString(), null, null),
+                new org.springframework.core.io.DefaultResourceLoader());
+
+        assertThat(decoder).isInstanceOf(NimbusJwtDecoder.class);
+    }
+
+    @Test
+    void build_withUnreadablePublicKeyLocation_failsWithAnActionableMessage() {
+        assertThatThrownBy(() -> ExerisCompatJwtDecoderFactory.build(
+                jwt(null, null, "classpath:definitely-not-here.pem", null, null),
+                new org.springframework.core.io.DefaultResourceLoader()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("public key");
+    }
+
+    /** A generated RSA public key in PEM armour, so the test needs no fixture file in the repo. */
+    private static String publicKeyPem() throws Exception {
+        java.security.KeyPairGenerator generator = java.security.KeyPairGenerator.getInstance("RSA");
+        generator.initialize(2048);
+        byte[] encoded = generator.generateKeyPair().getPublic().getEncoded();
+        return "-----BEGIN PUBLIC KEY-----\n"
+                + java.util.Base64.getMimeEncoder(64, new byte[] { '\n' }).encodeToString(encoded)
+                + "\n-----END PUBLIC KEY-----\n";
+    }
+
     private static ExerisResourceServerJwtProperties jwt(String jwkSetUri,
                                                          String issuerUri,
                                                          String publicKeyLocation,

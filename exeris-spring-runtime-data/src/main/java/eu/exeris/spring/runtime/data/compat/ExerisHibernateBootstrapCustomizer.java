@@ -101,7 +101,25 @@ public final class ExerisHibernateBootstrapCustomizer implements BeanFactoryPost
     private static final System.Logger LOGGER =
             System.getLogger(ExerisHibernateBootstrapCustomizer.class.getName());
 
+    private final String hibernateMarkerClass;
     private Environment environment;
+
+    public ExerisHibernateBootstrapCustomizer() {
+        this(HIBERNATE_MARKER_CLASS);
+    }
+
+    /**
+     * Package-private seam naming the class whose presence means "Hibernate is in use".
+     *
+     * <p>It exists so a test can drive the contribute path without Hibernate on this module's test
+     * classpath, which ADR-017 deliberately keeps off it — a test passes the name of a class that is
+     * present. Without the seam the only reachable branch in {@link #postProcessBeanFactory} is the
+     * stand-down, and the property-source mutation, which is the whole point of the class, would go
+     * untested.
+     */
+    ExerisHibernateBootstrapCustomizer(String hibernateMarkerClass) {
+        this.hibernateMarkerClass = hibernateMarkerClass;
+    }
 
     @Override
     public void setEnvironment(Environment environment) {
@@ -113,11 +131,8 @@ public final class ExerisHibernateBootstrapCustomizer implements BeanFactoryPost
         if (!(environment instanceof ConfigurableEnvironment configurable) || !hibernatePresent()) {
             return;
         }
-        Map<String, Object> contributed = buildContribution(configurable);
-        if (contributed.isEmpty()) {
-            return;
-        }
         // addLast: lowest precedence, so anything the application states itself wins.
+        Map<String, Object> contributed = buildContribution(configurable);
         configurable.getPropertySources()
                 .addLast(new MapPropertySource(PROPERTY_SOURCE_NAME, contributed));
     }
@@ -152,9 +167,9 @@ public final class ExerisHibernateBootstrapCustomizer implements BeanFactoryPost
         return contributed;
     }
 
-    private static boolean hibernatePresent() {
+    private boolean hibernatePresent() {
         return ClassUtils.isPresent(
-                HIBERNATE_MARKER_CLASS, ExerisHibernateBootstrapCustomizer.class.getClassLoader());
+                hibernateMarkerClass, ExerisHibernateBootstrapCustomizer.class.getClassLoader());
     }
 
     /**

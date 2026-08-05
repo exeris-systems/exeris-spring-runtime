@@ -84,14 +84,13 @@ public class ExerisCompatJwtDecoderAutoConfiguration {
      */
     static final class OnResourceServerJwtConfiguredCondition implements Condition {
 
-        private static final String PREFIX = "spring.security.oauth2.resourceserver.jwt.";
-
         @Override
         public boolean matches(ConditionContext context, AnnotatedTypeMetadata metadata) {
-            var environment = context.getEnvironment();
-            return environment.containsProperty(PREFIX + "jwk-set-uri")
-                    || environment.containsProperty(PREFIX + "public-key-location")
-                    || environment.containsProperty(PREFIX + "issuer-uri");
+            // Delegates to the same predicate the decoder itself uses, rather than repeating the three
+            // property names here. Two copies of "which keys count as configured" is exactly the kind
+            // of duplication that drifts: the condition would keep matching after a key was added to
+            // the binding, and the decoder would then be built from settings the gate never checked.
+            return ExerisResourceServerJwtProperties.bind(context.getEnvironment()).hasKeySource();
         }
     }
 }

@@ -51,6 +51,40 @@ class ExerisRuntimeHealthIndicatorTest {
     }
 
     @Test
+    void health_whenRunning_reportsUp() {
+        // The up path had no coverage: both existing tests exercised the not-running branch, so a
+        // regression that always reported DOWN would have gone unnoticed.
+        ExerisRuntimeHealthIndicator indicator = new ExerisRuntimeHealthIndicator(runningLifecycle());
+
+        ExerisRuntimeHealth health = indicator.health();
+
+        assertThat(health.up()).isTrue();
+        assertThat(health.status()).isEqualTo(ExerisRuntimeHealth.UP);
+        assertThat(health.details())
+                .containsEntry("runtime", "exeris")
+                .as("the up path carries no reason — that detail explains a down")
+                .doesNotContainKey("reason");
+    }
+
+    /**
+     * A lifecycle reporting running without booting a kernel. {@code ExerisRuntimeLifecycle} is final,
+     * and {@code isRunning()} is the only state this indicator reads, so the flag is set directly
+     * rather than standing a real kernel up in a unit test.
+     */
+    private static ExerisRuntimeLifecycle runningLifecycle() {
+        ExerisRuntimeLifecycle lifecycle = notRunningLifecycle();
+        try {
+            java.lang.reflect.Field running = ExerisRuntimeLifecycle.class.getDeclaredField("running");
+            running.setAccessible(true);
+            running.setBoolean(lifecycle, true);
+        } catch (ReflectiveOperationException ex) {
+            throw new AssertionError(
+                    "ExerisRuntimeLifecycle.running is gone or renamed — this fixture needs updating", ex);
+        }
+        return lifecycle;
+    }
+
+    @Test
     void constructor_rejectsNullLifecycle() {
         assertThatThrownBy(() -> new ExerisRuntimeHealthIndicator(null))
                 .isInstanceOf(NullPointerException.class);

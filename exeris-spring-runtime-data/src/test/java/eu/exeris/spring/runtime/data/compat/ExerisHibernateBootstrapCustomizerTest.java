@@ -38,6 +38,12 @@ class ExerisHibernateBootstrapCustomizerTest {
             "spring.jpa.properties.hibernate.boot.allow_jdbc_metadata_access";
     private static final String DIALECT_KEY = "spring.jpa.properties.hibernate.dialect";
 
+    /**
+     * A marker class that is always present, standing in for "Hibernate is on the classpath". Only
+     * presence is ever checked, never the type itself, so any resolvable name works.
+     */
+    private static final String MARKER_PRESENT = "java.lang.String";
+
     @Test
     void disablesTheMetadataProbe_andDerivesTheDialect() {
         Map<String, Object> contributed = ExerisHibernateBootstrapCustomizer.buildContribution(
@@ -152,6 +158,49 @@ class ExerisHibernateBootstrapCustomizerTest {
     // =========================================================================
     // The Hibernate gate
     // =========================================================================
+
+    @Test
+    void contributesThePropertySource_whenHibernateIsPresent() {
+        // The success path — the property-source mutation this class exists for. Driven through the
+        // classloader seam because Hibernate is deliberately absent from this module's test classpath
+        // (ADR-017), which would otherwise leave the only reachable branch the stand-down.
+        MockEnvironment environment = new MockEnvironment()
+                .withProperty("exeris.runtime.persistence.jdbc-url", PG_URL);
+
+        ExerisHibernateBootstrapCustomizer customizer =
+                new ExerisHibernateBootstrapCustomizer(MARKER_PRESENT);
+        customizer.setEnvironment(environment);
+        customizer.postProcessBeanFactory(new DefaultListableBeanFactory());
+
+        assertThat(environment.getPropertySources()
+                .contains(ExerisHibernateBootstrapCustomizer.PROPERTY_SOURCE_NAME)).isTrue();
+        assertThat(environment.getProperty(METADATA_KEY)).isEqualTo("false");
+        assertThat(environment.getProperty(DIALECT_KEY)).isEqualTo("org.hibernate.dialect.PostgreSQLDialect");
+    }
+
+    @Test
+    void contributesNothing_whenTheEnvironmentIsNotConfigurable() {
+        // EnvironmentAware hands us an Environment; only a ConfigurableEnvironment can take a new
+        // property source. A non-configurable one is not an error, just nothing to do.
+        ExerisHibernateBootstrapCustomizer customizer =
+                new ExerisHibernateBootstrapCustomizer(MARKER_PRESENT);
+        // A bare Environment (not Configurable) via proxy — implementing the interface by hand
+        // would be twenty stub methods for one behavioural bit.
+        org.springframework.core.env.Environment plain =
+                (org.springframework.core.env.Environment) java.lang.reflect.Proxy.newProxyInstance(
+                        getClass().getClassLoader(),
+                        new Class<?>[] { org.springframework.core.env.Environment.class },
+                        (proxy, method, args) -> switch (method.getName()) {
+                            case "toString" -> "plain-environment";
+                            case "hashCode" -> System.identityHashCode(proxy);
+                            case "equals" -> args != null && args.length == 1 && proxy == args[0];
+                            default -> null;
+                        });
+        customizer.setEnvironment(plain);
+
+        assertThatCode(() -> customizer.postProcessBeanFactory(new DefaultListableBeanFactory()))
+                .doesNotThrowAnyException();
+    }
 
     @Test
     void contributesNothing_whenHibernateIsAbsent() {
