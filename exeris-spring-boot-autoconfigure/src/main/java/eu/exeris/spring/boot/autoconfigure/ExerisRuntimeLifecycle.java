@@ -89,9 +89,8 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  * closed, and stop runs as three phases — close ingress, drain with the write path still
  * alive, then tear down. The drain mechanism, deadline and backoff are unchanged; only the
  * ordering and the missing state distinction were. This repository pins 0.10.2, so the gap
- * applies until that bump
- * lands; the disabled coverage in {@code ExerisWireLevelRuntimeIntegrationTest} is
- * re-enabled at the same time.
+ * applies until that bump lands; the disabled coverage in
+ * {@code ExerisWireLevelRuntimeIntegrationTest} is re-enabled at the same time.
  *
  * <h2>Phase Ordering</h2>
  * <p>Phase {@code Integer.MAX_VALUE - 100} ensures this lifecycle starts after

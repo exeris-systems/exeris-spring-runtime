@@ -38,12 +38,12 @@ Status language in this report is strict:
 All three sub-phases are complete:
 
 - **1a** dispatcher path — dispatcher, routing, request/response model, error mapping, autoconfiguration.
-- **1b** wire-level E2E ingress proof — `ExerisWireLevelRuntimeIntegrationTest` 6/6, kernel testkit fixture consumed.
+- **1b** wire-level E2E ingress proof — `ExerisWireLevelRuntimeIntegrationTest` 5/6 green, 1 `@Disabled` against kernel 0.10.2 (in-flight drain), kernel testkit fixture consumed.
 - **1c** closure hardening — `PureModeClasspathGuardTest` replicated to `tx`, `data`, and `actuator` (4 rules × 5 modules, all green); `ExerisDispatcherAllocationBaselineTest` enforces a hard ≤ 1024 B/req mean budget for empty-body GET dispatch (observed ≈ 277 B/dispatch, ~27% of budget); [`phase-1-invariants.md`](phase-1-invariants.md) documents the ten web-specific invariants.
 
 ## Exit Gate Checklist for M1 Complete
 
-- [x] Wire-level end-to-end runtime test demonstrates Exeris-owned HTTP ingress path with real bind + HTTP client round-trip (no servlet/reactive runtime ownership). — `ExerisWireLevelRuntimeIntegrationTest` 6/6
+- [x] Wire-level end-to-end runtime test demonstrates Exeris-owned HTTP ingress path with real bind + HTTP client round-trip (no servlet/reactive runtime ownership). — `ExerisWireLevelRuntimeIntegrationTest` 5/6 green, 1 `@Disabled` (drain — see the unchecked item below)
 - [x] End-to-end test demonstrates Spring-managed `@ExerisRoute` bean invocation through `ExerisHttpDispatcher`. — same test class
 - [x] End-to-end test demonstrates response emission through Exeris `HttpExchange.respond(...)` path. — `pureMode_bodyResponse_*` and `pureMode_customStatus_*`
 - [ ] Graceful shutdown behavior is verified with in-flight request drain in wire-level runtime tests. — `pureMode_shutdownDrainsInFlightRequest_beforeIngressBecomesUnavailable` is `@Disabled` against kernel 0.10.2 (drain sequenced after transport teardown; fixed in kernel 0.11.0). Ingress-becomes-unavailable is covered by `pureMode_bindsPort_routesRequest_and_cleansUpAfterFixtureAndContextClose`.
@@ -52,4 +52,9 @@ All three sub-phases are complete:
 - [x] Architecture guard coverage enforces no Tomcat/Netty/Servlet/WebFlux dependency creep for **all** Pure Mode modules. — `PureModeClasspathGuardTest` ships in `autoconfigure`, `web`, `tx`, `data`, `actuator` (4 rules × 5 modules, all green)
 - [x] Phase documentation reflects current milestone truth. — reconciled in this commit; sub-phase split lives in `phase-1-web-ingress.md`
 
-Current closure verdict: **M1 closed (2026-05-09).** All exit-gate items are met. Phase 1 invariants are captured in [`phase-1-invariants.md`](phase-1-invariants.md).
+Current closure verdict: **M1 closed (2026-05-09), with one exit-gate item re-opened on 2026-08-02.**
+Closure was declared on the evidence available at the time; the drain test passed then and was
+subsequently found to be flaky, then proven broken against the pinned kernel (see the unchecked item
+above). Every other exit-gate item stands. The item re-closes when the kernel pin reaches 0.11.0 and
+the test is re-enabled — a re-opened checkbox is the honest state, not a closure to be back-dated.
+Phase 1 invariants are captured in [`phase-1-invariants.md`](phase-1-invariants.md).

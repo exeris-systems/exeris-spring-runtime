@@ -9,11 +9,17 @@ application framework; Exeris is the runtime owner. See [`docs/architecture/over
 
 ## 0.7.0 — first published release
 
+**Not yet tagged.** No `v0.7.0` tag exists in this repository and nothing has been deployed under that
+coordinate; the release is deliberately on hold until the kernel pin can move to 0.11.0 and the
+in-flight-drain gap disclosed below is closed rather than merely documented. This section is
+therefore still being edited in place — entries are added and corrected here rather than in an
+`[Unreleased]` block, and the section freezes when the tag is cut.
+
 **Status: preview.** No module in this release is GA. Every phase bridge beyond the Pure Mode request
 path ships default-off, and "the code landed" is explicitly *not* the graduation criterion — see
 [Preview status](#preview-status-what-07x-does-not-promise) below.
 
-This is the first tagged release of the repository. Prior work was consumed downstream as
+This will be the first tagged release of the repository. Prior work was consumed downstream as
 `0.5.0-SNAPSHOT` from GitHub Packages. The version number jumps to `0.7.0` because the snapshot line had
 already accumulated three planned release trains: `0.5.0` (Phase 4A + 4B), `0.6.0` (Phase 3B-α), and
 `0.7.0` (Phase 4C). Tagging it `0.5.0` would have published 0.6.0 and 0.7.0 content under a label that

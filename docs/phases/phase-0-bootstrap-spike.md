@@ -163,11 +163,17 @@ SmartLifecycle.start() called (ordered)
 
 SmartLifecycle.stop() called on shutdown
     → ExerisRuntimeLifecycle.stop(callback)
-        → HttpServerEngine.closeIngress() (no new connections)
-        → Drain in-flight requests (timeout: exeris.runtime.graceful-shutdown-timeout-seconds)
         → KernelBootstrap.shutdown()
+            → ingress close + in-flight drain happen HERE, kernel-side
         → callback.run()
 ```
+
+Ingress close and drain are **not** Spring-side steps: `stop()` calls `KernelBootstrap.shutdown()`
+and then the callback, nothing else. `exeris.runtime.shutdown.graceful-shutdown-timeout-seconds`
+bounds joining the kernel boot thread, **not** the drain, which carries its own kernel-side deadline.
+On kernel 0.10.2 the drain runs after transport teardown and does not protect in-flight requests —
+see [`phase-0-invariants.md`](phase-0-invariants.md) and the
+[CHANGELOG known-gap section](../../CHANGELOG.md).
 
 ---
 
