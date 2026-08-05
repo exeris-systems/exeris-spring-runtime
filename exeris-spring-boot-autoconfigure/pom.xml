@@ -30,8 +30,10 @@
     </description>
 
     <properties>
-        <!-- Coverage ratchet floor (enforced only under -Pcoverage). Measured LINE 84.3%.
-             1.0 GA target is ~0.85 per module — ratchet this up as coverage improves. -->
+        <!-- Coverage ratchet floor (enforced only under -Pcoverage). Measured LINE 84.0% —
+             the floor sits exactly on the measurement after the namespaceAlias extraction
+             removed covered lines without removing missed ones. 1.0 GA target is ~0.85 per
+             module — ratchet this up as coverage improves. -->
         <jacoco.line.minimum>0.84</jacoco.line.minimum>
     </properties>
 
