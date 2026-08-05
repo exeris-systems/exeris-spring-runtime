@@ -13,7 +13,6 @@ import javax.sql.DataSource;
 import eu.exeris.spring.runtime.data.compat.ExerisDataSource;
 import eu.exeris.spring.runtime.data.compat.ExerisHibernateBootstrapCustomizer;
 import org.junit.jupiter.api.Test;
-import org.springframework.mock.env.MockEnvironment;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -72,7 +71,7 @@ class ExerisDataAutoConfigurationTest {
     static class UserHibernateCustomizerConfig {
 
         static final ExerisHibernateBootstrapCustomizer INSTANCE =
-                new ExerisHibernateBootstrapCustomizer(new MockEnvironment());
+                new ExerisHibernateBootstrapCustomizer();
 
         @Bean
         ExerisHibernateBootstrapCustomizer exerisHibernateBootstrapCustomizer() {

@@ -18,7 +18,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
-import org.springframework.core.env.Environment;
 import org.springframework.lang.Nullable;
 
 /**
@@ -84,20 +83,21 @@ public class ExerisDataAutoConfiguration {
      * Supplies the Hibernate bootstrap settings that the ordering contract requires, so a JPA
      * application does not have to know about it.
      *
-     * <p>Deliberately <em>not</em> gated on Hibernate being present.
-     * {@link org.springframework.boot.autoconfigure.orm.jpa.HibernatePropertiesCustomizer}
-     * declares one method taking a {@code Map<String, Object>} and references no Hibernate type, so the
-     * bean loads and constructs safely without Hibernate on the classpath — and its
-     * {@code customize} is only ever invoked by Spring Boot's {@code HibernateJpaConfiguration},
-     * which does require Hibernate. A {@code @ConditionalOnClass} guard here would buy nothing at
-     * runtime while making the registered-and-active path untestable without pulling
-     * {@code hibernate-core} into this module's test classpath — a heavy dependency to add for a
-     * condition that protects against nothing.
+     * <p>Registered as a {@code static @Bean} so it is instantiated as a
+     * {@code BeanFactoryPostProcessor} rather than an ordinary singleton: the properties it
+     * contributes must reach the environment before {@code JpaProperties} is bound and the
+     * {@code EntityManagerFactory} is built.
+     *
+     * <p>Not gated on Hibernate being present at the bean level — the class carries no Hibernate or
+     * Spring-Boot-JPA import and checks for Hibernate itself before contributing anything, so the
+     * bean is inert rather than absent when JPA is not in use. Keeping the gate inside the class also
+     * keeps the registered-and-active path testable without pulling {@code hibernate-core} onto this
+     * module's test classpath.
      */
     @Bean
     @ConditionalOnMissingBean(ExerisHibernateBootstrapCustomizer.class)
-    public ExerisHibernateBootstrapCustomizer exerisHibernateBootstrapCustomizer(Environment environment) {
-        return new ExerisHibernateBootstrapCustomizer(environment);
+    public static ExerisHibernateBootstrapCustomizer exerisHibernateBootstrapCustomizer() {
+        return new ExerisHibernateBootstrapCustomizer();
     }
 }
 

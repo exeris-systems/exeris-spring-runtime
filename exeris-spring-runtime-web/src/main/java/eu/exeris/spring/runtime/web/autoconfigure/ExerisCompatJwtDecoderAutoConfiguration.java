@@ -11,8 +11,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnNotWebApplication;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.boot.autoconfigure.security.oauth2.resource.OAuth2ResourceServerProperties;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.core.env.Environment;
+import org.springframework.core.io.ResourceLoader;
+import eu.exeris.spring.runtime.web.compat.security.ExerisResourceServerJwtProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Condition;
 import org.springframework.context.annotation.ConditionContext;
@@ -55,7 +56,6 @@ import eu.exeris.spring.runtime.web.compat.security.ExerisCompatJwtDecoderFactor
 @ConditionalOnClass(name = "org.springframework.security.oauth2.jwt.JwtDecoder")
 @ConditionalOnProperty(prefix = "exeris.runtime.web", name = "mode", havingValue = "compatibility")
 @ConditionalOnNotWebApplication
-@EnableConfigurationProperties(OAuth2ResourceServerProperties.class)
 @CompatibilityMode
 public class ExerisCompatJwtDecoderAutoConfiguration {
 
@@ -68,8 +68,12 @@ public class ExerisCompatJwtDecoderAutoConfiguration {
     @ConditionalOnMissingBean(type = "org.springframework.security.oauth2.jwt.JwtDecoder")
     @Conditional(OnResourceServerJwtConfiguredCondition.class)
     public org.springframework.security.oauth2.jwt.JwtDecoder exerisCompatJwtDecoder(
-            OAuth2ResourceServerProperties properties) {
-        return ExerisCompatJwtDecoderFactory.build(properties.getJwt());
+            Environment environment, ResourceLoader resourceLoader) {
+        // Bound here rather than injected as Spring Boot's OAuth2ResourceServerProperties: that type
+        // changed package and artifact in Spring Boot 4, and naming either coordinate would break one
+        // matrix line. The property names did not change — see ExerisResourceServerJwtProperties.
+        return ExerisCompatJwtDecoderFactory.build(
+                ExerisResourceServerJwtProperties.bind(environment), resourceLoader);
     }
 
     /**
@@ -80,14 +84,13 @@ public class ExerisCompatJwtDecoderAutoConfiguration {
      */
     static final class OnResourceServerJwtConfiguredCondition implements Condition {
 
-        private static final String PREFIX = "spring.security.oauth2.resourceserver.jwt.";
-
         @Override
         public boolean matches(ConditionContext context, AnnotatedTypeMetadata metadata) {
-            var environment = context.getEnvironment();
-            return environment.containsProperty(PREFIX + "jwk-set-uri")
-                    || environment.containsProperty(PREFIX + "public-key-location")
-                    || environment.containsProperty(PREFIX + "issuer-uri");
+            // Delegates to the same predicate the decoder itself uses, rather than repeating the three
+            // property names here. Two copies of "which keys count as configured" is exactly the kind
+            // of duplication that drifts: the condition would keep matching after a key was added to
+            // the binding, and the decoder would then be built from settings the gate never checked.
+            return ExerisResourceServerJwtProperties.bind(context.getEnvironment()).hasKeySource();
         }
     }
 }

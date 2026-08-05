@@ -113,4 +113,28 @@
         </dependency>
     </dependencies>
 
+    <profiles>
+        <!--
+             Spring Boot 4 split the health contributor types out of spring-boot-actuator into their
+             own artifact. Without this dependency the SB4 classpath has no HealthIndicator interface
+             at all, SpringBootHealthIndicatorFactory resolves nothing, and the Exeris health
+             indicator silently does not exist — a green build hiding a missing feature, which is
+             exactly the failure shape this repository treats as a defect rather than a gap.
+
+             This is a deviation from ADR-028 obligation 1, which says only the dependencyManagement
+             import differs between profiles. It is unavoidable: the artifact does not exist on the
+             SB3 line, so it cannot be declared unconditionally. Recorded in
+             docs/architecture/spring-boot-4-matrix.md rather than left for a reader to infer from
+             the POM.
+        -->
+        <profile>
+            <id>matrix-sb4</id>
+            <dependencies>
+                <dependency>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-health</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+    </profiles>
 </project>

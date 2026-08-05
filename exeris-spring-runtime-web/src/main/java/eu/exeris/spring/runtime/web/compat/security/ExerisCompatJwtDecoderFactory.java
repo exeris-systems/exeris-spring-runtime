@@ -7,8 +7,9 @@
 package eu.exeris.spring.runtime.web.compat.security;
 
 import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
-import org.springframework.boot.autoconfigure.security.oauth2.resource.OAuth2ResourceServerProperties;
+import org.springframework.core.io.DefaultResourceLoader;
 import org.springframework.core.io.Resource;
+import org.springframework.core.io.ResourceLoader;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
@@ -64,31 +65,48 @@ public final class ExerisCompatJwtDecoderFactory {
     }
 
     /**
-     * Builds a {@link JwtDecoder} from the bound {@link OAuth2ResourceServerProperties} JWT settings,
-     * choosing the key source the same way Spring Boot does: jwk-set-uri, then public-key-location,
-     * then issuer-uri (lazy, via {@link SupplierJwtDecoder} so issuer discovery happens on first use).
+     * Builds a {@link JwtDecoder} from the bound JWT settings, choosing the key source the same way
+     * Spring Boot does: jwk-set-uri, then public-key-location, then issuer-uri (lazy, via
+     * {@link SupplierJwtDecoder} so issuer discovery happens on first use).
      *
-     * @param jwt the {@code spring.security.oauth2.resourceserver.jwt.*} properties (never null)
+     * @param jwt the {@code spring.security.oauth2.resourceserver.jwt.*} settings (never null)
      * @return a fully validated decoder, mirroring Spring Boot's resource-server decoder
      * @throws IllegalStateException if none of jwk-set-uri / public-key-location / issuer-uri is set
      */
-    public static JwtDecoder build(OAuth2ResourceServerProperties.Jwt jwt) {
-        String jwkSetUri = trimToNull(jwt.getJwkSetUri());
-        String issuerUri = trimToNull(jwt.getIssuerUri());
-        Resource publicKeyLocation = jwt.getPublicKeyLocation();
-        List<String> audiences = jwt.getAudiences();
+    public static JwtDecoder build(ExerisResourceServerJwtProperties jwt) {
+        return build(jwt, new DefaultResourceLoader());
+    }
+
+    /**
+     * Builds a decoder, resolving {@code public-key-location} through the supplied loader.
+     *
+     * <p>The loader is a parameter because the location arrives as a {@code String}: this runtime binds
+     * the properties itself rather than through Spring Boot's relocated properties type (see
+     * {@link ExerisResourceServerJwtProperties}), and a plain {@code Binder} has no resource-aware
+     * conversion service. Passing the application's own {@code ResourceLoader} keeps
+     * {@code classpath:} / {@code file:} resolution identical to what Boot would have done.
+     *
+     * @param jwt            the settings (never null)
+     * @param resourceLoader loader for {@code public-key-location} (never null)
+     */
+    public static JwtDecoder build(ExerisResourceServerJwtProperties jwt, ResourceLoader resourceLoader) {
+        String jwkSetUri = trimToNull(jwt.jwkSetUri());
+        String issuerUri = trimToNull(jwt.issuerUri());
+        String publicKeyLocationValue = trimToNull(jwt.publicKeyLocation());
+        List<String> audiences = jwt.audiences();
 
         if (jwkSetUri != null) {
             NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri)
-                    .jwsAlgorithms(algorithms -> applyJwsAlgorithms(jwt.getJwsAlgorithms(), algorithms))
+                    .jwsAlgorithms(algorithms -> applyJwsAlgorithms(jwt.jwsAlgorithms(), algorithms))
                     .build();
             decoder.setJwtValidator(validators(issuerUri, audiences));
             return decoder;
         }
 
-        if (publicKeyLocation != null) {
+        if (publicKeyLocationValue != null) {
+            Resource publicKeyLocation = resourceLoader.getResource(publicKeyLocationValue);
             NimbusJwtDecoder decoder = NimbusJwtDecoder.withPublicKey(readPublicKey(publicKeyLocation))
-                    .signatureAlgorithm(firstSignatureAlgorithm(jwt.getJwsAlgorithms()))
+                    .signatureAlgorithm(firstSignatureAlgorithm(jwt.jwsAlgorithms()))
                     .build();
             decoder.setJwtValidator(validators(issuerUri, audiences));
             return decoder;

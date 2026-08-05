@@ -9,8 +9,6 @@ package eu.exeris.spring.runtime.actuator;
 import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
 import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeProperties;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.actuate.health.Health;
-import org.springframework.boot.actuate.health.Status;
 
 import java.util.Optional;
 
@@ -36,11 +34,12 @@ class ExerisRuntimeHealthIndicatorTest {
         ExerisRuntimeHealthIndicator indicator =
                 new ExerisRuntimeHealthIndicator(notRunningLifecycle());
 
-        Health health = indicator.health();
+        ExerisRuntimeHealth health = indicator.health();
 
-        assertThat(health.getStatus()).isEqualTo(Status.DOWN);
-        assertThat(health.getDetails()).containsKey("runtime");
-        assertThat(health.getDetails()).containsKey("reason");
+        assertThat(health.up()).isFalse();
+        assertThat(health.status()).isEqualTo(ExerisRuntimeHealth.DOWN);
+        assertThat(health.details()).containsKey("runtime");
+        assertThat(health.details()).containsKey("reason");
     }
 
     @Test
@@ -48,7 +47,41 @@ class ExerisRuntimeHealthIndicatorTest {
         ExerisRuntimeHealthIndicator indicator =
                 new ExerisRuntimeHealthIndicator(notRunningLifecycle());
 
-        assertThat(indicator.health().getDetails().get("runtime")).isEqualTo("exeris");
+        assertThat(indicator.health().details().get("runtime")).isEqualTo("exeris");
+    }
+
+    @Test
+    void health_whenRunning_reportsUp() {
+        // The up path had no coverage: both existing tests exercised the not-running branch, so a
+        // regression that always reported DOWN would have gone unnoticed.
+        ExerisRuntimeHealthIndicator indicator = new ExerisRuntimeHealthIndicator(runningLifecycle());
+
+        ExerisRuntimeHealth health = indicator.health();
+
+        assertThat(health.up()).isTrue();
+        assertThat(health.status()).isEqualTo(ExerisRuntimeHealth.UP);
+        assertThat(health.details())
+                .containsEntry("runtime", "exeris")
+                .as("the up path carries no reason — that detail explains a down")
+                .doesNotContainKey("reason");
+    }
+
+    /**
+     * A lifecycle reporting running without booting a kernel. {@code ExerisRuntimeLifecycle} is final,
+     * and {@code isRunning()} is the only state this indicator reads, so the flag is set directly
+     * rather than standing a real kernel up in a unit test.
+     */
+    private static ExerisRuntimeLifecycle runningLifecycle() {
+        ExerisRuntimeLifecycle lifecycle = notRunningLifecycle();
+        try {
+            java.lang.reflect.Field running = ExerisRuntimeLifecycle.class.getDeclaredField("running");
+            running.setAccessible(true);
+            running.setBoolean(lifecycle, true);
+        } catch (ReflectiveOperationException ex) {
+            throw new AssertionError(
+                    "ExerisRuntimeLifecycle.running is gone or renamed — this fixture needs updating", ex);
+        }
+        return lifecycle;
     }
 
     @Test

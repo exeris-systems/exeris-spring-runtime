@@ -7,17 +7,27 @@
 package eu.exeris.spring.runtime.actuator;
 
 import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
-import org.springframework.boot.actuate.health.Health;
-import org.springframework.boot.actuate.health.HealthIndicator;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 
 /**
- * Spring Boot {@link HealthIndicator} reporting Exeris runtime liveness.
+ * Reports Exeris runtime liveness as {@link ExerisRuntimeHealth}.
  *
- * <p>Reports {@link Health#up()} when {@link ExerisRuntimeLifecycle#isRunning()} is
- * {@code true}. Reports {@link Health#down()} otherwise — the runtime has not yet
- * started, or has been stopped.
+ * <p>Reports up when {@link ExerisRuntimeLifecycle#isRunning()} is {@code true}, and down otherwise —
+ * the runtime has not yet started, or has been stopped.
+ *
+ * <h2>Why it no longer implements Spring Boot's {@code HealthIndicator}</h2>
+ * <p>It did until the Spring Boot dual matrix landed. Spring Boot 4 moved that interface to a
+ * different package in a different artifact, and a class cannot declare {@code implements} against a
+ * type whose name differs per matrix line while both lines compile the same source (ADR-028
+ * obligation 1). The Boot-facing shape is produced instead by
+ * {@link eu.exeris.spring.runtime.actuator.bridge.SpringBootHealthIndicatorFactory}, which builds a
+ * proxy against whichever interface is on the classpath and delegates here.
+ *
+ * <p>This class is therefore the source of truth for the health decision, and stays free of any
+ * framework type — which is also what lets the compat actuator controller read it directly.
  *
  * <h2>Ownership</h2>
  * <p>Reads Spring lifecycle state only. No ScopedValue reads. No kernel-path coupling.
@@ -25,7 +35,10 @@ import java.util.Objects;
  *
  * @since 0.1.0
  */
-public final class ExerisRuntimeHealthIndicator implements HealthIndicator {
+public final class ExerisRuntimeHealthIndicator {
+
+    private static final String RUNTIME_DETAIL = "runtime";
+    private static final String RUNTIME_NAME = "exeris";
 
     private final ExerisRuntimeLifecycle lifecycle;
 
@@ -33,16 +46,18 @@ public final class ExerisRuntimeHealthIndicator implements HealthIndicator {
         this.lifecycle = Objects.requireNonNull(lifecycle, "lifecycle must not be null");
     }
 
-    @Override
-    public Health health() {
+    /**
+     * Evaluates runtime liveness.
+     *
+     * @return the current health; never {@code null}
+     */
+    public ExerisRuntimeHealth health() {
         if (lifecycle.isRunning()) {
-            return Health.up()
-                    .withDetail("runtime", "exeris")
-                    .build();
+            return ExerisRuntimeHealth.up(Map.of(RUNTIME_DETAIL, RUNTIME_NAME));
         }
-        return Health.down()
-                .withDetail("runtime", "exeris")
-                .withDetail("reason", "Exeris runtime not running")
-                .build();
+        Map<String, String> details = new LinkedHashMap<>();
+        details.put(RUNTIME_DETAIL, RUNTIME_NAME);
+        details.put("reason", "Exeris runtime not running");
+        return ExerisRuntimeHealth.down(details);
     }
 }

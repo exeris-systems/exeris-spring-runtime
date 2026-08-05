@@ -35,6 +35,7 @@ import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
 import eu.exeris.spring.runtime.web.ExerisErrorMapper;
 import eu.exeris.spring.runtime.web.ExerisErrorStatusResolver;
 import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
+import eu.exeris.spring.runtime.web.compat.ExerisCompatJsonConverterFactory;
 import eu.exeris.spring.runtime.web.compat.security.SecurityFilterChainDetector;
 import eu.exeris.spring.runtime.web.compat.security.UnenforcedSecurityFilterChainCheck;
 import eu.exeris.spring.runtime.web.compat.ExerisCompatDispatcher;
@@ -65,11 +66,43 @@ import eu.exeris.spring.runtime.web.compat.resolver.ExerisRequestParamArgumentRe
 @CompatibilityMode
 public class ExerisCompatAutoConfiguration {
 
-    // 1. Message converter
+    // 1. Message converter.
+    //
+    // Declared as HttpMessageConverter<?> rather than MappingJackson2HttpMessageConverter because the
+    // two Spring Boot lines ship different Jackson majors: SB3 has Jackson 2, SB4 has Jackson 3 and
+    // only Jackson 2's *annotations*. The Jackson 2 converter class still compiles on both lines but
+    // cannot be constructed under SB4 — see ExerisCompatJsonConverterFactory. Consumers take
+    // List<HttpMessageConverter<?>>, so the narrower declared type bought nothing anyway.
+    //
+    // The @ConditionalOnMissingBean still names the Jackson 2 converter, which is exactly what it
+    // meant before: "stand down if the application declared its own JSON converter". On SB4 an
+    // application-declared Jackson 3 converter does not suppress ours; both land in the list, which is
+    // additive and picks by media type, so the effect is redundancy rather than conflict.
     @Bean
+    @Conditional(OnAnyJacksonPresentCondition.class)
     @ConditionalOnMissingBean(MappingJackson2HttpMessageConverter.class)
-    public MappingJackson2HttpMessageConverter exerisCompatJacksonConverter() {
-        return new MappingJackson2HttpMessageConverter();
+    public HttpMessageConverter<?> exerisCompatJacksonConverter() {
+        return ExerisCompatJsonConverterFactory.create(getClass().getClassLoader())
+                .orElseThrow(() -> new IllegalStateException(
+                        "A Jackson databind is on the classpath but no matching Spring JSON converter "
+                                + "could be constructed. Declare an HttpMessageConverter bean explicitly."));
+    }
+
+    /**
+     * Matches when some Jackson databind is present, on either major.
+     *
+     * <p>Not {@code @ConditionalOnClass}: the class to look for differs per Spring Boot line, and a
+     * single annotation cannot express "either of these two".
+     */
+    static final class OnAnyJacksonPresentCondition implements Condition {
+
+        @Override
+        public boolean matches(ConditionContext context, AnnotatedTypeMetadata metadata) {
+            ClassLoader classLoader = context.getClassLoader() != null
+                    ? context.getClassLoader()
+                    : ExerisCompatAutoConfiguration.class.getClassLoader();
+            return ExerisCompatJsonConverterFactory.isAvailable(classLoader);
+        }
     }
 
     // 2. Handler registry

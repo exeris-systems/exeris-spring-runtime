@@ -66,7 +66,7 @@ The 1.0 support statement reads, in normalized form: *"`exeris-spring-runtime` 1
 | Matrix profile | Spring Boot BOM | Spring Framework | Spring Security | Jakarta EE | JDK baseline | Pure Mode classpath guards |
 |:---------------|:----------------|:-----------------|:----------------|:-----------|:-------------|:---------------------------|
 | `matrix-sb3` (default) | 3.5.x | 6.1.x | 6.x | 10.x | 26 + preview | Must stay green |
-| `matrix-sb4`           | 4.0.x | 7.x   | 7.x (separate axis — see obligation 6) | 11.x | 26 + preview | Must stay green |
+| `matrix-sb4`           | 4.x (tracks the current release; 4.1.0 at implementation) | 7.x   | 7.x (separate axis — see obligation 6) | 11.x | 26 + preview | Must stay green |
 
 Banned coordinates (both matrices, no exceptions): `org.apache.tomcat.embed:*`, `org.eclipse.jetty:*`, `io.undertow:*`, `io.netty:*`, `io.projectreactor:*`, `jakarta.servlet:jakarta.servlet-api`, `com.zaxxer:HikariCP`, `spring-cloud-starter-gateway*`, `spring-webflux`.
 

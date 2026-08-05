@@ -10,7 +10,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 
 import org.springframework.http.HttpHeaders;
@@ -85,17 +84,22 @@ public final class ExerisMvcServerHttpResponse implements ServerHttpResponse {
             exeris = exeris.contentType(contentType);
         }
 
-        // Propagate all other headers (excluding Content-Type which is already set above)
+        // Propagate all other headers (excluding Content-Type which is already set above).
+        //
+        // Iterated with forEach rather than entrySet() because Spring Framework 7 stops
+        // HttpHeaders implementing MultiValueMap: entrySet() and keySet() are gone, replaced by
+        // headerNames(). forEach carries the same signature on both lines, so this compiles under
+        // matrix-sb3 and matrix-sb4 from one source — which is what ADR-028 obligation 1 requires
+        // and what a version-specific call could not give.
         List<HttpHeader> extraHeaders = new ArrayList<>();
-        for (Map.Entry<String, List<String>> entry : headers.entrySet()) {
-            String name = entry.getKey();
+        headers.forEach((name, values) -> {
             if (HttpHeaders.CONTENT_TYPE.equalsIgnoreCase(name)) {
-                continue;
+                return;
             }
-            for (String value : entry.getValue()) {
+            for (String value : values) {
                 extraHeaders.add(new HttpHeader(name, value));
             }
-        }
+        });
         if (!extraHeaders.isEmpty()) {
             exeris = exeris.withHeaders(extraHeaders);
         }

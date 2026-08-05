@@ -17,7 +17,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.MethodParameter;
 import org.springframework.http.converter.HttpMessageConverter;
-import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -36,7 +35,7 @@ import jakarta.validation.constraints.NotBlank;
 
 class ExerisRequestBodyArgumentResolverTest {
 
-    private final List<HttpMessageConverter<?>> converters = List.of(new MappingJackson2HttpMessageConverter());
+    private final List<HttpMessageConverter<?>> converters = List.of(jsonConverter());
     private final ExerisRequestBodyArgumentResolver resolver = new ExerisRequestBodyArgumentResolver(converters);
 
     @Test
@@ -175,4 +174,19 @@ class ExerisRequestBodyArgumentResolverTest {
         @Override public boolean isAlive() { return true; }
         @Override public void addCloseAction(Runnable action) { }
     }
+
+    /**
+     * The JSON converter for whichever Jackson the active matrix line ships — Jackson 2 on SB3,
+     * Jackson 3 on SB4. Constructing MappingJackson2HttpMessageConverter directly compiles on both
+     * lines but throws under SB4, where Jackson 2's databind is absent, so tests go through the same
+     * selection the production path uses.
+     */
+    private static org.springframework.http.converter.HttpMessageConverter<?> jsonConverter() {
+        return eu.exeris.spring.runtime.web.compat.ExerisCompatJsonConverterFactory
+                .create(ExerisCompatJsonConverterFactoryUsage.class.getClassLoader())
+                .orElseThrow(() -> new IllegalStateException("no Jackson on the test classpath"));
+    }
+
+    private static final class ExerisCompatJsonConverterFactoryUsage { }
+
 }
