@@ -14,7 +14,8 @@ the SB4 line actually costs**, measured rather than anticipated, and what has la
 | **SB3 pin** | `3.5.14` (`matrix-sb3`, default) |
 | **SB4 pin** | `4.1.0` (`matrix-sb4`) |
 | **SB3 line** | ✅ green — full reactor, tests included |
-| **SB4 line** | ⚠️ **compiles end to end**; tests red in `web` only — friction item 5 (Jackson 2 vs 3) |
+| **SB4 line** | ✅ green — full reactor, tests included |
+| **CI** | both axes run `-Pmatrix-<line>,coverage clean verify` on every push; failure on either blocks merge (ADR-028 obligation 2) |
 
 > **Measure with `clean`.** An incremental `-Pmatrix-sb4 install` can report SUCCESS on stale classes
 > left by an SB3 build. The first run of this kind here did exactly that, and it looked like the
@@ -136,7 +137,7 @@ The cost of neutrality is one intermediate `ArrayList` in `getHeaderNames()`, wh
 had been a view. That is a Compatibility Mode accessor called by Spring's own argument resolvers, not a
 Pure Mode hot path, and the allocation is proportional to one request's header count.
 
-### 5. `web` — Spring Boot 4 ships Jackson 3, the compat bridge builds a Jackson 2 converter — ❌ open
+### 5. `web` — Spring Boot 4 ships Jackson 3, the compat bridge built a Jackson 2 converter — ✅ closed
 
 | | |
 |:---|:---|
@@ -145,11 +146,19 @@ Pure Mode hot path, and the allocation is proportional to one request's header c
 | **Affects** | `ExerisCompatAutoConfiguration#exerisCompatJacksonConverter` and everything downstream of it — 33 test failures in `web`, all one cause |
 | **Anticipated?** | Yes — ADR-028's `org.springframework.http` row named `MappingJackson2HttpMessageConverter` as the expected friction there |
 
-Only found by running tests: the class compiles on both lines, and the mismatch is in what is on the
-classpath at construction time. `HttpMessageConverter<?>` is a type present on both, so the shape of a
-fix is likely "choose the implementation by what Jackson is present, declare the bean as the common
-interface" — the same move as item 1 but without needing a proxy, since we construct rather than
-implement. Not attempted in this slice.
+**Closed by choosing the implementation at runtime.** `ExerisCompatJsonConverterFactory` picks by which
+Jackson databind is present and the bean is declared as `HttpMessageConverter<?>`, a type on both
+lines — which cost nothing, since every consumer already took `List<HttpMessageConverter<?>>`.
+
+Only one of the two converters is constructed reflectively, and the asymmetry is the point:
+`MappingJackson2HttpMessageConverter` is nameable at compile time on **both** lines, so it is
+constructed directly; `JacksonJsonHttpMessageConverter` exists only in Spring Framework 7, so naming it
+would break the SB3 compile. Reflection is used exactly where the compiler cannot follow, and nowhere
+else.
+
+The tests were part of the fix rather than an afterthought: three of them constructed the Jackson 2
+converter directly, which compiles on both lines and throws on SB4. They now go through the same
+factory the production path uses, so what they exercise is the selection, not a hardcoded guess.
 
 ---
 
@@ -187,18 +196,20 @@ present, or an equivalent.
 
 ---
 
-## Why the CI matrix axis has not landed yet
+## The CI matrix axis
 
-ADR-028 obligation 2 requires a CI axis where failure on either line blocks merge. It is deliberately
-**not** added in the slice that introduced the profiles, because the SB4 line is red:
+Added once the SB4 line went green, which was the condition set when the profiles landed: a
+**required** check on a red line makes every unrelated PR unmergeable, and a **non-blocking** one
+satisfies ADR-028's letter while defeating its purpose — a gate that never blocks is not a gate, and a
+permanently-amber check trains reviewers to ignore it.
 
-- Adding it as a **required** check makes every unrelated PR unmergeable until the bridges land.
-- Adding it as **non-blocking** (`continue-on-error`) satisfies the letter and defeats the purpose — a
-  gate that never blocks is not a gate, and a permanently-amber check trains reviewers to ignore it.
+Both axes now run `-Pmatrix-<line>,coverage clean verify`. `fail-fast` is off so a break on one line
+still reports the other: knowing whether a change broke SB4 only or both is most of the diagnosis.
 
-The axis lands in the slice that turns the SB4 line green, in the same commit. Until then this document
-is the honest record of where the line stands, and `matrix-sb4` is runnable on demand by anyone who
-wants to check progress.
+Note the profile list — `-Pmatrix-sb3,coverage`, not `-Pcoverage`. Naming any profile disables
+`activeByDefault`, so the matrix profile must be explicit whenever another one is used. That is the
+same trap described at the top of this document, and CI would have hit it silently: the SB3 axis would
+have fallen through to the fallback pin and still gone green, testing nothing the SB4 axis did not.
 
 ---
 

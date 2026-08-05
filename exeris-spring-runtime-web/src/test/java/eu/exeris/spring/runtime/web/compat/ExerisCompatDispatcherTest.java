@@ -30,7 +30,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -54,7 +53,7 @@ class ExerisCompatDispatcherTest {
 
     @BeforeEach
     void setUp() {
-        MappingJackson2HttpMessageConverter converter = new MappingJackson2HttpMessageConverter();
+        org.springframework.http.converter.HttpMessageConverter<?> converter = jsonConverter();
         List<org.springframework.http.converter.HttpMessageConverter<?>> converters = List.of(converter);
 
         var ctx = new AnnotationConfigApplicationContext(TestConfig.class);
@@ -230,7 +229,7 @@ class ExerisCompatDispatcherTest {
         ExerisExceptionHandlerResolver exerisExceptionHandlerResolver() {
             HandlerMethodArgumentResolverComposite c = new HandlerMethodArgumentResolverComposite();
             List<org.springframework.http.converter.HttpMessageConverter<?>> converters =
-                    List.of(new MappingJackson2HttpMessageConverter());
+                    List.of(jsonConverter());
             return new ExerisExceptionHandlerResolver(c, converters);
         }
     }
@@ -321,4 +320,19 @@ class ExerisCompatDispatcherTest {
             return null;
         }
     }
+
+    /**
+     * The JSON converter for whichever Jackson the active matrix line ships — Jackson 2 on SB3,
+     * Jackson 3 on SB4. Constructing MappingJackson2HttpMessageConverter directly compiles on both
+     * lines but throws under SB4, where Jackson 2's databind is absent, so tests go through the same
+     * selection the production path uses.
+     */
+    private static org.springframework.http.converter.HttpMessageConverter<?> jsonConverter() {
+        return eu.exeris.spring.runtime.web.compat.ExerisCompatJsonConverterFactory
+                .create(ExerisCompatJsonConverterFactoryUsage.class.getClassLoader())
+                .orElseThrow(() -> new IllegalStateException("no Jackson on the test classpath"));
+    }
+
+    private static final class ExerisCompatJsonConverterFactoryUsage { }
+
 }

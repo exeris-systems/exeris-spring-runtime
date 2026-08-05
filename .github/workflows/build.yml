@@ -42,9 +42,17 @@ permissions:
 
 jobs:
   verify:
-    name: mvn verify (JDK 26, --enable-preview)
+    name: mvn verify (JDK 26, --enable-preview, ${{ matrix.spring-boot-line }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
+    # ADR-028 obligation 2: both Spring Boot lines build and test on every push, and a failure on
+    # either blocks merge. fail-fast is off so a break on one line still reports the other — knowing
+    # whether a change broke SB4 only or both is most of the diagnosis.
+    strategy:
+      fail-fast: false
+      matrix:
+        spring-boot-line: [sb3, sb4]
 
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -72,14 +80,14 @@ jobs:
       - name: Build, test, architecture guards & coverage gate (mvn verify)
         run: >
           mvn -B -ntp -s .github/maven-settings.xml
-          -Pcoverage
+          -Pmatrix-${{ matrix.spring-boot-line }},coverage
           clean verify
 
       - name: Upload Surefire/Failsafe reports on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: test-reports-${{ github.run_number }}
+          name: test-reports-${{ matrix.spring-boot-line }}-${{ github.run_number }}
           path: '**/target/*-reports/'
           if-no-files-found: ignore
           retention-days: 7
