@@ -6,6 +6,8 @@
  */
 package eu.exeris.spring.runtime.web.compat.filter;
 
+import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
+
 import eu.exeris.kernel.spi.http.HttpRequest;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
@@ -59,6 +61,7 @@ import java.util.Objects;
  *
  * @since 0.1.0
  */
+@CompatibilityMode
 public final class ExerisSecurityContextFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";

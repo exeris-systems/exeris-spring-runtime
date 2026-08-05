@@ -40,6 +40,7 @@ import eu.exeris.kernel.spi.http.HttpMethod;
  * so that {@link eu.exeris.spring.runtime.web.compat.resolver.ExerisPathVariableArgumentResolver}
  * can retrieve extracted URI variables.
  */
+@CompatibilityMode
 public final class ExerisHandlerMethodRegistry implements ApplicationContextAware, InitializingBean {
 
     /**

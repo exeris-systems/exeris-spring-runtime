@@ -9,6 +9,7 @@ package eu.exeris.spring.runtime.web.compat;
 /**
  * Shared request attribute keys for compatibility-mode Spring bridges.
  */
+@CompatibilityMode
 public final class ExerisCompatAttributes {
 
     public static final String SPRING_RESPONSE_ATTRIBUTE = "__exerisSpringResponse";

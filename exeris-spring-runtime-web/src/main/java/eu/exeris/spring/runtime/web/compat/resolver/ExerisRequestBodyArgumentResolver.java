@@ -6,6 +6,8 @@
  */
 package eu.exeris.spring.runtime.web.compat.resolver;
 
+import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
+
 import java.lang.annotation.Annotation;
 import java.util.ArrayList;
 import java.util.List;
@@ -40,6 +42,7 @@ import eu.exeris.spring.runtime.web.compat.ExerisMvcServerHttpRequest;
  * {@code @ExceptionHandler(MethodArgumentNotValidException.class)} advice keeps
  * working unchanged.
  */
+@CompatibilityMode
 public final class ExerisRequestBodyArgumentResolver implements HandlerMethodArgumentResolver {
 
     private final List<HttpMessageConverter<?>> converters;

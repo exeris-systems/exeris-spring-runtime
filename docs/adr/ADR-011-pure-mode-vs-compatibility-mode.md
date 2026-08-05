@@ -2,7 +2,7 @@
 
 | Attribute       | Value                                                                                                            |
 |:----------------|:-----------------------------------------------------------------------------------------------------------------|
-| **Status**      | **PROPOSED** (drafted 2026-05-08)                                                                                |
+| **Status**      | **ACCEPTED** (drafted and accepted 2026-05-08; single decider — no future gating event; ratified by the PR that introduces this file, #9). Status line corrected 2026-08-05: it read `PROPOSED` until then, having never been flipped after ratification. See "Status correction" below. |
 | **Deciders**    | Arkadiusz Przychocki                                                                                             |
 | **Date**        | 2026-05-08                                                                                                       |
 | **Scope**       | spring (binds every `exeris-spring-runtime-*` module)                                                            |
@@ -81,7 +81,7 @@ The platform needs a rule that supports both audiences cleanly without letting t
 
 ## Engineering Protocol
 
-Once this decision is ACCEPTED, the existing `CompatibilityIsolationGuardTest`, `PureModeClasspathGuardTest`, and `WallIntegrityTest` suites are the canonical enforcement. Any new compat-mode bridge must:
+The existing `CompatibilityIsolationGuardTest`, `PureModeClasspathGuardTest`, and `WallIntegrityTest` suites are the canonical enforcement. Any new compat-mode bridge must:
 
 1. Live in a `*.compat.*` sub-package.
 2. Carry the `@CompatibilityMode` marker.
@@ -89,3 +89,35 @@ Once this decision is ACCEPTED, the existing `CompatibilityIsolationGuardTest`, 
 4. Be covered by both an architecture test (asserts isolation) and a unit/integration test (asserts behaviour).
 
 PRs that violate the mode split must cite this ADR and propose a superseding decision before the violation is allowed to merge.
+
+## Status correction (2026-08-05)
+
+This document's `Status` line read `PROPOSED` from the ratifying PR (#9, 2026-05-08) until today. That
+was drift, not an open decision: the decision had a single decider and no future gating event, it was
+made at draft time, and the Pure/Compat split has been operative and guard-enforced ever since. Nobody
+flipped the line after merge. Per this repository's accepted-on-merge convention the correct status was
+`ACCEPTED` from #9 onward, and the line now says so. The body is otherwise unchanged — no part of the
+decision is revised here, so the "withdraw or return to PROPOSED before amending an ACCEPTED document"
+rule is not engaged.
+
+**What the stale line cost.** It was read as evidence that the requirements in *Engineering Protocol*
+were not yet in force — that section was itself worded "Once this decision is ACCEPTED …", which
+compounded the misreading (also corrected above). Two concrete consequences:
+
+- **The marker requirement was under-applied.** 3 of 26 `*.compat.*` classes carried
+  `@CompatibilityMode`. The annotation's own Javadoc had grown a carve-out saying inner mechanics
+  "need not be marked individually", contradicting item 2 above. Both corrected; the web module's
+  classes are now marked and
+  `CompatibilityIsolationGuardTest#everyCompatClass_carriesTheCompatibilityModeMarker` enforces it,
+  which is the "static analysis flags compat-mode features missing the marker" this ADR asked for and
+  which had never been written. Its absence is precisely why the drift went unnoticed.
+- **Two gaps remain open**, recorded here rather than silently left:
+  1. The marker lives in `eu.exeris.spring.runtime.web.compat`, i.e. inside the **web** module. This
+     ADR says it should live "in `exeris-spring-runtime-bom` (or appropriate shared module)". Because
+     of that, the 5 compat classes in `data` (4) and `actuator` (1) **cannot** be marked: `data`
+     depends on kernel-spi / kernel-community / tx and `actuator` on kernel-spi / autoconfigure —
+     neither can reach `web`, and `data → web` / `actuator → web` are banned edges. Moving a public
+     annotation across modules is a module-contract change and needs its own decision; it is not done
+     here.
+  2. Consequently the guard is scoped to the web module. `data` and `actuator` have no equivalent
+     until (1) is resolved.

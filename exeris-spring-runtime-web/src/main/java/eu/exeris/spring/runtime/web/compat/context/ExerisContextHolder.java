@@ -6,6 +6,8 @@
  */
 package eu.exeris.spring.runtime.web.compat.context;
 
+import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
+
 import java.util.Optional;
 
 import eu.exeris.kernel.spi.context.KernelProviders;
@@ -36,6 +38,7 @@ import eu.exeris.kernel.spi.security.StorageContext;
  *
  * @since 0.1.0
  */
+@CompatibilityMode
 public final class ExerisContextHolder {
 
     private ExerisContextHolder() {
