@@ -111,11 +111,21 @@ These landed after the last feature train and are the reason the snapshot line m
   providers resolved from `ScopedValue` slots are visible on the request/step path.
 - Compat datasource made usable under load: request-path scope re-binding, SPI unwrap, pool warmup and
   connection-timeout plumbing.
+- **`exeris.runtime.persistence.max-pool-size` now actually reaches the connection pool.** The kernel
+  resolves pool sizing from raw config keys only — it does not read the typed settings record this
+  runtime was populating — so the property was silently inert and the pool was sized from
+  `availableProcessors()` instead. Two consequences, both fixed: on a CPU-pinned container a
+  configured `min-pool-size` above the CPU-derived max failed bootstrap outright
+  (`minIdleConnections (16) > maxPoolSize (8)`), and where it did not fail, the pool was sized by CPU
+  pinning rather than by configuration. The remaining resolver keys (`idle-timeout-ms`,
+  `max-lifetime-ms`, `max-tenant-pools`, `rls-enabled`, `per-tenant-pooling`, `use-tls`) had no path
+  either and are now carried by a generic `persistence.*` tail. **Set `max-pool-size` explicitly** —
+  unset, the derived value still varies with CPU pinning.
 - Pure-mode route lookup strips the query string before matching — previously a request carrying `?…`
   missed its route.
 - Malformed numeric config values degrade instead of throwing; config lookups answer correctly with no
   Spring `Environment` present.
-- CI: pre-merge `mvn verify` gate and per-module JaCoCo line-coverage floors (autoconfigure 0.80,
+- CI: pre-merge `mvn verify` gate and per-module JaCoCo line-coverage floors (autoconfigure 0.84,
   web 0.79, tx 0.72, data 0.85, actuator 0.93, events 0.90, flow 0.97, graph 0.97), ratcheting toward
   ~0.85 at 1.0 GA.
 

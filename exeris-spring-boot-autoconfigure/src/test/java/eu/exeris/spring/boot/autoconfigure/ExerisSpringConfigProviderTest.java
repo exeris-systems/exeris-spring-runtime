@@ -234,14 +234,21 @@ class ExerisSpringConfigProviderTest {
     }
 
     // ===========================================================================
-    // persistenceKernelKeyAlias — pool min-idle / warmup plumbing
+    // persistenceKernelKeyAlias — the whole persistence raw-key surface
     //
-    // The kernel's CommunityPersistenceConfigResolver asks this provider for raw
-    // keys (persistence.minIdleConnections, persistence.pool.warmup.*, ...). The
-    // typed PersistenceSettings bridge record only carries maxPoolSize, so without
-    // these aliases min-idle / warmup can never reach the shared pool and it starts
-    // cold (connectionExhausted bursts at startup). These tests assert the raw
-    // kernel keys resolve to the exeris.runtime.persistence.* Spring surface.
+    // The kernel's CommunityPersistenceConfigResolver builds PersistenceConfig from
+    // raw keys, NOT from the typed PersistenceSettings record: that record is read
+    // for jdbcUrl / username / password / runMigrations only. Pool sizing in
+    // particular comes exclusively from persistence.maxPoolSize (alias
+    // persistence.pool.maxSize) and persistence.minIdleConnections (alias
+    // persistence.pool.minSize), falling back to clamp(availableProcessors()*2,2,32).
+    //
+    // Because KernelBootstrap selects a SINGLE highest-priority ConfigProvider, any
+    // raw key this provider answers empty is a key the application cannot configure
+    // at all — the Spring value is silently discarded. These tests pin the raw kernel
+    // key names against the exeris.runtime.persistence.* Spring surface; the
+    // end-to-end effect on the real pool is asserted by
+    // ExerisPersistenceConfigBridgeIntegrationTest.
     // ===========================================================================
 
     @Test
@@ -321,8 +328,74 @@ class ExerisSpringConfigProviderTest {
 
         ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider(env);
 
-        // Unrelated kernel key must not engage the persistence alias.
-        assertThat(provider.getInt("persistence.maxTenantPools")).isEmpty();
+        // Keys outside the persistence namespace must not engage the alias at all.
+        assertThat(provider.getInt("event.batchSize")).isEmpty();
+        assertThat(provider.getString("graph.backendType")).isEmpty();
+    }
+
+    @Test
+    void persistenceAlias_maxPoolSizeResolvesFromSpringProperty() {
+        MockEnvironment env = new MockEnvironment()
+                .withProperty("exeris.runtime.persistence.max-pool-size", "256");
+
+        ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider(env);
+
+        // Both keys CommunityPersistenceConfigResolver.resolveMaxPoolSize() tries, in order.
+        // Declared there as constants rather than inline literals, which is why grepping the
+        // kernel for quoted key names does not surface them.
+        assertThat(provider.getInt("persistence.maxPoolSize")).contains(256);
+        assertThat(provider.getInt("persistence.pool.maxSize")).contains(256);
+        assertThat(provider.get("persistence.maxPoolSize", Integer.class)).contains(256);
+    }
+
+    @Test
+    void persistenceAlias_maxPoolSizeAndMinIdleResolveFromTheSameConfiguration() {
+        // The production failure shape: min-idle plumbed, max-pool-size not. The kernel then
+        // paired a configured min with a CPU-derived max and PersistenceConfig rejected it
+        // ("minIdleConnections (16) > maxPoolSize (8)") on any host with few enough cores.
+        // Both halves must come back from the same Spring configuration.
+        MockEnvironment env = new MockEnvironment()
+                .withProperty("exeris.runtime.persistence.min-pool-size", "16")
+                .withProperty("exeris.runtime.persistence.max-pool-size", "256");
+
+        ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider(env);
+
+        assertThat(provider.getInt("persistence.minIdleConnections")).contains(16);
+        assertThat(provider.getInt("persistence.maxPoolSize")).contains(256);
+    }
+
+    @Test
+    void persistenceAlias_genericTailCoversKeysWithoutAnExplicitMapping() {
+        // Every remaining key the resolver reads. None had a path before the generic tail,
+        // so each one silently took a kernel default no matter what the application set.
+        MockEnvironment env = new MockEnvironment()
+                .withProperty("exeris.runtime.persistence.idle-timeout-ms", "60000")
+                .withProperty("exeris.runtime.persistence.max-lifetime-ms", "1800000")
+                .withProperty("exeris.runtime.persistence.max-tenant-pools", "24")
+                .withProperty("exeris.runtime.persistence.rls-enabled", "true")
+                .withProperty("exeris.runtime.persistence.per-tenant-pooling", "true")
+                .withProperty("exeris.runtime.persistence.use-tls", "true");
+
+        ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider(env);
+
+        assertThat(provider.getLong("persistence.idleTimeoutMs")).contains(60_000L);
+        assertThat(provider.getLong("persistence.maxLifetimeMs")).contains(1_800_000L);
+        assertThat(provider.getInt("persistence.maxTenantPools")).contains(24);
+        assertThat(provider.getBoolean("persistence.rlsEnabled")).contains(true);
+        assertThat(provider.getBoolean("persistence.perTenantPooling")).contains(true);
+        assertThat(provider.getBoolean("persistence.useTls")).contains(true);
+    }
+
+    @Test
+    void persistenceAlias_genericTailAcceptsCamelCaseSpringProperty() {
+        // MockEnvironment has no ConfigurationPropertySources attached, so Spring relaxed
+        // binding does not apply — the alias tries camelCase before kebab-case itself.
+        MockEnvironment env = new MockEnvironment()
+                .withProperty("exeris.runtime.persistence.maxTenantPools", "24");
+
+        ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider(env);
+
+        assertThat(provider.getInt("persistence.maxTenantPools")).contains(24);
     }
 
     @Test

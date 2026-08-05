@@ -253,7 +253,8 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
         if (legacy.isPresent()) {
             return legacy;
         }
-        return flowKernelKeyAlias(key, environment, String.class);
+        return flowKernelKeyAlias(key, environment, String.class)
+                .or(() -> persistenceKernelKeyAlias(key, environment, String.class));
     }
 
     @Override
@@ -329,7 +330,8 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
             if (legacy.isPresent()) {
                 return legacy.map(type::cast);
             }
-            return flowKernelKeyAlias(key, environment, type);
+            return flowKernelKeyAlias(key, environment, type)
+                    .or(() -> persistenceKernelKeyAlias(key, environment, type));
         }
         if (type == Integer.class) {
             Optional<Integer> legacy = legacyHttpIntAlias(key, environment);
@@ -488,10 +490,38 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
      * {@code persistence.minIdleConnections} (alias {@code persistence.pool.minSize}), the
      * pool-warmup keys {@code persistence.pool.warmup.enabled} / {@code .connections} (bare
      * aliases {@code pool.warmup.*}), and {@code persistence.connectionTimeoutMs} (read via
-     * {@code getLong}). The typed {@link PersistenceSettings} bridge record only carries
-     * {@code maxPoolSize}, so {@code max-pool-size} flows through {@link #kernelSettings()} but
-     * min-idle / warmup / connection-timeout have <em>no</em> typed field — their only path is the
-     * raw key API.
+     * {@code getLong}).
+     *
+     * <p><b>The raw key API is the only path that reaches the pool.</b> The typed
+     * {@link PersistenceSettings} record carries {@code maxPoolSize}, but the resolver reads that
+     * record for {@code jdbcUrl} / {@code username} / {@code password} / {@code runMigrations}
+     * <em>only</em>; pool sizing is resolved exclusively from raw keys
+     * ({@code resolveMaxPoolSize} tries {@code persistence.maxPoolSize}, then
+     * {@code persistence.pool.maxSize}, then falls back to an adaptive
+     * {@code clamp(availableProcessors() * 2, 2, 32)}). Populating
+     * {@code PersistenceSettings.maxPoolSize()} from {@link #kernelSettings()} therefore has no
+     * effect on the pool at all — no kernel code reads that field.
+     *
+     * <p>This provider wins {@code ConfigProvider} selection outright:
+     * {@code KernelBootstrap.resolveConfigProvider()} picks a <em>single</em> winner via
+     * {@code Stream.max(comparingInt(ConfigProvider::priority))}, so at priority 150 it displaces
+     * {@code CommunityConfigProvider} entirely rather than layering on top of it. Every raw key
+     * this class answers with {@link Optional#empty()} is a key the kernel resolves from its own
+     * hardcoded default — the application's Spring configuration is silently discarded, with no
+     * warning on either side. That is why the alias table must mirror the kernel's raw-key surface
+     * rather than the subset we happen to have needed so far, and why the generic
+     * {@code persistence.*} tail below exists.
+     *
+     * <p><b>Regression this closes.</b> Before the generic tail, min-idle was aliased and
+     * max-pool-size was not. An application setting
+     * {@code exeris.runtime.persistence.min-pool-size=16} together with
+     * {@code .max-pool-size=256} had its min honoured and its max dropped, so on a host pinned to
+     * four CPUs the kernel derived {@code maxPoolSize=8} and
+     * {@link eu.exeris.kernel.spi.persistence.PersistenceConfig} rejected the pair at boot:
+     * {@code IllegalArgumentException: minIdleConnections (16) > maxPoolSize (8)}. The asymmetry
+     * was ours — a clean kernel resolves both halves from one source and cannot split them.
+     * Note the two keys are declared as constants in the resolver rather than inline literals,
+     * which is why a grep of the kernel for quoted key names does not surface them.
      *
      * <p>Without this alias those raw lookups miss (a {@code MockEnvironment} or a Spring
      * {@link Environment} has no literal {@code persistence.minIdleConnections} property), the
@@ -515,6 +545,8 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
      */
     private static <T> Optional<T> persistenceKernelKeyAlias(String key, Environment environment, Class<T> type) {
         String springKey = switch (key) {
+            case "persistence.maxPoolSize", "persistence.pool.maxSize" ->
+                    "exeris.runtime.persistence.max-pool-size";
             case "persistence.minIdleConnections", "persistence.pool.minSize" ->
                     "exeris.runtime.persistence.min-pool-size";
             case "persistence.pool.warmup.enabled", "pool.warmup.enabled" ->
@@ -525,10 +557,33 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
                     "exeris.runtime.persistence.connection-timeout-ms";
             default -> null;
         };
-        if (springKey == null) {
+        if (springKey != null) {
+            return Optional.ofNullable(environment.getProperty(springKey, type));
+        }
+        // Generic tail. The switch above only covers keys whose Spring-side name differs from a
+        // mechanical translation (pool sizing is exposed as min-/max-pool-size, warmup is flattened
+        // out of its dotted kernel namespace, and two warmup keys are also read without the
+        // `persistence.` prefix). Every other `persistence.X` lookup maps onto
+        // `exeris.runtime.persistence.X` — camelCase first, then kebab-case, matching
+        // flowKernelKeyAlias. This covers idleTimeoutMs, maxLifetimeMs, maxTenantPools, rlsEnabled,
+        // perTenantPooling and useTls, none of which had a path before, and keeps future kernel
+        // keys working without a code change here.
+        if (!key.startsWith("persistence.")) {
             return Optional.empty();
         }
-        return Optional.ofNullable(environment.getProperty(springKey, type));
+        String suffix = key.substring("persistence.".length());
+        T direct = environment.getProperty("exeris.runtime.persistence." + suffix, type);
+        if (direct != null) {
+            return Optional.of(direct);
+        }
+        String kebab = camelToKebab(suffix);
+        if (!kebab.equals(suffix)) {
+            T kebabValue = environment.getProperty("exeris.runtime.persistence." + kebab, type);
+            if (kebabValue != null) {
+                return Optional.of(kebabValue);
+            }
+        }
+        return Optional.empty();
     }
 
     /**
