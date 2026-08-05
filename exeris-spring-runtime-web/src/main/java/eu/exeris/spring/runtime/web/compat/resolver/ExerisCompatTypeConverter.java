@@ -6,6 +6,8 @@
  */
 package eu.exeris.spring.runtime.web.compat.resolver;
 
+import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
+
 import java.util.Collection;
 import java.util.Map;
 
@@ -27,6 +29,7 @@ import org.springframework.core.convert.ConversionService;
  * Spring MVC's multi-value handling. Callers needing multi-value support must add
  * a dedicated resolver.
  */
+@CompatibilityMode
 final class ExerisCompatTypeConverter {
 
     private final ConversionService conversionService;

@@ -6,6 +6,8 @@
  */
 package eu.exeris.spring.runtime.web.compat.resolver;
 
+import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
+
 import org.springframework.core.MethodParameter;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -26,6 +28,7 @@ import org.springframework.web.method.support.ModelAndViewContainer;
  *
  * <p><strong>Compatibility Mode only.</strong> Not used in the Pure Mode request path.
  */
+@CompatibilityMode
 public final class ExerisAuthenticationArgumentResolver implements HandlerMethodArgumentResolver {
 
     @Override

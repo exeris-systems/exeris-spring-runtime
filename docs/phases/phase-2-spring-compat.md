@@ -108,7 +108,7 @@ compatibility cost.
 
 | # | Item | Module | Status | Result |
 |:-:|:------|:-------|:-------|:-----|
-| 20 | `@CompatibilityMode` marker annotation (per ADR-011) | `web` | ✅ | `eu.exeris.spring.runtime.web.compat.CompatibilityMode` (`RetentionPolicy.CLASS`); applied to `ExerisCompatDispatcher`, `ExerisSpringMvcBridge`, `ExerisCompatAutoConfiguration`. Documentation marker; isolation enforced by package convention + `CompatibilityIsolationGuardTest` 7/7. |
+| 20 | `@CompatibilityMode` marker annotation (per ADR-011) | `web` | ✅ | `eu.exeris.spring.runtime.web.compat.CompatibilityMode` (`RetentionPolicy.CLASS`); applied to every top-level type in `web.compat..` plus `ExerisCompatAutoConfiguration` (20 classes as of 2026-08-05 — the original three-class scope was drift, see [`phase-2-invariants.md`](phase-2-invariants.md) §8). Discoverability marker; isolation enforced by package convention + `CompatibilityIsolationGuardTest` 8/8, whose 8th rule now also enforces the marker itself. |
 | 21 | Compatibility allocation cost report test | `web` (test) | ✅ | `ExerisCompatAllocationCostReportTest` — side-by-side pure vs compat for the same empty-body GET; logs delta; informational only. Test scaffolding mirrors `ExerisDispatcherAllocationBaselineTest` (direct `final class TestExchange implements HttpExchange`; `HttpRequest.noBody(...)` factory; `HttpVersion.HTTP_1_1` constant — no reflection). **Observed (2026-05-09):** Pure ≈ 176 B/dispatch, Compat ≈ 5095 B/dispatch (≈ 29× overhead, +4919 B/req). Pure Mode hard budget (≤ 1024 B/req) from Phase 1 baseline test stays green. Satisfies ADR-011 "compatibility-mode allocation cost is documented, never hidden". |
 | 22 | Phase 2 invariants document | docs | ✅ | [`phase-2-invariants.md`](phase-2-invariants.md) — 10 compat-specific invariants additive to Phase 0/1, each mapped to its guard. |
 | 23 | Doc reconciliation | docs | ✅ | This file rewritten as master with sub-phases; feature-support matrix corrected for items moved to ADR-021 (gateway-class) and `HandlerInterceptor`/`WebMvcConfigurer` (deferred). |
@@ -229,7 +229,7 @@ Phase 2 closes when all of the following hold:
 6. ✅ Pure Mode allocation baseline is unchanged — Phase 1 `ExerisDispatcherAllocationBaselineTest` stays green.
 7. ✅ `ExerisHttpDispatcher` has zero imports from `*.compat.*` (`CompatibilityIsolationGuardTest`).
 8. ✅ Phase 1 integration tests continue to pass unchanged.
-9. ✅ `@CompatibilityMode` marker annotation present on top-level Compat entry classes (dispatcher, MVC bridge, autoconfig).
+9. ✅ `@CompatibilityMode` marker annotation present on every top-level type in `web.compat..`, plus `ExerisCompatAutoConfiguration`; enforced by `CompatibilityIsolationGuardTest#everyCompatClass_carriesTheCompatibilityModeMarker`. (Closed at M2 with the dispatcher / MVC bridge / autoconfig trio only; broadened 2026-08-05 — see [`phase-2-invariants.md`](phase-2-invariants.md) §8.)
 10. ✅ Phase 2 invariants documented in [`phase-2-invariants.md`](phase-2-invariants.md).
 
 All ten criteria are met. Phase 2 is closed.

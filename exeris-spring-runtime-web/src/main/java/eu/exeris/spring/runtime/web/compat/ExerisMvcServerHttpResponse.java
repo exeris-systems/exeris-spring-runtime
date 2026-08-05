@@ -26,6 +26,7 @@ import eu.exeris.spring.runtime.web.ExerisServerResponse;
 /**
  * Minimal compatibility response collector for Spring server abstractions.
  */
+@CompatibilityMode
 public final class ExerisMvcServerHttpResponse implements ServerHttpResponse {
 
     private HttpStatusCode statusCode = HttpStatusCode.valueOf(200);

@@ -6,6 +6,8 @@
  */
 package eu.exeris.spring.runtime.web.compat.handler;
 
+import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -25,6 +27,7 @@ import eu.exeris.spring.runtime.web.compat.ExerisMvcServerHttpResponse;
  * propagating status, headers, and body via registered {@link HttpMessageConverter}s.
  * No servlet types.
  */
+@CompatibilityMode
 public final class ExerisResponseEntityReturnValueHandler implements HandlerMethodReturnValueHandler {
 
     private final List<HttpMessageConverter<?>> converters;

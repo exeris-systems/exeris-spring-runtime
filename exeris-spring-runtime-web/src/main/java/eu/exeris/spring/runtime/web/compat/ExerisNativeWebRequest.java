@@ -28,6 +28,7 @@ import org.springframework.web.context.request.NativeWebRequest;
  * {@link UnsupportedOperationException}. ThreadLocal binding is not performed here;
  * use {@link eu.exeris.spring.runtime.web.compat.context.ExerisThreadLocalBridge} for locale.
  */
+@CompatibilityMode
 public final class ExerisNativeWebRequest implements NativeWebRequest {
 
     private final ExerisMvcServerHttpRequest springRequest;

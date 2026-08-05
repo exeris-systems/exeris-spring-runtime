@@ -6,6 +6,8 @@
  */
 package eu.exeris.spring.runtime.web.compat.resolver;
 
+import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
+
 import org.springframework.boot.convert.ApplicationConversionService;
 import org.springframework.core.MethodParameter;
 import org.springframework.core.convert.ConversionService;
@@ -21,6 +23,7 @@ import org.springframework.web.method.support.ModelAndViewContainer;
  * for parity with Spring MVC's binder behaviour.
  * No servlet types.
  */
+@CompatibilityMode
 public final class ExerisRequestHeaderArgumentResolver implements HandlerMethodArgumentResolver {
 
     private final ExerisCompatTypeConverter typeConverter;

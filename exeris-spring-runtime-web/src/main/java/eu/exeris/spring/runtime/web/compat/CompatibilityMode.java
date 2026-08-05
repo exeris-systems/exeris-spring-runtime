@@ -24,9 +24,19 @@ import java.lang.annotation.Target;
  * obligation to flag compat-mode features explicitly, complementing (not replacing)
  * the package and guard-test enforcement.
  *
- * <p>Apply to top-level Compat entry classes: dispatcher, MVC bridge, autoconfiguration.
- * Inner mechanics (argument resolvers, return-value handlers, filters) inherit their
- * Compat status from their package location and need not be marked individually.
+ * <p><b>Apply to every type in a {@code *.compat.*} package</b>, entry points and inner
+ * mechanics alike — dispatcher, MVC bridge, argument resolvers, return-value handlers,
+ * filters, events, exceptions. ADR-011 states the benefit this buys: "a grep for
+ * {@code @CompatibilityMode} shows the full surface of compat-only behaviour". A partial
+ * application defeats exactly that, because the grep then under-reports and the reader
+ * cannot tell an unmarked compat class from a pure-mode one without checking its package.
+ * {@code CompatibilityIsolationGuardTest#everyCompatClass_carriesTheCompatibilityModeMarker}
+ * enforces it.
+ *
+ * <p>This Javadoc previously said the opposite — that inner mechanics "need not be marked
+ * individually" — and practice followed the Javadoc: 3 of 26 compat classes carried the
+ * marker. That was drift from the accepted decision, not a narrower convention, and it is
+ * corrected here.
  *
  * @see <a href="../../../../../../../docs/adr/ADR-011-pure-mode-vs-compatibility-mode.md">ADR-011 — Pure Mode vs Compatibility Mode</a>
  * @since 0.1.0

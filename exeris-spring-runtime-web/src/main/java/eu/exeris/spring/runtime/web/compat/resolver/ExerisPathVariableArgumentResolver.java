@@ -6,6 +6,8 @@
  */
 package eu.exeris.spring.runtime.web.compat.resolver;
 
+import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
+
 import java.util.Map;
 
 import org.springframework.boot.convert.ApplicationConversionService;
@@ -25,6 +27,7 @@ import eu.exeris.spring.runtime.web.compat.ExerisHandlerMethodRegistry;
  * through a {@link ConversionService} (see {@link ExerisCompatTypeConverter}).
  * No servlet types.
  */
+@CompatibilityMode
 public final class ExerisPathVariableArgumentResolver implements HandlerMethodArgumentResolver {
 
     private final ExerisCompatTypeConverter typeConverter;

@@ -13,7 +13,10 @@ import com.tngtech.archunit.lang.ArchRule;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+
+import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
 
 /**
  * Architecture guard that enforces Phase 2 Compatibility Mode isolation invariants:
@@ -25,6 +28,8 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
  *       {@code *.compat.*} class.</li>
  *   <li>{@code ThreadLocal}-bearing compatibility bindings must live exclusively
  *       in {@code *.compat.context.*}.</li>
+ *   <li>Every top-level type in {@code *.compat.*} carries {@link CompatibilityMode}
+ *       (ADR-011).</li>
  * </ol>
  */
 class CompatibilityIsolationGuardTest {
@@ -150,6 +155,38 @@ class CompatibilityIsolationGuardTest {
                 .resideInAPackage("jakarta.servlet..")
                 .allowEmptyShould(true)
                 .as("compat.filter.* must not depend on jakarta.servlet — security filter runs servlet-free");
+
+        rule.check(webClasses);
+    }
+
+    /**
+     * Every type in a {@code *.compat.*} package must carry {@link CompatibilityMode}.
+     *
+     * <p>ADR-011 requires the marker on compat features and states the benefit it buys: "a grep
+     * for {@code @CompatibilityMode} shows the full surface of compat-only behaviour". The ADR
+     * also calls for "static analysis flags compat-mode features missing the marker" — this is
+     * that check, which had never been written.
+     *
+     * <p>Its absence is why the convention drifted: 3 of 26 compat classes carried the marker,
+     * and the annotation's own Javadoc had grown a carve-out for "inner mechanics" that
+     * contradicted the accepted decision. A grep that under-reports is worse than no grep,
+     * because it reads as authoritative.
+     *
+     * <p>Scoped to top-level types. Member, local and anonymous classes are excluded: they are
+     * not independently greppable surface, they cannot be reached without going through their
+     * enclosing type, and a local class inside a method body cannot carry a meaningful marker.
+     * The annotation itself is excluded too — a marker does not mark itself.
+     */
+    @Test
+    void everyCompatClass_carriesTheCompatibilityModeMarker() {
+        ArchRule rule = classes()
+                .that().resideInAPackage("eu.exeris.spring.runtime.web.compat..")
+                .and().doNotHaveFullyQualifiedName(CompatibilityMode.class.getName())
+                .and().areNotMemberClasses()
+                .and().areNotLocalClasses()
+                .and().areNotAnonymousClasses()
+                .should().beAnnotatedWith(CompatibilityMode.class)
+                .as("every eu.exeris.spring.runtime.web.compat.. type must carry @CompatibilityMode (ADR-011)");
 
         rule.check(webClasses);
     }

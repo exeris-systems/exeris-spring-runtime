@@ -29,6 +29,7 @@ import java.util.Objects;
  * Minimal compatibility adapter exposing {@link ExerisServerRequest} as Spring's
  * {@link ServerHttpRequest} without any servlet dependency.
  */
+@CompatibilityMode
 public final class ExerisMvcServerHttpRequest implements ServerHttpRequest {
 
     private final ExerisServerRequest delegate;

@@ -6,6 +6,8 @@
  */
 package eu.exeris.spring.runtime.web.compat.context;
 
+import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
+
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.context.i18n.SimpleLocaleContext;
 import org.springframework.http.server.ServerHttpRequest;
@@ -19,6 +21,7 @@ import java.util.Locale;
  * cleared in a {@code finally} block. Isolated in {@code *.compat.context.*}
  * per the ThreadLocal Rule.
  */
+@CompatibilityMode
 public final class ExerisThreadLocalBridge {
 
     public void bind(ServerHttpRequest request) {

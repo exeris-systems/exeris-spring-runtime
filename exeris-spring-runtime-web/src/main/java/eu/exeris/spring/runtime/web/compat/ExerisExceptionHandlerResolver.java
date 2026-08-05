@@ -37,6 +37,7 @@ import org.springframework.web.method.support.ModelAndViewContainer;
  * {@code @ExceptionHandler} methods first, then {@code @ControllerAdvice} beans.
  * No servlet types, no spring-webmvc.
  */
+@CompatibilityMode
 public final class ExerisExceptionHandlerResolver implements ApplicationContextAware, InitializingBean {
 
     private record ExceptionHandlerMethod(Object bean,
