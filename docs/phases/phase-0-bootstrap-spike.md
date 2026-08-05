@@ -79,13 +79,6 @@ public record ExerisRuntimeProperties(
 }
 ```
 
-> **Spike sketch — not the shipped shape.** The flat `gracefulShutdownEnabled` /
-> `gracefulShutdownTimeoutSeconds` fields above were the Phase-0 proposal. What shipped is nested:
-> `ExerisRuntimeProperties.ShutdownProperties(boolean graceful, int timeoutSeconds)`, i.e. the
-> bindable keys are `exeris.runtime.shutdown.graceful` and `exeris.runtime.shutdown.timeout-seconds`.
-> Read this block as a design record; `ExerisRuntimeProperties.java` is the source of truth for
-> property names.
-
 > **Implemented shape (since closure):** the flat sketch above was superseded
 > during implementation by a nested form — `WebProperties` (mode),
 > `LifecycleProperties` (`startupTimeoutSeconds`), and `ShutdownProperties`
@@ -93,6 +86,13 @@ public record ExerisRuntimeProperties(
 > moved out of `exeris.runtime` and into the kernel network properties
 > (`exeris.runtime.network.port`). The sketch is preserved as historical
 > Phase-0 intent; the source of truth is `ExerisRuntimeProperties.java`.
+>
+> Concretely, the shutdown fields sketched above are **not** bindable keys. The
+> real ones are `exeris.runtime.shutdown.graceful` and
+> `exeris.runtime.shutdown.timeout-seconds`; there is no
+> `gracefulShutdownTimeoutSeconds` anywhere in the binder. Reading the sketch as
+> a property reference is how a wrong name reached the shutdown prose below —
+> corrected 2026-08-05.
 
 ### `ExerisSpringConfigProvider`
 **Package:** `eu.exeris.spring.boot.autoconfigure`  
