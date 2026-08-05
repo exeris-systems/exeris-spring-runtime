@@ -80,9 +80,23 @@ public final class ExerisNativeWebRequest implements NativeWebRequest {
         return values != null ? values.toArray(new String[0]) : null;
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Collected through {@code forEach} rather than {@code keySet()}: Spring Framework 7 stops
+     * {@code HttpHeaders} implementing {@code MultiValueMap}, so {@code keySet()} does not exist
+     * there and {@code headerNames()} does not exist on Spring Framework 6. {@code forEach} has the
+     * same signature on both, so one source compiles under both matrix profiles (ADR-028 §1).
+     *
+     * <p>The intermediate list is the cost of that neutrality — {@code keySet().iterator()} was a
+     * view. This is a Compatibility Mode accessor called by Spring's own argument resolvers, not a
+     * Pure Mode hot path, and the allocation is proportional to the header count of one request.
+     */
     @Override
     public Iterator<String> getHeaderNames() {
-        return springRequest.getHeaders().keySet().iterator();
+        List<String> names = new ArrayList<>();
+        springRequest.getHeaders().forEach((name, values) -> names.add(name));
+        return names.iterator();
     }
 
     // -------------------------------------------------------------------------
