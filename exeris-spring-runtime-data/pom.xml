@@ -38,10 +38,10 @@
     <properties>
         <!-- Coverage ratchet floor (enforced only under -Pcoverage). Raised 0.35 -> 0.85 once
              the compat JDBC bridge tests landed: proxy pass-through delegation, JFR events, and
-             the tx-bind happy path now cover the bridge (measured LINE ~90%). 0.85 meets the
-             1.0 GA target; ratchet tighter as the remaining engine-bound getConnection() paths
-             gain integration coverage. -->
-        <jacoco.line.minimum>0.85</jacoco.line.minimum>
+             the tx-bind happy path now cover the bridge (measured LINE 91.9% after the Hibernate
+             bootstrap customizer landed). Past the ~0.85 1.0 GA target; ratchet tighter as the
+             remaining engine-bound getConnection() paths gain integration coverage. -->
+        <jacoco.line.minimum>0.91</jacoco.line.minimum>
     </properties>
 
     <dependencies>

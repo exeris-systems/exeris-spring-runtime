@@ -9,6 +9,7 @@ package eu.exeris.spring.runtime.data;
 import javax.sql.DataSource;
 
 import eu.exeris.spring.runtime.data.compat.ExerisDataSource;
+import eu.exeris.spring.runtime.data.compat.ExerisHibernateBootstrapCustomizer;
 import eu.exeris.spring.runtime.tx.ExerisPlatformTransactionManager;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -17,6 +18,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
+import org.springframework.core.env.Environment;
 import org.springframework.lang.Nullable;
 
 /**
@@ -76,6 +78,26 @@ public class ExerisDataAutoConfiguration {
             ptm.setJdbcResourceCallback(dataSource::bindTransactionConnection);
         }
         return dataSource;
+    }
+
+    /**
+     * Supplies the Hibernate bootstrap settings that the ordering contract requires, so a JPA
+     * application does not have to know about it.
+     *
+     * <p>Deliberately <em>not</em> gated on Hibernate being present.
+     * {@link org.springframework.boot.autoconfigure.orm.jpa.HibernatePropertiesCustomizer}
+     * declares one method taking a {@code Map<String, Object>} and references no Hibernate type, so the
+     * bean loads and constructs safely without Hibernate on the classpath — and its
+     * {@code customize} is only ever invoked by Spring Boot's {@code HibernateJpaConfiguration},
+     * which does require Hibernate. A {@code @ConditionalOnClass} guard here would buy nothing at
+     * runtime while making the registered-and-active path untestable without pulling
+     * {@code hibernate-core} into this module's test classpath — a heavy dependency to add for a
+     * condition that protects against nothing.
+     */
+    @Bean
+    @ConditionalOnMissingBean(ExerisHibernateBootstrapCustomizer.class)
+    public ExerisHibernateBootstrapCustomizer exerisHibernateBootstrapCustomizer(Environment environment) {
+        return new ExerisHibernateBootstrapCustomizer(environment);
     }
 }
 
