@@ -29,6 +29,7 @@ import eu.exeris.kernel.spi.telemetry.TelemetryProvider;
 import eu.exeris.kernel.spi.telemetry.TelemetrySink;
 import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
 import eu.exeris.spring.runtime.web.ExerisErrorMapper;
+import eu.exeris.spring.runtime.web.ExerisErrorStatusResolver;
 import eu.exeris.spring.runtime.web.ExerisHttpDispatcher;
 import eu.exeris.spring.runtime.web.ExerisRequestHandler;
 import eu.exeris.spring.runtime.web.ExerisRoute;
@@ -54,10 +55,13 @@ public class ExerisWebAutoConfiguration {
     private static final System.Logger LOGGER = System.getLogger(ExerisWebAutoConfiguration.class.getName());
     private static final String FALLBACK_TELEMETRY_SINKS_BEAN_NAME = "exerisFallbackTelemetrySinks";
 
+    // Resolvers turn specific exceptions into specific statuses before the 500 fallback. Pure Mode
+    // needs them too: @PreAuthorize is plain AOP on application beans, so an authorization refusal
+    // reaches this dispatcher here exactly as it does on the compat path.
     @Bean
     @ConditionalOnMissingBean
-    public ExerisErrorMapper exerisErrorMapper() {
-        return new ExerisErrorMapper();
+    public ExerisErrorMapper exerisErrorMapper(ObjectProvider<ExerisErrorStatusResolver> statusResolvers) {
+        return new ExerisErrorMapper(statusResolvers.orderedStream().toList());
     }
 
     @Bean

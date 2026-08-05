@@ -9,7 +9,6 @@ package eu.exeris.spring.runtime.web.autoconfigure;
 import java.util.List;
 import java.util.Optional;
 
-import org.springframework.beans.factory.FactoryBean;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -24,6 +23,7 @@ import org.springframework.context.annotation.ConditionContext;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.ConversionService;
+import org.springframework.core.env.Environment;
 import org.springframework.core.type.AnnotatedTypeMetadata;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
@@ -33,7 +33,10 @@ import org.springframework.web.method.support.HandlerMethodReturnValueHandlerCom
 
 import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
 import eu.exeris.spring.runtime.web.ExerisErrorMapper;
+import eu.exeris.spring.runtime.web.ExerisErrorStatusResolver;
 import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
+import eu.exeris.spring.runtime.web.compat.security.SecurityFilterChainDetector;
+import eu.exeris.spring.runtime.web.compat.security.UnenforcedSecurityFilterChainCheck;
 import eu.exeris.spring.runtime.web.compat.ExerisCompatDispatcher;
 import eu.exeris.spring.runtime.web.compat.ExerisExceptionHandlerResolver;
 import eu.exeris.spring.runtime.web.compat.ExerisHandlerMethodRegistry;
@@ -196,11 +199,22 @@ public class ExerisCompatAutoConfiguration {
                 exceptionHandlerResolver, threadLocalBridge);
     }
 
-    // 14. Error mapper
+    // 14. Error mapper. Resolvers turn specific exceptions into specific statuses before the 500
+    //     fallback — notably Spring Security's authentication/authorization failures, which were
+    //     otherwise reported as server faults.
     @Bean
     @ConditionalOnMissingBean
-    public ExerisErrorMapper exerisCompatErrorMapper() {
-        return new ExerisErrorMapper();
+    public ExerisErrorMapper exerisCompatErrorMapper(
+            ObjectProvider<ExerisErrorStatusResolver> statusResolvers) {
+        return new ExerisErrorMapper(statusResolvers.orderedStream().toList());
+    }
+
+    // 14b. Fail-fast on a SecurityFilterChain this runtime cannot execute. Registered as a static
+    //      @Bean so it is instantiated as a BeanFactoryPostProcessor rather than as an ordinary
+    //      singleton — the check must run before anything binds a port.
+    @Bean
+    public static UnenforcedSecurityFilterChainCheck exerisUnenforcedSecurityFilterChainCheck() {
+        return new UnenforcedSecurityFilterChainCheck();
     }
 
     // 15a. The compatibility JwtDecoder that this filter depends on (ADR-041) lives in a SEPARATE
@@ -225,7 +239,8 @@ public class ExerisCompatAutoConfiguration {
                 ObjectProvider<org.springframework.core.convert.converter.Converter<
                         org.springframework.security.oauth2.jwt.Jwt,
                         ? extends org.springframework.security.authentication.AbstractAuthenticationToken>>
-                        jwtAuthenticationConverter) {
+                        jwtAuthenticationConverter,
+                Environment environment) {
             // Honour an application-registered Converter<Jwt, ? extends AbstractAuthenticationToken>
             // (e.g. a JwtAuthenticationConverter mapping realm_access.roles or a custom prefix);
             // fall back to the scope-only default when none is present. Same compat pattern as the
@@ -234,54 +249,38 @@ public class ExerisCompatAutoConfiguration {
             // throws NoUniqueBeanDefinitionException at start-up — intentional fail-fast: the
             // authority mapping is ambiguous and the app must mark one @Primary (mirrors how
             // Spring Security's own resource server resolves the converter).
+            //
+            // reject-invalid-token defaults to true: a presented-but-invalid credential is answered
+            // with 401 instead of being downgraded to anonymous. The property exists for a migration
+            // that provably depends on the old permissive behaviour; it is fail-open and the class
+            // Javadoc says so.
+            boolean rejectInvalidToken = environment.getProperty(
+                    REJECT_INVALID_TOKEN_PROPERTY, Boolean.class, Boolean.TRUE);
             return new ExerisSecurityContextFilter(
                     jwtDecoder,
                     jwtAuthenticationConverter.getIfAvailable(
-                            org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter::new));
+                            org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter::new),
+                    rejectInvalidToken);
         }
+
+        /** Opts out of 401-on-invalid-token, restoring pre-0.7.0 continue-as-anonymous behaviour. */
+        static final String REJECT_INVALID_TOKEN_PROPERTY =
+                "exeris.runtime.web.compat.security.reject-invalid-token";
 
         /**
          * Keeps the compatibility fallback filter disabled when a full Spring Security
          * chain is already present, without loading servlet-only types into the compat path.
+         *
+         * <p>Standing the filter down is only half the story: the chain will not run either.
+         * {@link UnenforcedSecurityFilterChainCheck} fails startup for exactly that case, and both
+         * share {@link SecurityFilterChainDetector} so they cannot disagree about whether a chain
+         * is present.
          */
         static final class NoSecurityFilterChainCondition implements Condition {
 
-            private static final String SECURITY_FILTER_CHAIN_TYPE = "org.springframework.security.web.SecurityFilterChain";
-            private static final String DEFAULT_CHAIN_BEAN_NAME = "springSecurityFilterChain";
-
             @Override
             public boolean matches(ConditionContext context, AnnotatedTypeMetadata metadata) {
-                if (context.getBeanFactory() == null) {
-                    return true;
-                }
-                if (context.getBeanFactory().containsBean(DEFAULT_CHAIN_BEAN_NAME)) {
-                    return false;
-                }
-
-                for (String beanName : context.getBeanFactory().getBeanDefinitionNames()) {
-                    var definition = context.getBeanFactory().getBeanDefinition(beanName);
-                    if (SECURITY_FILTER_CHAIN_TYPE.equals(definition.getBeanClassName())) {
-                        return false;
-                    }
-                    Object objectType = definition.getAttribute(FactoryBean.OBJECT_TYPE_ATTRIBUTE);
-                    if (objectType instanceof Class<?> objectClass
-                            && SECURITY_FILTER_CHAIN_TYPE.equals(objectClass.getName())) {
-                        return false;
-                    }
-                    if (objectType instanceof String typeName
-                            && SECURITY_FILTER_CHAIN_TYPE.equals(typeName)) {
-                        return false;
-                    }
-                    try {
-                        Class<?> beanType = context.getBeanFactory().getType(beanName, false);
-                        if (beanType != null && SECURITY_FILTER_CHAIN_TYPE.equals(beanType.getName())) {
-                            return false;
-                        }
-                    } catch (Throwable ex) {
-                        // Intentionally ignore type-introspection failures from servlet-only security classes.
-                    }
-                }
-                return true;
+                return SecurityFilterChainDetector.detect(context.getBeanFactory()).isEmpty();
             }
         }
     }

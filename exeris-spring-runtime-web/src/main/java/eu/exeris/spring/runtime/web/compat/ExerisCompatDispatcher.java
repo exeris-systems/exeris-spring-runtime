@@ -6,14 +6,17 @@
  */
 package eu.exeris.spring.runtime.web.compat;
 
+import java.util.List;
 import java.util.Objects;
 
 import eu.exeris.kernel.spi.exceptions.http.HttpException;
 import eu.exeris.kernel.spi.http.HttpExchange;
 import eu.exeris.kernel.spi.http.HttpHandler;
+import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.spring.runtime.web.ExerisErrorMapper;
 import eu.exeris.spring.runtime.web.compat.filter.ExerisSecurityContextFilter;
+import eu.exeris.spring.runtime.web.compat.security.InvalidBearerTokenException;
 import eu.exeris.spring.runtime.web.scope.KernelProviderBinder;
 import org.springframework.lang.Nullable;
 
@@ -31,6 +34,10 @@ import org.springframework.lang.Nullable;
 public final class ExerisCompatDispatcher implements HttpHandler {
 
     private static final System.Logger LOGGER = System.getLogger(ExerisCompatDispatcher.class.getName());
+
+    /** RFC 9110 §11.6.1 makes a challenge mandatory on 401; bearer is the only scheme supported. */
+    private static final List<HttpHeader> BEARER_CHALLENGE =
+            List.of(new HttpHeader("WWW-Authenticate", "Bearer"));
 
     private final ExerisSpringMvcBridge mvcBridge;
     private final ExerisErrorMapper errorMapper;
@@ -78,8 +85,10 @@ public final class ExerisCompatDispatcher implements HttpHandler {
         // The filter must get the kernel pool exactly like the handlers do.
         kernelProviderBinder.bind(() -> {
             try {
-                if (securityFilter != null) {
-                    securityFilter.populateContext(exchange.request());
+                if (securityFilter != null && !populateSecurityContext(exchange)) {
+                    // Credential rejected — the 401 has already been written. Dispatching anyway
+                    // would run the handler for a caller we just refused.
+                    return;
                 }
                 dispatchAndRespond(exchange);
             } finally {
@@ -88,6 +97,32 @@ public final class ExerisCompatDispatcher implements HttpHandler {
                 }
             }
         });
+    }
+
+    /**
+     * Populates the security context, answering 401 when the presented Bearer token is invalid.
+     *
+     * <p>The rejection is translated here rather than being allowed to escape {@link #handle}: an
+     * escaping exception reaches the kernel engine, which answers 500 — turning "your token is bad"
+     * into "the server is broken". It is also handled separately from {@link #dispatchAndRespond}'s
+     * catch-all, because that one logs at ERROR and maps to 500; a rejected credential is neither an
+     * error of ours nor a server fault, and at ERROR level a token-scanning client would flood the
+     * log.
+     *
+     * @return {@code true} when dispatch should proceed, {@code false} when the request has already
+     *         been answered
+     */
+    private boolean populateSecurityContext(HttpExchange exchange) {
+        try {
+            securityFilter.populateContext(exchange.request());
+            return true;
+        } catch (InvalidBearerTokenException _) {
+            exchange.respond(errorMapper.mapStatus(
+                    HttpStatus.UNAUTHORIZED,
+                    exchange.request().version(),
+                    BEARER_CHALLENGE));
+            return false;
+        }
     }
 
     private void dispatchAndRespond(HttpExchange exchange) {

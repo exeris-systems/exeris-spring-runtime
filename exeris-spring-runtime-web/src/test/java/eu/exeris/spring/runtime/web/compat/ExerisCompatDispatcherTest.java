@@ -133,6 +133,51 @@ class ExerisCompatDispatcherTest {
         assertThat(statusCodeOf(exchange.response())).isEqualTo(200);
     }
 
+    @Test
+    void handle_invalidToken_returns401WithChallenge_andNeverReachesTheHandler() throws Exception {
+        // The fail-open this closes: the decoder failure used to be swallowed, the request
+        // continued as anonymous, and the handler ran for a caller whose credential had just been
+        // rejected. Answering 401 is only half of it — the handler must not execute either.
+        JwtDecoder rejectingDecoder = _ -> {
+            throw new org.springframework.security.oauth2.jwt.JwtException("expired");
+        };
+        var securityFilter = new ExerisSecurityContextFilter(rejectingDecoder);
+        var secured = new ExerisCompatDispatcher(bridge, new ExerisErrorMapper(), securityFilter,
+                KernelProviderBinder.capturing(java.util.Optional::empty, java.util.Optional::empty));
+
+        HelloController.INVOCATIONS.set(0);
+        TestExchange exchange = TestExchange.getWithHeader(
+                HttpMethod.GET, "/hello", anyHttpVersion(), "Authorization", "Bearer bad-token");
+        secured.handle(exchange.proxy());
+
+        assertThat(statusCodeOf(exchange.response())).isEqualTo(401);
+        assertThat(readHeader(exchange.response(), "WWW-Authenticate"))
+                .as("RFC 9110 §11.6.1 makes a challenge mandatory on 401")
+                .isEqualTo("Bearer");
+        assertThat(HelloController.INVOCATIONS.get())
+                .as("a refused caller must not reach application code")
+                .isZero();
+    }
+
+    @Test
+    void handle_absentToken_stillReachesTheHandler() throws Exception {
+        // Guard against over-correcting: only a *presented and invalid* credential is rejected.
+        // If "no Authorization header" also became a 401, every public route would break.
+        JwtDecoder neverCalled = _ -> {
+            throw new AssertionError("decoder must not be called when no token is presented");
+        };
+        var securityFilter = new ExerisSecurityContextFilter(neverCalled);
+        var secured = new ExerisCompatDispatcher(bridge, new ExerisErrorMapper(), securityFilter,
+                KernelProviderBinder.capturing(java.util.Optional::empty, java.util.Optional::empty));
+
+        HelloController.INVOCATIONS.set(0);
+        TestExchange exchange = TestExchange.get(HttpMethod.GET, "/hello", anyHttpVersion());
+        secured.handle(exchange.proxy());
+
+        assertThat(statusCodeOf(exchange.response())).isEqualTo(200);
+        assertThat(HelloController.INVOCATIONS.get()).isEqualTo(1);
+    }
+
     private static int statusCodeOf(HttpResponse response) {
         return readStatus(response).code();
     }
@@ -192,8 +237,14 @@ class ExerisCompatDispatcherTest {
 
     @RestController
     static class HelloController {
+
+        /** Proves whether a refused request still reached application code. */
+        static final java.util.concurrent.atomic.AtomicInteger INVOCATIONS =
+                new java.util.concurrent.atomic.AtomicInteger();
+
         @GetMapping("/hello")
         String hello() {
+            INVOCATIONS.incrementAndGet();
             return "hello";
         }
     }

@@ -10,6 +10,7 @@ import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpVersion;
+import eu.exeris.spring.runtime.web.compat.security.InvalidBearerTokenException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.core.Authentication;
@@ -24,7 +25,11 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static org.assertj.core.api.Assertions.as;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.InstanceOfAssertFactories.STRING;
 import static org.mockito.Mockito.*;
 
 /**
@@ -90,12 +95,66 @@ class ExerisSecurityContextFilterTest {
     // =========================================================================
 
     @Test
-    void populateContext_invalidToken_leavesContextEmpty() {
+    void populateContext_invalidToken_isRejected() {
+        // Behaviour change in 0.7.0. This previously asserted that an invalid token left the
+        // context empty and the request continued as anonymous — a presented credential that
+        // failed validation was treated identically to no credential at all, silently. That is
+        // fail-open: the caller was not refused, and nothing recorded that a token had been
+        // rejected. A presented-and-invalid credential must fail the request.
         when(jwtDecoder.decode("bad-token")).thenThrow(new JwtException("expired"));
 
         HttpRequest request = stubRequest(Map.of("Authorization", List.of("Bearer bad-token")));
-        filter.populateContext(request);
 
+        assertThatThrownBy(() -> filter.populateContext(request))
+                .isInstanceOf(InvalidBearerTokenException.class)
+                .hasCauseInstanceOf(JwtException.class);
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication())
+                .as("a rejected token must never leave a partially populated context")
+                .isNull();
+    }
+
+    @Test
+    void populateContext_invalidToken_messageDoesNotLeakTokenOrValidatorText() {
+        // The message reaches logs. A validator message can echo claim values, and the token
+        // itself is a credential — neither belongs in a log line.
+        when(jwtDecoder.decode("secret-token-value"))
+                .thenThrow(new JwtException("aud claim was [internal-audience-name]"));
+
+        HttpRequest request = stubRequest(Map.of("Authorization", List.of("Bearer secret-token-value")));
+
+        assertThatThrownBy(() -> filter.populateContext(request))
+                .isInstanceOf(InvalidBearerTokenException.class)
+                .extracting(Throwable::getMessage, as(STRING))
+                .doesNotContain("secret-token-value")
+                .doesNotContain("internal-audience-name");
+    }
+
+    @Test
+    void populateContext_invalidToken_continuesAnonymously_whenRejectionDisabled() {
+        // The documented escape hatch for a migration that provably depends on the old behaviour.
+        // exeris.runtime.web.compat.security.reject-invalid-token=false
+        when(jwtDecoder.decode("bad-token")).thenThrow(new JwtException("expired"));
+
+        ExerisSecurityContextFilter permissive = new ExerisSecurityContextFilter(
+                jwtDecoder,
+                new org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter(),
+                false);
+
+        HttpRequest request = stubRequest(Map.of("Authorization", List.of("Bearer bad-token")));
+
+        assertThatCode(() -> permissive.populateContext(request)).doesNotThrowAnyException();
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    @Test
+    void populateContext_absentToken_isNotARejection() {
+        // Only a *presented* credential can be rejected. Public endpoints must keep working, so
+        // "no Authorization header" stays anonymous rather than becoming a 401 — otherwise the
+        // fail-open fix would break every unauthenticated route.
+        HttpRequest request = stubRequest(Map.of());
+
+        assertThatCode(() -> filter.populateContext(request)).doesNotThrowAnyException();
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 
