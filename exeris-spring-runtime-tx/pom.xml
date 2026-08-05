@@ -36,9 +36,9 @@
     </description>
 
     <properties>
-        <!-- Coverage ratchet floor (enforced only under -Pcoverage). Measured LINE 73.5%.
+        <!-- Coverage ratchet floor (enforced only under -Pcoverage). Measured LINE 76.5%.
              1.0 GA target is ~0.85 per module — ratchet this up as coverage improves. -->
-        <jacoco.line.minimum>0.72</jacoco.line.minimum>
+        <jacoco.line.minimum>0.76</jacoco.line.minimum>
     </properties>
 
     <dependencies>
@@ -87,6 +87,47 @@
         <dependency>
             <groupId>com.tngtech.archunit</groupId>
             <artifactId>archunit-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Runtime integration test only (test scope, never compile).
+
+             Until now every test in this module ran against StubPersistenceEngine /
+             TrackingEngine written in this repository, so the propagation matrix was
+             verified against our reading of the SPI rather than against an engine the
+             kernel actually produces. That is the same structural blind spot that let the
+             shutdown-drain defect through: a stub cannot disagree with us about ordering,
+             lifecycle or isolation.
+
+             These three bring up a real kernel the way the flow and events bridges already
+             do it (see ExerisFlowBridgeRuntimeIntegrationTest): autoconfigure supplies
+             ExerisRuntimeLifecycle + ExerisSpringConfigProvider, kernel-community supplies
+             a real PersistenceProvider via ServiceLoader, H2 backs it in memory.
+
+             The tx -> autoconfigure edge is test-scope and one-directional; the banned edge
+             in the other direction (autoconfigure -> tx) is unaffected and still guarded by
+             ModuleBoundaryTest. -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-spring-boot-autoconfigure</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-community</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- MockEnvironment (org.springframework.mock.env) for driving
+             ExerisSpringConfigProvider without a full ApplicationContext. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-test</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

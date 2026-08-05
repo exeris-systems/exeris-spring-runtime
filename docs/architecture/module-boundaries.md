@@ -269,6 +269,9 @@ web            ─────────────────────�
 tx             ─────────────────────────────► kernel-spi
 tx             ─────────────────────────────► spring-tx
 tx             ─────────────────────────────► spring-context
+tx             ─────────────────────────────► spring-boot-autoconfigure
+tx             ─────────────────────────────► autoconfigure     (test scope only)
+tx             ─────────────────────────────► kernel-community  (test scope only)
 
 data           ─────────────────────────────► kernel-spi
 data           ─────────────────────────────► spring-tx
@@ -307,6 +310,7 @@ graph          ─────────────────────�
 | `data` | `web` | Persistence must not own transport |
 | `actuator` | `web` (data-plane) | Actuator must not become a runtime execution path |
 | `tx` | `web` | Transaction bridge must not own transport |
+| `tx` | `eu.exeris.kernel.community..` / `autoconfigure` (production scope) | Both are test-scope only, for booting a real kernel in `ExerisTransactionManagerRuntimeIntegrationTest`; the production classpath consumes only kernel SPI. The banned direction is `autoconfigure → tx` (row above), which is unaffected — this edge is one-way and carries no runtime coupling. Not currently guarded by a `TxModuleBoundaryTest`; the `data`/`events`/`flow`/`graph` modules have one, `tx` does not |
 | `events` | `org.springframework.context.event..` | Kernel/Spring buses stay separate |
 | `events` | `org.springframework.context.ApplicationEventPublisher` | Same — never wire Spring's bus into the Exeris bus |
 | `events` | `web` / `tx` / `data` / `actuator` | Events module must not pull in unrelated module concerns |
