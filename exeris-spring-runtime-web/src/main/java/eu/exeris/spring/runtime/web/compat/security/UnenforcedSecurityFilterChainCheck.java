@@ -6,6 +6,8 @@
  */
 package eu.exeris.spring.runtime.web.compat.security;
 
+import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
+
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
@@ -36,6 +38,7 @@ import org.springframework.core.env.Environment;
  *
  * @since 0.7.0
  */
+@CompatibilityMode
 public final class UnenforcedSecurityFilterChainCheck implements BeanFactoryPostProcessor, EnvironmentAware {
 
     /** Property that downgrades the startup failure to a warning. */
