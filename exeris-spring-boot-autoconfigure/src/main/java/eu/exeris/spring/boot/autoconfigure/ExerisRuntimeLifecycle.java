@@ -55,11 +55,45 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  * Spring shutdown (SIGTERM / context.close())
  *   → SmartLifecycle.stop(callback) called
  *   → ExerisRuntimeLifecycle.stop()
- *       → transport.closeIngress()      (no new connections)
- *       → drain in-flight requests      (up to gracefulShutdownTimeoutSeconds)
  *       → KernelBootstrap.shutdown()
  *       → callback.run()
  * </pre>
+ *
+ * <h3>In-flight requests are not protected on kernel 0.10.2</h3>
+ * <p>This sequence previously listed {@code transport.closeIngress()} and a drain of
+ * in-flight requests as steps of this method. They are not: {@link #stop()} calls
+ * {@code KernelBootstrap.shutdown()} and the ingress-close and drain happen inside it,
+ * on the kernel side. The old wording also attributed the drain budget to
+ * {@code gracefulShutdownTimeoutSeconds} — a name that does not exist in the binder either;
+ * the real property is {@code exeris.runtime.shutdown.timeout-seconds} (gated by
+ * {@code exeris.runtime.shutdown.graceful}, bound via
+ * {@link ExerisRuntimeProperties.ShutdownProperties}). It bounds how long Spring waits to
+ * join the kernel boot thread, not the drain, which has its own 60 s deadline inside the
+ * kernel and is not configurable from here.
+ *
+ * <p>The drain itself is real and long-standing: {@code PaqsScheduler.close()} waits for
+ * the active stream count to reach zero with a 60 s hard deadline. What was broken on
+ * kernel 0.10.2 is its position in the shutdown order — it ran after the transport had
+ * closed the listening socket and every live channel, and after the reactor threads that
+ * write responses had exited. The reactors exit early because they poll a single
+ * {@code isRunning()} flag that shutdown clears in its first line, so one flag meant both
+ * "stop accepting" and "stop processing". Handlers completed correctly; their responses
+ * had no path back out.
+ *
+ * <p>Observable consequence: a request in flight when shutdown begins has its connection
+ * closed without a response. A client that retries the idempotent request sees the retry
+ * refused, because the listener is already gone. Do not size
+ * {@code terminationGracePeriodSeconds} on the assumption that the documented 60 s drain
+ * window protects these requests on this kernel version — remove the instance from load
+ * balancer rotation before sending SIGTERM instead.
+ *
+ * <p>Fixed upstream in kernel 0.11.0: a distinct {@code draining} state is introduced so
+ * the reactors keep serving (polling {@code isReactorActive()}) while ingress is already
+ * closed, and stop runs as three phases — close ingress, drain with the write path still
+ * alive, then tear down. The drain mechanism, deadline and backoff are unchanged; only the
+ * ordering and the missing state distinction were. This repository pins 0.10.2, so the gap
+ * applies until that bump lands; the disabled coverage in
+ * {@code ExerisWireLevelRuntimeIntegrationTest} is re-enabled at the same time.
  *
  * <h2>Phase Ordering</h2>
  * <p>Phase {@code Integer.MAX_VALUE - 100} ensures this lifecycle starts after

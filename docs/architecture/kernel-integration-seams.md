@@ -189,11 +189,28 @@ Shutdown:
 ```
 JVM shutdown hook / Spring close()
     → SmartLifecycle.stop() in reverse order
-    → HttpServerEngine.stop() (no new connections)
-    → in-flight requests drain (timeout)
     → KernelBootstrap.shutdown()
-    → all subsystems cleaned up in reverse DAG order
+        → all subsystems cleaned up in reverse DAG order
+        → transport teardown + in-flight drain happen HERE, kernel-side
+    → lifecycle callback.run()
 ```
+
+**Ingress teardown and drain are not Spring-side steps.** `ExerisRuntimeLifecycle.stop()` does not
+call `closeIngress()` and does not run a drain loop of its own — it calls `KernelBootstrap.shutdown()`
+and then the lifecycle callback. Both steps happen *inside* kernel shutdown, and the kernel owns their
+ordering and their deadline. `exeris.runtime.shutdown.timeout-seconds` (default `30`, gated by
+`exeris.runtime.shutdown.graceful`, bound via `ExerisRuntimeProperties.ShutdownProperties`) bounds
+joining the kernel boot thread (`awaitShutdown` → `thread.join(timeoutMillis)`), **not** the drain,
+which has its own kernel-side deadline and is not configurable from Spring.
+
+> **Kernel 0.10.2 — drain is broken.** On the pinned kernel the PAQS drain is sequenced *after*
+> transport teardown, so in-flight requests are cut rather than completed: the connection is dropped
+> without a response. Root cause upstream is a single `isRunning()` flag meaning both "stop accepting"
+> and "stop processing". Fixed in kernel 0.11.0 (`draining` state + `isReactorActive()` + three-phase
+> stop). Until this repo's kernel pin moves to 0.11.0 the guarantee above describes intent, not
+> observed behaviour — see the [CHANGELOG known-gap section](../../CHANGELOG.md) and
+> `ExerisWireLevelRuntimeIntegrationTest#pureMode_shutdownDrainsInFlightRequest_beforeIngressBecomesUnavailable`,
+> which is `@Disabled` for exactly this reason.
 
 ### Strategy B — Exeris as a SubsystemProvider (advanced, Phase 3+)
 

@@ -86,6 +86,13 @@ public record ExerisRuntimeProperties(
 > moved out of `exeris.runtime` and into the kernel network properties
 > (`exeris.runtime.network.port`). The sketch is preserved as historical
 > Phase-0 intent; the source of truth is `ExerisRuntimeProperties.java`.
+>
+> Concretely, the shutdown fields sketched above are **not** bindable keys. The
+> real ones are `exeris.runtime.shutdown.graceful` and
+> `exeris.runtime.shutdown.timeout-seconds`; there is no
+> `gracefulShutdownTimeoutSeconds` anywhere in the binder. Reading the sketch as
+> a property reference is how a wrong name reached the shutdown prose below —
+> corrected 2026-08-05.
 
 ### `ExerisSpringConfigProvider`
 **Package:** `eu.exeris.spring.boot.autoconfigure`  
@@ -163,11 +170,18 @@ SmartLifecycle.start() called (ordered)
 
 SmartLifecycle.stop() called on shutdown
     → ExerisRuntimeLifecycle.stop(callback)
-        → HttpServerEngine.closeIngress() (no new connections)
-        → Drain in-flight requests (timeout: exeris.runtime.graceful-shutdown-timeout-seconds)
         → KernelBootstrap.shutdown()
+            → ingress close + in-flight drain happen HERE, kernel-side
         → callback.run()
 ```
+
+Ingress close and drain are **not** Spring-side steps: `stop()` calls `KernelBootstrap.shutdown()`
+and then the callback, nothing else. `exeris.runtime.shutdown.timeout-seconds` (gated by
+`exeris.runtime.shutdown.graceful`) bounds joining the kernel boot thread, **not** the drain, which
+carries its own kernel-side deadline and is not configurable from Spring.
+On kernel 0.10.2 the drain runs after transport teardown and does not protect in-flight requests —
+see [`phase-0-invariants.md`](phase-0-invariants.md) and the
+[CHANGELOG known-gap section](../../CHANGELOG.md).
 
 ---
 

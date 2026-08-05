@@ -9,11 +9,17 @@ application framework; Exeris is the runtime owner. See [`docs/architecture/over
 
 ## 0.7.0 — first published release
 
+**Not yet tagged.** No `v0.7.0` tag exists in this repository and nothing has been deployed under that
+coordinate; the release is deliberately on hold until the kernel pin can move to 0.11.0 and the
+in-flight-drain gap disclosed below is closed rather than merely documented. This section is
+therefore still being edited in place — entries are added and corrected here rather than in an
+`[Unreleased]` block, and the section freezes when the tag is cut.
+
 **Status: preview.** No module in this release is GA. Every phase bridge beyond the Pure Mode request
 path ships default-off, and "the code landed" is explicitly *not* the graduation criterion — see
 [Preview status](#preview-status-what-07x-does-not-promise) below.
 
-This is the first tagged release of the repository. Prior work was consumed downstream as
+This will be the first tagged release of the repository. Prior work was consumed downstream as
 `0.5.0-SNAPSHOT` from GitHub Packages. The version number jumps to `0.7.0` because the snapshot line had
 already accumulated three planned release trains: `0.5.0` (Phase 4A + 4B), `0.6.0` (Phase 3B-α), and
 `0.7.0` (Phase 4C). Tagging it `0.5.0` would have published 0.6.0 and 0.7.0 content under a label that
@@ -139,8 +145,30 @@ at least one downstream service has run it in production for a representative pe
   outside Exeris.
 - **Compatibility Mode is bounded, not "all of Spring works."** It covers what this repo consumes from
   the framework, nothing broader.
+- **No graceful drain of in-flight requests at shutdown.** See the operational note below — this one
+  affects how you configure deployments, not just what you can call.
 
-### Known operational note
+### Known operational gap — shutdown drops in-flight requests
+
+On the pinned kernel (0.10.2), a request that is in flight when shutdown begins has its connection
+closed **without a response**. Clients that retry idempotent requests see the retry refused, because the
+listener is already gone.
+
+The kernel does implement a drain — `PaqsScheduler.close()` waits for its active stream count to reach
+zero with a 60 s hard deadline — but on 0.10.2 it is sequenced last: after the transport has closed the
+listening socket and every live channel, and after the reactor threads that write responses have exited.
+It therefore waits on work that can no longer respond. Confirmed kernel-side on 2026-08-02 and reordered
+upstream in kernel **0.11.0**; this release predates that bump.
+
+**What to do about it:** do not size `terminationGracePeriodSeconds` on the assumption that a drain
+window protects these requests. Take the instance out of load balancer rotation and let in-flight work
+finish *before* sending SIGTERM. What this release does guarantee is that ingress stops answering once
+shutdown has run.
+
+The wire-level coverage for drain (`ExerisWireLevelRuntimeIntegrationTest#pureMode_shutdownDrains…`) is
+`@Disabled` against 0.10.2 rather than deleted, and is re-enabled when the kernel pin moves.
+
+### Known operational note — version skew across modules
 
 The flow-step provider-scope fix is only correct when the **whole reactor** is redeployed together.
 A downstream bundle mixing pre-fix and post-fix modules produces sagas that never resolve, with no

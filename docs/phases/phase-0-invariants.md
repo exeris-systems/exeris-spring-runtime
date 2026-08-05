@@ -49,11 +49,25 @@ Shutdown reverses this exactly:
 
 ```
 SmartLifecycle.stop(callback)
-  → transport.closeIngress()                (no new connections)
-  → drain in-flight requests                (≤ shutdown.timeoutSeconds)
   → KernelBootstrap.shutdown()
   → callback.run()
 ```
+
+> **Corrected 2026-08-02.** This block previously listed `transport.closeIngress()` and a
+> drain of in-flight requests bounded by `shutdown.timeoutSeconds` as steps of the Spring-side
+> stop. They are not: `ExerisRuntimeLifecycle.stop()` calls `KernelBootstrap.shutdown()`, and
+> ingress-close and drain happen inside it on the kernel side. That property —
+> `exeris.runtime.shutdown.timeout-seconds` as an operator sets it, `shutdown().timeoutSeconds()`
+> as the code reads it — bounds how long Spring waits to join the kernel boot thread. It is not an
+> in-flight request budget; the kernel drain carries its own 60 s deadline and is not configurable
+> from here.
+>
+> On kernel 0.10.2 that drain (`PaqsScheduler.close()`, waits for zero active streams) is
+> sequenced after transport teardown and after the reactor threads that write responses have
+> exited, so in-flight requests are dropped without a response. Kernel 0.11.0 adds a distinct
+> `draining` state and a three-phase stop so the write path stays alive while draining. This
+> doc is revisited when the pin moves. See
+> [`phase-1-milestone-status.md`](phase-1-milestone-status.md).
 
 - **Guards:** `ExerisBootstrapIntegrationTest` (start/stop, thread liveness,
   concurrent stop-during-start, timeout enforcement).

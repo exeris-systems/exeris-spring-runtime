@@ -72,7 +72,7 @@ ingress, not a dispatcher-only stand-in.
 
 | # | Deliverable | Module | Status | Evidence |
 |:-:|:------------|:-------|:-------|:---------|
-| 9 | Runtime integration test: full HTTP round-trip | `web` (test) | ✅ | `ExerisWireLevelRuntimeIntegrationTest` 6/6 |
+| 9 | Runtime integration test: full HTTP round-trip | `web` (test) | ✅ | `ExerisWireLevelRuntimeIntegrationTest` 5/6 green, 1 `@Disabled` (see below) |
 
 `ExerisWireLevelRuntimeIntegrationTest` covers:
 
@@ -80,8 +80,19 @@ ingress, not a dispatcher-only stand-in.
 2. `pureMode_bodyResponse_returnsCorrectPayloadAndHeaders` — body + headers off the wire
 3. `pureMode_missingRoute_returns404_wireLevel` — 404 mapping through error mapper
 4. `pureMode_customStatus_bodyResponse_returns201WithPayload` — custom status code path
-5. `pureMode_shutdownDrainsInFlightRequest_beforeIngressBecomesUnavailable` — graceful drain
+5. `pureMode_shutdownDrainsInFlightRequest_beforeIngressBecomesUnavailable` — graceful drain —
+   **`@Disabled` against kernel 0.10.2**
 6. `pureMode_wireRequest_providesTelemetryScopeEvidence` — telemetry scope binding observable
+
+**Scenario 5 is not currently proven.** On the pinned kernel the PAQS drain is sequenced *after*
+transport teardown, so an in-flight request is cut rather than completed — the connection is dropped
+without a response and the JDK client's retry then hits a closed socket
+(`ConnectException: Connection refused`). The test was intermittently green and is now disabled
+rather than deleted; it re-enables when the kernel pin reaches 0.11.0, where the fix lands
+(`draining` state + `isReactorActive()` + three-phase stop). The half that *is* guaranteed — ingress
+stops answering after shutdown — remains covered by scenario 1. See
+[`phase-1-milestone-status.md`](phase-1-milestone-status.md) for the exit-gate state and the
+[CHANGELOG known-gap section](../../CHANGELOG.md) for the operator-facing workaround.
 
 The kernel seam used is `eu.exeris:exeris-kernel-community-testkit`'s
 `EmbeddedHttpEngineFixtures.kernelBootstrapFixture()` — see
@@ -179,8 +190,9 @@ Phase 1 closes when all of the following hold:
 2. ✅ HTTP request reaches Exeris transport → `ExerisHttpDispatcher` → Spring handler bean.
 3. ✅ HTTP response exits through Exeris transport.
 4. ✅ `WallIntegrityTest` still passes (The Wall remains intact).
-5. ✅ `ExerisWireLevelRuntimeIntegrationTest` covers bind, body, 404, custom status,
-   in-flight drain, and telemetry scope evidence.
+5. ✅ `ExerisWireLevelRuntimeIntegrationTest` covers bind, body, 404, custom status, and telemetry
+   scope evidence. ⚠️ In-flight drain is **not** covered — `@Disabled` against kernel 0.10.2, see
+   above.
 6. ✅ Allocation baseline test enforces a hard ≤ 1024 B/req mean budget for empty-body
    GET dispatch on the Pure Mode path (`ExerisDispatcherAllocationBaselineTest`).
 7. ✅ No `jakarta.servlet.*` or `io.netty.*` on the effective classpath of `web` and

@@ -45,9 +45,15 @@ starts Exeris-owned ingress with:
 EmbeddedHttpEngineFixtures.kernelBootstrapFixture().start(dispatcher);
 ```
 
-The previously `@Disabled` wire-level test is now active. Six wire-level scenarios are
-green: bind/route/cleanup, body+headers, 404, custom status, in-flight drain at shutdown,
-and telemetry scope evidence.
+The previously `@Disabled` wire-level test is now active. Six wire-level scenarios were
+green at seam closure: bind/route/cleanup, body+headers, 404, custom status, in-flight drain at
+shutdown, and telemetry scope evidence.
+
+> **Superseded 2026-08-02 for the drain scenario.** `pureMode_shutdownDrainsInFlightRequest_…`
+> proved intermittent and was then shown to be broken against the pinned kernel — 0.10.2 sequences
+> the PAQS drain after transport teardown, so an in-flight request is cut rather than completed. It
+> is now `@Disabled` and re-enables at kernel 0.11.0. The other five scenarios stand. See
+> [`phase-1-milestone-status.md`](phase-1-milestone-status.md).
 
 ## Testkit finding — `MEMORY_ALLOCATOR` `ScopedValue` propagation
 

@@ -29,7 +29,9 @@ the framing, the request lifecycle, or the response emission path. Any change
 that re-routes ingress through a servlet container, reactive engine, or
 `DispatcherServlet` on the Pure Mode path is forbidden.
 
-- **Guards:** `ExerisWireLevelRuntimeIntegrationTest` (6/6 wire-level scenarios),
+- **Guards:** `ExerisWireLevelRuntimeIntegrationTest` (5/6 wire-level scenarios green; the in-flight
+  drain scenario is `@Disabled` against kernel 0.10.2 — see the enforcement table at the end of this
+  file and [`phase-1-milestone-status.md`](phase-1-milestone-status.md)),
   `ExerisPureModeRequestPathIntegrationTest`.
 
 ## 2. No `DispatcherServlet`, no `@RequestMapping` dispatch in Pure Mode
@@ -142,7 +144,7 @@ modules must add the same guard set before merge.
 
 | Invariant | Primary guard |
 |:---|:---|
-| Exeris-owned ingress end-to-end | `ExerisWireLevelRuntimeIntegrationTest` (bind, body, 404, status, drain, telemetry scope) |
+| Exeris-owned ingress end-to-end | `ExerisWireLevelRuntimeIntegrationTest` (bind, body, 404, status, telemetry scope; in-flight drain disabled against kernel 0.10.2 — see `phase-1-milestone-status.md`) |
 | Routing via `ExerisRouteRegistry`, no `DispatcherServlet` on Pure Mode | `ExerisRouteRegistryTest`, `ExerisHttpDispatcherTest`, `CompatibilityIsolationGuardTest` |
 | `ExerisRequestHandler` is not a kernel SPI | `WallIntegrityTest` (no Spring in kernel SPI/Core) |
 | No body copy / `LoanedBuffer` ownership | `ExerisServerResponseTest`, `ExerisPureModeRequestPathIntegrationTest`, `ExerisWireLevelRuntimeIntegrationTest#pureMode_bodyResponse_*` |
