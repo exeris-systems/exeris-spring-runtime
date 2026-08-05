@@ -79,6 +79,13 @@ public record ExerisRuntimeProperties(
 }
 ```
 
+> **Spike sketch — not the shipped shape.** The flat `gracefulShutdownEnabled` /
+> `gracefulShutdownTimeoutSeconds` fields above were the Phase-0 proposal. What shipped is nested:
+> `ExerisRuntimeProperties.ShutdownProperties(boolean graceful, int timeoutSeconds)`, i.e. the
+> bindable keys are `exeris.runtime.shutdown.graceful` and `exeris.runtime.shutdown.timeout-seconds`.
+> Read this block as a design record; `ExerisRuntimeProperties.java` is the source of truth for
+> property names.
+
 > **Implemented shape (since closure):** the flat sketch above was superseded
 > during implementation by a nested form — `WebProperties` (mode),
 > `LifecycleProperties` (`startupTimeoutSeconds`), and `ShutdownProperties`
@@ -169,8 +176,9 @@ SmartLifecycle.stop() called on shutdown
 ```
 
 Ingress close and drain are **not** Spring-side steps: `stop()` calls `KernelBootstrap.shutdown()`
-and then the callback, nothing else. `exeris.runtime.shutdown.graceful-shutdown-timeout-seconds`
-bounds joining the kernel boot thread, **not** the drain, which carries its own kernel-side deadline.
+and then the callback, nothing else. `exeris.runtime.shutdown.timeout-seconds` (gated by
+`exeris.runtime.shutdown.graceful`) bounds joining the kernel boot thread, **not** the drain, which
+carries its own kernel-side deadline and is not configurable from Spring.
 On kernel 0.10.2 the drain runs after transport teardown and does not protect in-flight requests —
 see [`phase-0-invariants.md`](phase-0-invariants.md) and the
 [CHANGELOG known-gap section](../../CHANGELOG.md).

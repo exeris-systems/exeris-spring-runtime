@@ -198,9 +198,10 @@ JVM shutdown hook / Spring close()
 **Ingress teardown and drain are not Spring-side steps.** `ExerisRuntimeLifecycle.stop()` does not
 call `closeIngress()` and does not run a drain loop of its own — it calls `KernelBootstrap.shutdown()`
 and then the lifecycle callback. Both steps happen *inside* kernel shutdown, and the kernel owns their
-ordering and their deadline. `exeris.runtime.shutdown.graceful-shutdown-timeout-seconds` bounds
+ordering and their deadline. `exeris.runtime.shutdown.timeout-seconds` (default `30`, gated by
+`exeris.runtime.shutdown.graceful`, bound via `ExerisRuntimeProperties.ShutdownProperties`) bounds
 joining the kernel boot thread (`awaitShutdown` → `thread.join(timeoutMillis)`), **not** the drain,
-which has its own kernel-side deadline.
+which has its own kernel-side deadline and is not configurable from Spring.
 
 > **Kernel 0.10.2 — drain is broken.** On the pinned kernel the PAQS drain is sequenced *after*
 > transport teardown, so in-flight requests are cut rather than completed: the connection is dropped
