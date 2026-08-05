@@ -56,6 +56,37 @@ The decoder is provided by a **dedicated auto-configuration**, `ExerisCompatJwtD
 - **Out of scope:** opaque-token (introspection) resource servers, reactive resource servers, and full Spring Security `SecurityFilterChain` setups (when a chain is present, `NoSecurityFilterChainCondition` already disables the compat filter).
 - **No kernel involvement.** This is entirely Spring-side compatibility wiring; The Wall is untouched.
 
+### Supplement (2026-08-05) — closing the fail-open this ADR left open
+
+This ADR is unchanged in its decision; what follows completes it rather than revising it. Three
+consequences of the scope above turned out to be fail-open rather than merely unsupported, and are
+closed in the 0.7.0 train:
+
+1. **A present `SecurityFilterChain` disabled the compat filter, and nothing ran the chain either.**
+   The line above is accurate that `NoSecurityFilterChainCondition` disables the compat filter — but
+   under `web-application-type=none` there is no `FilterChainProxy` to execute the chain, so the
+   result was a context that started cleanly and served every request with neither authentication
+   nor authorization. Compatibility Mode now **fails startup** when it finds a chain it cannot
+   execute, with an escape hatch
+   (`exeris.runtime.web.compat.security.allow-unenforced-filter-chain`) that silences the failure
+   without pretending the chain runs.
+2. **An invalid token was swallowed.** `ExerisSecurityContextFilter` caught the decoder failure and
+   continued the request as anonymous, with no log line and no telemetry, so a presented-and-invalid
+   credential was indistinguishable from no credential. It is now answered with `401` +
+   `WWW-Authenticate: Bearer` and emits a `BearerTokenRejected` JFR event on both the reject and the
+   permissive path.
+3. **Authentication and authorization failures were reported as `500`.** `ExerisErrorMapper` had no
+   mapping for `AuthenticationException` or `AccessDeniedException`. They now map to `401` and `403`
+   through an `ExerisErrorStatusResolver` seam, which keeps the unconditionally-created mapper free
+   of an optional dependency.
+
+None of this changes the decision recorded here, adds a kernel dependency, or widens the compat
+surface: no new Spring Security feature is supported as a result. Per-path rules
+(`authorizeHttpRequests`) remain unsupported and are the subject of separate work. The
+client-facing statement of what is and is not supported now lives in
+[`compat-spring-security-support.md`](../architecture/compat-spring-security-support.md) rather than
+only in this ADR's non-goals.
+
 ## Alternatives Considered
 
 1. **Re-use Spring Boot's own `JwtDecoderConfiguration` via an `ImportSelector`** (import the package-private internal class by FQN string, bypassing only its web gate). Rejected: couples the runtime to an undocumented, package-private Spring Boot internal class name, which can change silently across Boot upgrades — an unacceptable fragility for a security component. The public-factory mirror tracks **public** API instead.

@@ -9,6 +9,8 @@ package eu.exeris.spring.runtime.web.compat.filter;
 import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
 
 import eu.exeris.kernel.spi.http.HttpRequest;
+import eu.exeris.spring.runtime.web.compat.security.BearerTokenRejectedEvent;
+import eu.exeris.spring.runtime.web.compat.security.InvalidBearerTokenException;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -47,9 +49,27 @@ import java.util.Objects;
  * handler or resolver code — only from {@code *.compat.filter.*} or dispatcher scope.
  *
  * <h2>Invalid Token Behaviour</h2>
- * <p>If the token is absent or invalid, the security context is left empty (anonymous).
- * Authorization enforcement is delegated to method-level security annotations
+ * <p>An <b>absent</b> token leaves the context empty (anonymous) — public endpoints must keep
+ * working, and authorization for the rest is enforced by method-level security
  * ({@code @PreAuthorize}, {@code @Secured}) or {@code ExerisHandlerMethodRegistry} guards.
+ *
+ * <p>An <b>invalid</b> token is rejected: {@link #populateContext} throws
+ * {@link InvalidBearerTokenException}, which {@code ExerisCompatDispatcher} answers with
+ * {@code 401} and a {@code WWW-Authenticate: Bearer} challenge. Every rejection also emits a
+ * {@link BearerTokenRejectedEvent} JFR event.
+ *
+ * <p>This was previously silent: the decoder failure was swallowed and the request continued as
+ * anonymous, with no log line, no metric and no response difference. A caller presenting an expired
+ * or forged token was treated exactly like a caller presenting none, so a token that stopped
+ * validating — rotated key, clock skew, wrong issuer — surfaced only as unexplained authorization
+ * failures deeper in the application, if at all. Silently downgrading a rejected credential to
+ * anonymous is a fail-open shape, and it is the caller's request that has to fail, not the operator's
+ * ability to notice.
+ *
+ * <p>Rejection can be turned off with
+ * {@code exeris.runtime.web.compat.security.reject-invalid-token=false}, restoring the previous
+ * continue-as-anonymous behaviour for a migration that depends on it. The JFR event is emitted on
+ * both paths, so the escape hatch silences the response, never the telemetry.
  *
  * <h2>ThreadLocal Rule</h2>
  * <p>{@code SecurityContextHolder.MODE_THREADLOCAL} (default) is VT-scoped: non-inherited,
@@ -66,8 +86,12 @@ public final class ExerisSecurityContextFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
 
+    private static final System.Logger LOGGER =
+            System.getLogger(ExerisSecurityContextFilter.class.getName());
+
     private final JwtDecoder jwtDecoder;
     private final Converter<Jwt, ? extends AbstractAuthenticationToken> jwtAuthenticationConverter;
+    private final boolean rejectInvalidToken;
 
     /**
      * Creates a filter with the default {@link JwtAuthenticationConverter} (scope-based
@@ -84,13 +108,32 @@ public final class ExerisSecurityContextFilter {
      * or {@link JwtAuthenticationConverter} bean (e.g. mapping {@code realm_access.roles} or a
      * custom authority prefix). Mirrors how Spring Security's resource server honours a
      * user-supplied JWT authentication converter.
+     *
+     * <p>Rejects invalid tokens. Use
+     * {@link #ExerisSecurityContextFilter(JwtDecoder, Converter, boolean)} to opt out.
      */
     public ExerisSecurityContextFilter(
             JwtDecoder jwtDecoder,
             Converter<Jwt, ? extends AbstractAuthenticationToken> jwtAuthenticationConverter) {
+        this(jwtDecoder, jwtAuthenticationConverter, true);
+    }
+
+    /**
+     * Creates a filter with explicit control over invalid-token handling.
+     *
+     * @param rejectInvalidToken {@code true} (the default) to answer a presented-but-invalid token
+     *                           with 401; {@code false} to continue the request anonymously, which
+     *                           is the pre-0.7.0 behaviour and is fail-open — see the class Javadoc
+     *                           before choosing it
+     */
+    public ExerisSecurityContextFilter(
+            JwtDecoder jwtDecoder,
+            Converter<Jwt, ? extends AbstractAuthenticationToken> jwtAuthenticationConverter,
+            boolean rejectInvalidToken) {
         this.jwtDecoder = Objects.requireNonNull(jwtDecoder, "jwtDecoder must not be null");
         this.jwtAuthenticationConverter =
                 Objects.requireNonNull(jwtAuthenticationConverter, "jwtAuthenticationConverter must not be null");
+        this.rejectInvalidToken = rejectInvalidToken;
     }
 
     /**
@@ -103,18 +146,27 @@ public final class ExerisSecurityContextFilter {
         // Clear any pre-existing context before processing this request.
         // Essential for VT reuse: prevents inherited authentication from prior requests.
         SecurityContextHolder.clearContext();
-        
+
         String token = extractBearerToken(request);
         if (token == null) {
+            // No credential presented. Not an error: public endpoints exist, and method-level
+            // security refuses the rest. Only a *presented and invalid* credential is a rejection.
             return;
         }
         try {
             Jwt jwt = jwtDecoder.decode(token);
             Authentication authentication = jwtAuthenticationConverter.convert(jwt);
             SecurityContextHolder.getContext().setAuthentication(authentication);
-        } catch (JwtException | OAuth2AuthenticationException ignored) {
-            // Invalid token — leave context empty; authorization enforcement
-            // is delegated to method-level security.
+        } catch (JwtException | OAuth2AuthenticationException failure) {
+            BearerTokenRejectedEvent.emit(failure, rejectInvalidToken);
+            LOGGER.log(System.Logger.Level.DEBUG,
+                    () -> "Bearer token rejected for " + request.method() + " " + request.path()
+                            + " (" + failure.getClass().getSimpleName() + "); request "
+                            + (rejectInvalidToken ? "answered 401" : "continues anonymously"));
+            if (rejectInvalidToken) {
+                throw new InvalidBearerTokenException(failure);
+            }
+            // Permissive mode: context stays empty and the request proceeds as anonymous.
         }
     }
 

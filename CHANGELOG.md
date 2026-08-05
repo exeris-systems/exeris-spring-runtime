@@ -115,6 +115,24 @@ These landed after the last feature train and are the reason the snapshot line m
   general re-activation policy is deferred to an RFC; expect further instances of this class of problem.
 - Compat security filter and flow step actions now execute inside the kernel provider scope, so
   providers resolved from `ScopedValue` slots are visible on the request/step path.
+- **Compatibility Mode no longer serves unauthenticated traffic silently.** Three fail-open paths in
+  the Spring Security compat surface are closed, all with escape hatches and all documented in the
+  new [`compat-spring-security-support.md`](docs/architecture/compat-spring-security-support.md):
+  - A `SecurityFilterChain` bean now **fails startup**. It could never be executed (no servlet
+    container → no `FilterChainProxy`), and its presence also stood the compat fallback filter down,
+    so a migrating application whose authorization lived in the chain was served with neither
+    authentication nor authorization — and started cleanly. Acknowledge deliberately with
+    `exeris.runtime.web.compat.security.allow-unenforced-filter-chain=true`; that silences the
+    failure and does not make the chain run.
+  - An **invalid Bearer token is answered with `401`** and `WWW-Authenticate: Bearer` instead of
+    being downgraded to an anonymous request. Every rejection emits the JFR event
+    `eu.exeris.spring.runtime.web.BearerTokenRejected`; previously a rotated key or clock skew left
+    no trace at all. Opt out with
+    `exeris.runtime.web.compat.security.reject-invalid-token=false`.
+  - `AuthenticationException` → **401**, `AccessDeniedException` → **403**, replacing the blanket
+    500. One known deviation from servlet Spring is recorded rather than hidden: an *anonymous*
+    caller refused by method security gets 403 where Spring's `ExceptionTranslationFilter` would
+    upgrade to 401.
 - Compat datasource made usable under load: request-path scope re-binding, SPI unwrap, pool warmup and
   connection-timeout plumbing.
 - **`exeris.runtime.persistence.max-pool-size` now actually reaches the connection pool.** The kernel
