@@ -6,7 +6,7 @@
  */
 package eu.exeris.spring.runtime.web.compat.handler;
 
-import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
+import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 import java.util.ArrayList;
 import java.util.List;

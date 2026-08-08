@@ -34,7 +34,7 @@ import org.springframework.web.method.support.HandlerMethodReturnValueHandlerCom
 import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
 import eu.exeris.spring.runtime.web.ExerisErrorMapper;
 import eu.exeris.spring.runtime.web.ExerisErrorStatusResolver;
-import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
+import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 import eu.exeris.spring.runtime.web.compat.ExerisCompatJsonConverterFactory;
 import eu.exeris.spring.runtime.web.compat.security.SecurityFilterChainDetector;
 import eu.exeris.spring.runtime.web.compat.security.UnenforcedSecurityFilterChainCheck;

@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.concurrent.Executor;
+import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 /**
  * Pass-through {@link Connection} proxy for the Exeris JDBC compatibility bridge.
@@ -34,6 +35,7 @@ import java.util.concurrent.Executor;
  *
  * @since 0.1.0
  */
+@CompatibilityMode
 final class ExerisConnectionProxy implements Connection {
 
     private final Connection rawConn;

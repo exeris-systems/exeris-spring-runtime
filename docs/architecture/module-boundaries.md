@@ -66,6 +66,14 @@ Forbidden:
 Rule: Compatibility mode classes must be in a dedicated sub-package `*.compat.*` and must carry
 a `@CompatibilityMode` marker annotation. Pure mode paths must not touch compat packages.
 
+The marker itself is declared in `eu.exeris.spring.boot.autoconfigure.compat` (moved there 2026-08-08, ADR-011
+§"Marker placement amendment"). `autoconfigure` is the only module every compat-carrying module can reach
+without inverting a dependency: `data` and `actuator` both hold `*.compat.*` packages and neither may depend
+on `web`. `data` carries a **`provided`**-scoped edge to `autoconfigure` for exactly this and nothing else —
+the annotation is `@Retention(CLASS)`, so it is needed to compile and never at runtime, and the edge must not
+reach a consumer's runtime classpath. Widening that edge to `compile`, or importing anything else from
+`autoconfigure` inside `data`, is a boundary regression: `data` owns no wiring.
+
 ---
 
 ### `exeris-spring-runtime-tx`

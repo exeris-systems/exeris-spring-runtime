@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
-import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
+import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 /**
  * Architecture guard that enforces Phase 2 Compatibility Mode isolation invariants:
@@ -181,7 +181,6 @@ class CompatibilityIsolationGuardTest {
     void everyCompatClass_carriesTheCompatibilityModeMarker() {
         ArchRule rule = classes()
                 .that().resideInAPackage("eu.exeris.spring.runtime.web.compat..")
-                .and().doNotHaveFullyQualifiedName(CompatibilityMode.class.getName())
                 .and().areNotMemberClasses()
                 .and().areNotLocalClasses()
                 .and().areNotAnonymousClasses()

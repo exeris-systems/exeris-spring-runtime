@@ -6,7 +6,7 @@
  */
 package eu.exeris.spring.runtime.web.compat.resolver;
 
-import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
+import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 import org.springframework.core.MethodParameter;
 import org.springframework.security.core.Authentication;

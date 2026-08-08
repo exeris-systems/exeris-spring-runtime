@@ -6,6 +6,8 @@
  */
 package eu.exeris.spring.runtime.web.compat;
 
+import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
+
 /**
  * Shared request attribute keys for compatibility-mode Spring bridges.
  */

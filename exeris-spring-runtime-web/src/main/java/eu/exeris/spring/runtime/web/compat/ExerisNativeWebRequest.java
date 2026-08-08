@@ -19,6 +19,7 @@ import java.util.Locale;
 import java.util.Map;
 
 import org.springframework.web.context.request.NativeWebRequest;
+import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 /**
  * Compatibility-mode implementation of {@link NativeWebRequest} backed by

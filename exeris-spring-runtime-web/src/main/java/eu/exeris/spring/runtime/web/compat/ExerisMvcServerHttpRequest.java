@@ -24,6 +24,7 @@ import java.security.Principal;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 /**
  * Minimal compatibility adapter exposing {@link ExerisServerRequest} as Spring's

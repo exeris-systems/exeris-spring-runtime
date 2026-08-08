@@ -12,6 +12,7 @@ import jdk.jfr.EventType;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
+import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 /**
  * JFR event emitted when {@code ExerisDataSource.getConnection()} opens a new
@@ -27,6 +28,7 @@ import jdk.jfr.StackTrace;
 @Label("JPA Connection Acquired")
 @Category({"Exeris Spring Runtime", "Data", "JDBC"})
 @StackTrace(false)
+@CompatibilityMode
 public final class JpaConnectionAcquiredEvent extends Event {
 
     private static final EventType EVENT_TYPE =

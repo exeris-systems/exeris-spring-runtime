@@ -121,3 +121,37 @@ compounded the misreading (also corrected above). Two concrete consequences:
      here.
   2. Consequently the guard is scoped to the web module. `data` and `actuator` have no equivalent
      until (1) is resolved.
+
+## Marker placement amendment (2026-08-08)
+
+`@CompatibilityMode` moves from `eu.exeris.spring.runtime.web.compat` to
+**`eu.exeris.spring.boot.autoconfigure.compat`**. No change to the decision, the retention, the
+target, or the obligation to apply it — only to where the annotation is declared.
+
+**Why.** The benefit this ADR claims for the marker, above, is: *"A grep for `@CompatibilityMode`
+shows the full surface of compat-only behaviour."* That had stopped being true.
+`exeris-spring-runtime-data` and `exeris-spring-runtime-actuator` both grew `*.compat.*` packages —
+six classes: `ExerisDataSource`, `ExerisConnectionProxy`, `ExerisHibernateBootstrapCustomizer`,
+`JpaConnectionAcquiredEvent`, `JpaConnectionBoundEvent`, and
+`ExerisCompatibilityActuatorController`. Neither module may depend on `web` (`data → web` and
+`actuator → web` are banned edges), so all six were **structurally unmarkable** and the grep
+under-reported the compat surface by six classes without anyone having made that decision.
+
+**Placement.** `autoconfigure` depends on no other runtime module, and every module either depends on
+it already or may do so without inverting anything. This is the same argument ADR-028 obligation 4a
+makes for `@SbCompat` — that obligation's parenthetical claim that `@CompatibilityMode`'s "uses are
+module-local" was the premise that failed, and is corrected in a note there.
+
+**One new module edge, deliberately narrow.** `data` had no path to `autoconfigure` at all: its only
+runtime-module dependency is `tx`, and `tx → autoconfigure` is **test**-scoped, so nothing propagated.
+`data` therefore gains a direct dependency on `autoconfigure` at **`provided`** scope. Provided, not
+compile, because the annotation is `@Retention(CLASS)` — required to compile, never at runtime — so
+the edge must not reach a consumer's runtime classpath. `data → autoconfigure` is not a banned edge;
+the banned direction is `autoconfigure → data`, and it is untouched. `actuator` needed no change: it
+already depended on `autoconfigure` at compile scope.
+
+**Enforcement, extended and proven.** `CompatibilityIsolationGuardTest` only ever inspected `web`,
+while its own javadoc claimed the property for every `*.compat.*` package — a guard asserting more
+than it checked. Equivalent rules now live in `DataModuleBoundaryTest` and the actuator
+`PureModeClasspathGuardTest`, each scoped to its own module's compat package. Both were verified by
+removing a marker and observing the guard go **red**, not merely by observing the suite pass.
