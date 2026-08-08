@@ -127,11 +127,18 @@ delegating `join()` / `close()`, a diagnostic accessor, and a per-fork cost of r
 allocations — two lambdas plus a `ScopedValue` carrier — spent on the redundant rebind. That is the
 inverse of this repository's own rule against promoting convenience by hiding cost.
 
-ADR-029's stated rationale for the class was to *"keep a Spring-side surface that shields callers from
-JDK preview-API iteration."* It does not: `fork()` returns the JDK's `Subtask`, the factory names
-mirror `Joiner` semantics, and `join()` returns JDK-shaped results. The exposed surface **is** the
-JDK's, so churn passes straight through — when `StructuredTaskScope` moves again on JDK 28, the
-wrapper moves with it, having absorbed nothing.
+Two justifications were offered for the class, and neither holds.
+
+The wider one is the class's **own javadoc**: *"a Spring-side surface that shields callers from JDK
+preview-API iteration."* (The phrase is the javadoc's, not ADR-029's — worth keeping straight, because
+the ADR claims something narrower.) It shields nothing: `fork()` returns the JDK's `Subtask`, the
+factory names mirror `Joiner` semantics, and `join()` returns JDK-shaped results. The exposed surface
+**is** the JDK's, so churn passes straight through — when `StructuredTaskScope` moves again on JDK 28,
+the wrapper moves with it, having absorbed nothing.
+
+ADR-029 obligation 2's own, narrower claim is that the wrapper preserves the binding *"without manual
+`ScopedValue.where(...).call(...)` boilerplate at every call site."* That fails on the probe above:
+`StructuredTaskScope` carries the binding by itself, so there was no boilerplate to spare anyone.
 
 ### What the repository looks like without it
 
@@ -306,8 +313,6 @@ keeping the class on one line only. With the class gone, both lines compile from
 the same set of classes — and the gate arguably *should* be extended to the JDK axis, since the same
 source compiled at two `--release` levels can still bind to different JDK overloads. That extension is
 follow-up work, not a risk.
-- **The roadmap and ADR-029 both name `StructuredTaskScope` helpers as Phase 3B-α content** without a
-  line qualifier. Left unamended, they will read as a GA-line promise.
 - **"0.6.0-preview" is a naming collision waiting to be misread.** ADR-029 scopes 3B-α to the
   `0.6.0-preview` *release train* and calls it "pure JDK 26 preview features" in the same sentence.
   Those are two different meanings of the word: the train suffix is a maturity label that

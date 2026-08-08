@@ -37,7 +37,7 @@ default-off flags instead.
 
 | | |
 |:---|:---|
-| Java | **26 with `--enable-preview`** (the kernel uses preview features → class file minor version 65535) |
+| Java | **26**. Compiling against this runtime needs **no** preview flag — nothing it ships is preview-compiled. Running needs `--enable-preview` on the JVM, because `exeris-kernel` 0.10.2 is itself preview-compiled (class file minor version 65535) and will not load without it. That runtime requirement retires when the kernel pin moves to a preview-clean release. |
 | `exeris-kernel` | **0.10.2** (released coordinate, not a snapshot) |
 | Spring Boot | **3.5.14** (default) or **4.1.0** — see the note below |
 | Resolution | GitHub Packages — `maven.pkg.github.com/exeris-systems/*`, not Maven Central |

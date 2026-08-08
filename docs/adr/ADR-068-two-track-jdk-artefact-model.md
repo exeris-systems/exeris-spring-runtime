@@ -93,7 +93,7 @@ not apply it to the wrong axis — the same mistake ADR-067 had to correct in th
 ## ArchUnit does not run on the preview line
 
 The architecture-guard layer — 16 test classes, including `WallIntegrityTest`, `ModuleBoundaryTest`,
-the seven `PureModeClasspathGuardTest`s, `CompatibilityIsolationGuardTest` and
+the eight `PureModeClasspathGuardTest`s, `CompatibilityIsolationGuardTest` and
 `RequestScopeArchitectureTest` — **is excluded from the preview line**. ArchUnit 1.5.0 tops out at
 JDK 27 support; there is no JDK 28 support to pin to.
 
