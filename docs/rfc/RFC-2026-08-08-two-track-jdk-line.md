@@ -2,11 +2,11 @@
 
 | Field             | Value                                                                                  |
 |:------------------|:---------------------------------------------------------------------------------------|
-| **Status**        | **DRAFT**                                                                              |
+| **Status**        | **ACCEPTED**                                                                           |
 | **Author(s)**     | Arkadiusz Przychocki                                                                   |
 | **Date Opened**   | 2026-08-08                                                                             |
-| **Date Closed**   | —                                                                                      |
-| **Target ADR(s)** | TBD — expected two: the artefact/line decision, and the `ExerisStructuredScope` disposition |
+| **Date Closed**   | 2026-08-08                                                                             |
+| **Target ADR(s)** | ADR-029 partial withdrawal (executed, same PR); the artefact/line decision is still owed an ADR |
 | **Affected Repos**| `exeris-spring-runtime` (decision), `exeris-kernel` (upstream driver, no change asked of it) |
 | **Reviewers**     | —                                                                                      |
 
@@ -322,10 +322,10 @@ follow-up work, not a risk.
 
 | Field                | Value |
 |:---------------------|:------|
-| **Outcome**          | —     |
-| **Date**             | —     |
-| **Resulting ADR(s)** | —     |
-| **Notes**            | —     |
+| **Outcome**          | **ACCEPTED** |
+| **Date**             | 2026-08-08 |
+| **Resulting ADR(s)** | **ADR-029, obligations 2 and 6 withdrawn** — executed in the same PR that accepted this RFC. No new ADR number was minted for it: the outcome reverses part of an existing decision rather than taking a new one, so it is recorded as a withdrawal section in ADR-029 with the measurements, per this repo's rule against silently amending an accepted body. **The artefact/line decision — one GA artefact plus one `-preview` artefact, Spring axis classifier-free — is still owed its own ADR and is not covered here.** |
+| **Notes**            | The recommendation changed between DRAFT and ACCEPTED, from "ship the class on the `-preview` line" to "withdraw it", on the strength of one probe. Both revisions are in the PR history deliberately: the first is what the reasoning produced, the second is what measuring produced, and the gap between them is the point. |
 
 ## Open questions / follow-ups
 

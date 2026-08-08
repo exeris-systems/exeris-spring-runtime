@@ -28,9 +28,13 @@ import java.util.UUID;
  * does not use {@code ThreadLocal} as a carrier. {@code ScopedValue} is the only carrier.
  *
  * @since 0.6.0
+ * <p><b>Concurrency.</b> This class rebinds explicitly and carries no fan-out helper. Bindings
+ * reach a {@code StructuredTaskScope} fork on their own — see ADR-029's withdrawal note — but not
+ * a plain virtual thread, which observes nothing bound. Off the request thread, rebind with
+ * {@link #runWith(RequestScope, Runnable)} / {@link #callWith(RequestScope, ScopedValue.CallableOp)}.
+ *
  * @see RequestScope
  * @see RequestScopeResolver
- * @see eu.exeris.spring.runtime.web.scope.concurrent.ExerisStructuredScope
  */
 public final class ExerisRequestScope {
 
@@ -96,22 +100,4 @@ public final class ExerisRequestScope {
         return ScopedValue.where(SCOPE, scope).call(action);
     }
 
-    /**
-     * Public accessor for the {@code ScopedValue} carrier, intended for use by the
-     * structured-concurrency sub-package
-     * ({@code eu.exeris.spring.runtime.web.scope.concurrent}) — which lives in a sibling
-     * package and would otherwise need reflection to bridge the carrier across the package
-     * boundary. The method is necessarily {@code public} because Java does not propagate
-     * package-private visibility to sub-packages.
-     *
-     * <p>Production application code should use the typed accessor methods on this class
-     * ({@link #current()}, {@link #tenantId()}, {@link #correlationId()},
-     * {@link #attribute(String, Class)}) rather than reading the carrier directly. Reaching
-     * for the carrier is an internal-wiring concern; if you find yourself calling
-     * {@code carrier()} from application code, the typed surface is missing an accessor —
-     * file an issue rather than working around it.
-     */
-    public static ScopedValue<RequestScope> carrier() {
-        return SCOPE;
-    }
 }

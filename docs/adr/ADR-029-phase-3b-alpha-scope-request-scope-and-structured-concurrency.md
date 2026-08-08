@@ -2,13 +2,70 @@
 
 | Attribute       | Value                                                                                                                                                                                                                                                                                                              |
 |:----------------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Status**      | **ACCEPTED** (drafted and accepted 2026-05-17; single decider — no future gating event; ratified by the PR that introduces this file)                                                                                                                                                                              |
+| **Status**      | **ACCEPTED, PARTIALLY WITHDRAWN** (accepted 2026-05-17; **obligations 2 and 6 withdrawn 2026-08-08** — see §"Withdrawal of obligations 2 and 6" immediately below. Obligations 1, 3, 4, 5 and 7 stand unchanged and remain in force.)                                                                               |
 | **Deciders**    | Arkadiusz Przychocki                                                                                                                                                                                                                                                                                               |
 | **Date**        | 2026-05-17                                                                                                                                                                                                                                                                                                         |
 | **Scope**       | spring/lifecycle (extends `exeris-spring-runtime-web` request lifecycle and `exeris-spring-boot-autoconfigure` lifecycle wiring; no new top-level module)                                                                                                                                                          |
 | **Owning Repo** | `exeris-spring-runtime`                                                                                                                                                                                                                                                                                            |
 | **Driven By**   | Phase 3 closure (2026-05-09) deferred 3B (request scope + tracing) to 3.x; downstream observability demand identified 2026-05-17 graduated 3B back into the 1.0 train. Kernel-gating analysis (captured in the ADR-031 reserved row in `exeris-docs/adr-index.md`; content TBD) showed the work splits cleanly into a kernel-independent half (this ADR) and a kernel-gated half (ADR-031). |
 | **Compliance**  | [Roadmap to 1.0 and TRL-9](../roadmap-1.0-trl9.md), [Module Boundaries](../architecture/module-boundaries.md), [Phase 3 Invariants](../phases/phase-3-invariants.md)                                                                                                                                                |
+
+## Withdrawal of obligations 2 and 6
+
+**2026-08-08.** Obligation 2 (`ExerisStructuredScope` fan-out API) and obligation 6 (tenant isolation
+across forks, verified by that class's tests) are **withdrawn**. `ExerisStructuredScope`, its test, its
+package, and `ExerisRequestScope.carrier()` — the accessor that existed only to serve that package —
+are deleted. The remaining obligations are untouched: obligation 1 (`ExerisRequestScope`) is the half
+of Phase 3B-α with real content and stays exactly as accepted.
+
+The obligations are struck through below rather than deleted, so the record still shows what was
+decided and that it was reversed. Per this repository's convention, a substantive reversal is a
+withdrawal, not a body edit.
+
+**Why.** The wrapper did not do the thing it existed to do. Obligation 2 justified it as preserving
+the `ScopedValue` binding across forks "without manual `ScopedValue.where(...).call(...)` boilerplate".
+Measured on JDK 26, a **raw** `StructuredTaskScope` — no wrapper, no rebind anywhere — already
+propagates the binding:
+
+| context | `RequestScope` bound inside? |
+|---|---|
+| fork of a raw `StructuredTaskScope` | **yes**, tenant matches the outer scope |
+| plain virtual thread | no |
+
+`StructuredTaskScope` propagates every `ScopedValue` binding live at `open()`. The wrapper's rebind
+therefore rebound a value the JDK had already carried, and it was redundant in every reachable case:
+`open()` captures at open, the wrapper captured at construction, both inside the same static factory
+call on the same thread. Obligation 6's invariant is consequently a property of the JDK, and its two
+tests passed against the JDK rather than against anything this repository wrote.
+
+What remained was three factory aliases over `Joiner`, delegating `join()`/`close()`, and roughly
+three allocations per fork — two lambdas plus a `ScopedValue` carrier — spent on that redundant
+rebind.
+
+The stated design goal is not met either. §"API at a glance" frames the wrapper as a Spring-side
+surface shielding callers from JDK preview-API iteration; but `fork()` returned the JDK's `Subtask`,
+the factory names mirrored `Joiner` semantics, and `join()` returned JDK-shaped results. The exposed
+surface *was* the JDK's, so churn passed straight through — and this ADR had already been amended once
+for exactly that churn (the `ShutdownOnFailure`/`ShutdownOnSuccess` → `open(Joiner)` rewrite recorded
+in §"API at a glance"). A second such amendment was due on JDK 28.
+
+**What it cost to keep.** `ExerisStructuredScope` was the only class in the reactor compiled against a
+preview feature — 1 of 131 — which put `java.util.concurrent.StructuredTaskScope.Subtask`, a preview
+type, in this repository's public API. `--enable-preview` is whole-compilation and whole-JVM, so that
+signature propagated a preview requirement to every consumer's entire build; the primary consumer is a
+brownfield enterprise Spring application. With the class removed, the reactor compiles with no preview
+flag and carries zero classes at `minor_version 65535` — measured, and the reason the compiler argument
+is gone from the root POM.
+
+**What replaces it.** Nothing, deliberately. `ExerisRequestScope.runWith` / `callWith` are the
+supported primitives and are GA (`ScopedValue`, JDK 25). Callers using `StructuredTaskScope` directly
+keep the propagation, because that is where it always came from. Whether either line should later
+offer a fan-out helper is a question to answer with a consumer rather than a design — neither
+`budgetHQ` nor `pbm` referenced the class, the package, or `exeris.runtime.context.scope.enabled`.
+
+**Driven by** [RFC-2026-08-08](../rfc/RFC-2026-08-08-two-track-jdk-line.md), accepted the same day,
+which reached this from the opposite direction: kernel ADR-066 makes the default distribution line
+preview-clean, and this was the one class here that could not follow it.
 
 ## Context and Problem Statement
 
@@ -32,19 +89,33 @@ This ADR answers: **what does Phase 3B-α deliver in 0.6.0-preview, and what sta
 
 **Phase 3B-α delivers, in 0.6.0-preview, a `ScopedValue`-backed request scope and a `StructuredTaskScope`-based fan-out helper API in `exeris-spring-runtime-web` and `exeris-spring-boot-autoconfigure`. No new module. No kernel dependencies beyond what Phase 1 already requires. No `ThreadLocal` on hot paths. No tracing emission — that is ADR-031.**
 
-The Spring-side surface reads, in normalized form: *"An Exeris-hosted Spring application can scope tenant ID, correlation ID, and request-bound attributes to the request lifecycle via `ExerisRequestScope`, fan out to multiple kernel calls via `ExerisStructuredScope`, and rely on the runtime to propagate the scope across forks without `ThreadLocal`."*
+The Spring-side surface reads, in normalized form: *"An Exeris-hosted Spring application can scope tenant ID, correlation ID, and request-bound attributes to the request lifecycle via `ExerisRequestScope`, fan out to multiple kernel calls via `ExerisStructuredScope`, and rely on the runtime to propagate the scope across forks without `ThreadLocal`."* — *(2026-08-08: the second and third clauses are withdrawn. The surface is `ExerisRequestScope` alone, and the propagation across forks was the JDK's, not the runtime's.)*
 
 **Concrete obligations:**
 
 1. **`ExerisRequestScope` API — `ScopedValue`-backed.** A new package `eu.exeris.spring.runtime.web.scope` ships `ExerisRequestScope` with a small typed API: `ExerisRequestScope.tenantId()`, `correlationId()`, `attribute(String key, Class<T> type)`. Implementation is a single `ScopedValue<RequestScope>` bound around `HttpHandler.handle` invocation when `exeris.runtime.context.scope.enabled=true`. No `ThreadLocal` fallback; `ScopedValue` is the only carrier. Access outside an active scope returns `Optional.empty()` (or throws `IllegalStateException` for required-attribute helpers, with the choice documented per method).
-2. **`ExerisStructuredScope` fan-out API.** A new package `eu.exeris.spring.runtime.web.scope.concurrent` ships `ExerisStructuredScope` — a thin wrapper around `StructuredTaskScope` that captures the current `ExerisRequestScope` at construction time and rebinds it inside each forked virtual thread. The wrapper exists to preserve the `ScopedValue` binding across `Joiner`-policied forks (per JDK 26 JEP 525 final API) without manual `ScopedValue.where(...).call(...)` boilerplate at every call site. **Exception propagation is the caller's job at the `join()` call site, not the wrapper's:** the policy-Joiner already surfaces the first failure (or the cause of "all forks failed") from `join()` per JDK semantics, and any mapping into kernel error-code conventions is application logic that belongs at the call site. (An earlier draft of this obligation mentioned `IOException` / configured-exception types as a wrapper concern; that was over-reaching — see §"Design notes" for the rationale.)
-3. **Opt-in via `exeris.runtime.context.scope.enabled` (default `false`).** Activation must be explicit — applications that do not opt in pay zero cost. When disabled, every `Optional`-returning method on `ExerisRequestScope` (including `current()`, `tenantId()`, `correlationId()`, `attribute(...)`) returns `Optional.empty()` always; the `require*` helpers throw `IllegalStateException`; and `ExerisStructuredScope` falls through to plain `StructuredTaskScope` semantics without scope rebinding. The property is read at lifecycle start; runtime toggling is not supported. **Property namespace rationale:** the prefix is `exeris.runtime.context.scope` rather than `exeris.runtime.web.scope` because the namespace is reserved for the full Phase 3B family — 3B-α (this ADR), 3B-β (W3C `traceparent` propagation, ADR-031), and 3B-γ (OTel span/metric emission, ADR-031) will all bind under `exeris.runtime.context.*`. The package owner of the implementation classes is still `web` (the request lifecycle entry point); the property reflects the cross-cutting scope of the feature family, not the module ownership.
+2. **⛔ WITHDRAWN 2026-08-08** — see §"Withdrawal of obligations 2 and 6" above. The text below is
+   the original obligation, kept as record; it is no longer in force and the class no longer exists.
+   **`ExerisStructuredScope` fan-out API.** A new package `eu.exeris.spring.runtime.web.scope.concurrent` ships `ExerisStructuredScope` — a thin wrapper around `StructuredTaskScope` that captures the current `ExerisRequestScope` at construction time and rebinds it inside each forked virtual thread. The wrapper exists to preserve the `ScopedValue` binding across `Joiner`-policied forks (per JDK 26 JEP 525 final API) without manual `ScopedValue.where(...).call(...)` boilerplate at every call site. **Exception propagation is the caller's job at the `join()` call site, not the wrapper's:** the policy-Joiner already surfaces the first failure (or the cause of "all forks failed") from `join()` per JDK semantics, and any mapping into kernel error-code conventions is application logic that belongs at the call site. (An earlier draft of this obligation mentioned `IOException` / configured-exception types as a wrapper concern; that was over-reaching — see §"Design notes" for the rationale.)
+3. **Opt-in via `exeris.runtime.context.scope.enabled` (default `false`).** Activation must be explicit — applications that do not opt in pay zero cost. When disabled, every `Optional`-returning method on `ExerisRequestScope` (including `current()`, `tenantId()`, `correlationId()`, `attribute(...)`) returns `Optional.empty()` always; the `require*` helpers throw `IllegalStateException`. (The clause about `ExerisStructuredScope` falling through to plain `StructuredTaskScope` semantics is void with obligation 2 — and it was always describing what the JDK does anyway.) The property is read at lifecycle start; runtime toggling is not supported. **Property namespace rationale:** the prefix is `exeris.runtime.context.scope` rather than `exeris.runtime.web.scope` because the namespace is reserved for the full Phase 3B family — 3B-α (this ADR), 3B-β (W3C `traceparent` propagation, ADR-031), and 3B-γ (OTel span/metric emission, ADR-031) will all bind under `exeris.runtime.context.*`. The package owner of the implementation classes is still `web` (the request lifecycle entry point); the property reflects the cross-cutting scope of the feature family, not the module ownership.
 4. **No `ThreadLocal` in the scope package, enforced by a new guard.** No existing test bans `ThreadLocal` at the package level — `WallIntegrityTest` covers kernel-SPI/Spring independence, autoconfigure→web independence, and the classpath bans (servlet API, Tomcat/Jetty/Undertow, Netty/Reactor), but does **not** ban `ThreadLocal` as a type. The 3B-α implementation PR creates a new `RequestScopeArchitectureTest#scopePackageMustNotUseThreadLocal` (in `exeris-spring-runtime-web/src/test/java/eu/exeris/spring/runtime/web/scope/`) that asserts zero `ThreadLocal` field, parameter, or static reference under `eu.exeris.spring.runtime.web.scope..`. The hot-path narrative in `CLAUDE.md` §"Pure Mode vs Compatibility Mode" already states "`ThreadLocal` is banned on hot paths"; this ADR turns that narrative rule into a per-package ArchUnit guard for the scope package specifically.
 5. **No tracing emission, no OTel bridge, no W3C `traceparent` ingress.** Those belong to 3B-β (ADR-031) and 3B-γ (ADR-031). 3B-α leaves a small `attribute(String, Class<T>)` API on `ExerisRequestScope` that 3B-β/γ will later use to bind `TraceContext` — but the 3B-α package itself does **not** import any tracing types, does **not** read W3C `traceparent` headers, and does **not** depend on Micrometer Tracing, OpenTelemetry API, or any kernel telemetry SPI beyond `TelemetrySink` (already a Phase 1 dependency).
-6. **Tenant isolation across forks is verified.** `ExerisStructuredScopeIntegrationTest#tenantIdPropagatesAcrossForks` and `#tenantIdIsolatesPerOutermostRequest` are merge-blocking. The first asserts that a `tenantId` set in the outer request scope is readable from inside `fork(...)` callbacks; the second asserts that two concurrent requests with different `tenantId` values never see each other's scope.
+6. **⛔ WITHDRAWN 2026-08-08** — see §"Withdrawal of obligations 2 and 6" above. The invariant was a
+   property of `StructuredTaskScope`, not of this repository; both tests are deleted with the class.
+   **Tenant isolation across forks is verified.** `ExerisStructuredScopeIntegrationTest#tenantIdPropagatesAcrossForks` and `#tenantIdIsolatesPerOutermostRequest` are merge-blocking. The first asserts that a `tenantId` set in the outer request scope is readable from inside `fork(...)` callbacks; the second asserts that two concurrent requests with different `tenantId` values never see each other's scope.
 7. **No application-side `ThreadLocal`-to-`ScopedValue` migration tooling.** Application owners migrating off existing `ThreadLocal<TenantId>` patterns are responsible for the migration. This ADR scopes the runtime affordance, not the migration path.
 
 ## API at a glance
+
+> **⛔ 2026-08-08.** Every `ExerisStructuredScope` element in this section — the class listing, the
+> factory methods, and the two design notes on policy naming and the `Subtask` return type — is
+> **withdrawn record, not current API**. The class does not exist. `ExerisRequestScope` below is
+> unaffected and remains the canonical surface. See §"Withdrawal of obligations 2 and 6".
+>
+> The `Subtask` design note is the one worth reading against its outcome: it accepted a JDK preview
+> type in the public signature to save an allocation per fork, calling the leak "honest about the
+> implementation cost". The cost it was honest about was the wrong one — the real price was
+> `--enable-preview` across every consumer's whole build.
 
 > **2026-05-17 implementation-time amendment.** The 0.6.0-preview implementation (this section
 > below) is the canonical surface. The pre-implementation listing in the previous draft of
@@ -159,7 +230,7 @@ The wrapper preserves the `ScopedValue<RequestScope>` binding across forks trans
 
 The ADR is forward-looking — implementation lands in the 0.6.0-preview train. Four concrete deliverables:
 
-1. **`ExerisRequestScope` + `ExerisStructuredScope` API package.** New package `eu.exeris.spring.runtime.web.scope[.concurrent]`. Hot-path-safe; covered by `RequestScopeArchitectureTest` (the new merge-blocking guard banning `ThreadLocal` and `org.springframework.web.context.request..` imports under `eu.exeris.spring.runtime.web.scope..`) and `ExerisStructuredScopeIntegrationTest` (tenant propagation across forks, tenant isolation across concurrent requests).
+1. **`ExerisRequestScope` API package.** Package `eu.exeris.spring.runtime.web.scope`. Hot-path-safe; covered by `RequestScopeArchitectureTest` (the merge-blocking guard banning `ThreadLocal` and `org.springframework.web.context.request..` imports under `eu.exeris.spring.runtime.web.scope..`). *(2026-08-08: the `.concurrent` sub-package and `ExerisStructuredScopeIntegrationTest` are withdrawn with obligations 2 and 6.)*
 2. **Lifecycle wiring in `ExerisHttpDispatcher`.** When `exeris.runtime.context.scope.enabled=true`, the dispatcher binds the `ScopedValue<RequestScope>` around `HttpHandler.handle` invocation. Property read once at lifecycle start; runtime toggling unsupported.
 3. **Autoconfig opt-in.** New `@ConfigurationProperties("exeris.runtime.context.scope")` record with `enabled` field; default `false`. `@ConditionalOnProperty` gating on the dispatcher binding so the disabled path is zero-cost.
 4. **Phase 3 invariants reconciliation.** `docs/phases/phase-3-invariants.md` currently records 3B (request scope + tracing) as "deferred to 3.x" (lines 3 and 141 of that file at the time this ADR was drafted). The implementation PR for 3B-α must reconcile this by **one** of:

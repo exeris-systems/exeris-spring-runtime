@@ -149,9 +149,9 @@ observability tracing. The 2026-05-17 downstream observability review reversed t
 - **Phase 3B-α — Request Scope + Structured Concurrency (kernel-independent, ADR-029).**
   Lands at 0.6.0-preview. Delivers `ExerisRequestScope` (`ScopedValue<RequestScope>`-backed
   facade with typed `tenantId()` / `correlationId()` / `attribute(key, type)` accessors
-  and `require*` variants), `ExerisStructuredScope` (JDK 26 `StructuredTaskScope` wrapper
-  that propagates the bound scope across forked virtual threads), and the
-  `RequestScopeBinder` / `RequestScopeResolver` extension points. Default-off via
+  and `require*` variants) and the `RequestScopeBinder` / `RequestScopeResolver` extension
+  points. *(2026-08-08: `ExerisStructuredScope`, listed here originally, is withdrawn with
+  ADR-029 obligations 2 and 6 — the propagation it claimed was `StructuredTaskScope`'s own.)* Default-off via
   `exeris.runtime.context.scope.enabled`. **3B-α-specific invariants live in
   `phase-3b-alpha-invariants.md` (created alongside the implementation PR);** the present
   doc preserves the Phase-3-closure record and points forward.

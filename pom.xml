@@ -128,9 +128,11 @@
         <jackson.annotations.version>2.21</jackson.annotations.version>
 
         <!-- Test JVM args — aligned with kernel conventions.
-             enable-preview is required because exeris-kernel-core is compiled with
-             Java 26 preview features (class file minor version 65535). Without this
-             flag the JVM refuses to load those classes at test runtime. -->
+             enable-preview here is a *runtime* need, not a compile one: exeris-kernel-core is
+             still compiled with Java 26 preview features (class file minor version 65535) and
+             the JVM refuses to load those classes without the flag. Nothing this repository
+             compiles is preview any more (see the compiler-plugin note below), so this argument
+             retires when the kernel pin moves to a release carrying the ADR-066 substitution. -->
         <test.jvm.args>--enable-preview -XX:+UnlockExperimentalVMOptions -XX:+UseZGC</test.jvm.args>
     </properties>
 
@@ -253,11 +255,17 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
                     <version>${maven.compiler.plugin.version}</version>
+                    <!--
+                        No preview flag here, deliberately. The compiler argument was removed with
+                        ExerisStructuredScope, the only class in the reactor that ever used a
+                        preview feature (ADR-029 obligation 2, withdrawn; RFC-2026-08-08). Its
+                        absence is the enforcement: a preview feature reintroduced anywhere fails
+                        the compile rather than silently stamping minor_version 65535 into a
+                        shipped class and pinning every consumer's whole build to one JDK major.
+                        Add it back only with a decision that says why, per kernel ADR-066.
+                    -->
                     <configuration>
                         <release>${maven.compiler.release}</release>
-                        <compilerArgs>
-                            <arg>--enable-preview</arg>
-                        </compilerArgs>
                     </configuration>
                 </plugin>
                 <plugin>
