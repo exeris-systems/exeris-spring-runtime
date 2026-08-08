@@ -103,6 +103,49 @@ existed because the consumer defined it.
 This is also the answer to "so add joiner policies to make it work": no policy fixes a binding that
 was never carried.
 
+### Does the wrapper add anything? Measured, and the answer is no
+
+The reasoning above assumed the wrapper's explicit rebind is what carries `RequestScope` into a fork.
+Probed instead of assumed — a **raw** `StructuredTaskScope`, no Exeris wrapper, no rebind anywhere:
+
+```
+[PROBE] raw STS fork          — RequestScope bound? true   tenantId matches outer scope
+[PROBE] plain virtual thread  — RequestScope bound? false
+```
+
+`StructuredTaskScope` already propagates the binding. The wrapper's `callWith` rebinds a value STS has
+**already carried**, and it is redundant in every reachable case: `StructuredTaskScope.open(...)`
+captures at open, the wrapper captures at construction, and both happen in the same static factory
+call on the same thread. Where the scope is opened outside a binding, the wrapper captures `null` and
+STS inherits nothing — the two agree there too.
+
+So the invariant in `phase-3b-alpha-invariants.md` §4 is a property of **`StructuredTaskScope`**, not
+of anything this repository wrote. `tenantIdPropagatesAcrossForks` passes against the JDK.
+
+What remains in the class is: three factory aliases for `StructuredTaskScope.open(Joiner.X())`,
+delegating `join()` / `close()`, a diagnostic accessor, and a per-fork cost of roughly three
+allocations — two lambdas plus a `ScopedValue` carrier — spent on the redundant rebind. That is the
+inverse of this repository's own rule against promoting convenience by hiding cost.
+
+ADR-029's stated rationale for the class was to *"keep a Spring-side surface that shields callers from
+JDK preview-API iteration."* It does not: `fork()` returns the JDK's `Subtask`, the factory names
+mirror `Joiner` semantics, and `join()` returns JDK-shaped results. The exposed surface **is** the
+JDK's, so churn passes straight through — when `StructuredTaskScope` moves again on JDK 28, the
+wrapper moves with it, having absorbed nothing.
+
+### What the repository looks like without it
+
+Measured by removing the class, deleting `--enable-preview` from the compiler args, and building:
+
+- the reactor **compiles clean** with no preview flag;
+- **zero** classes carry `minor_version 65535`.
+
+The only surviving `--enable-preview` is the *test* JVM argument, and its stated reason is that
+`exeris-kernel-core` is currently preview-compiled — which the pin move to a post-S19 kernel retires.
+
+**One class stands between this repository and a preview-clean build, and its only semantic content is
+a no-op.**
+
 ### Collateral: boot is no longer parallel
 
 Subsystem start now takes the sum of start times rather than the maximum. Paid once per JVM, and
@@ -112,6 +155,35 @@ That budget was chosen against parallel start; it needs re-measuring against the
 re-assuming. BudgetHQ starts the widest subsystem set and is the right place to measure.
 
 ## Options Considered
+
+### Option D: Withdraw `ExerisStructuredScope` entirely
+
+Delete the class. `ExerisRequestScope` — GA-clean, and the half of Phase 3B-α with real content —
+stays on both lines. Callers who want structured concurrency use `StructuredTaskScope` directly on a
+line where it exists, and get the `RequestScope` propagation for free, because that is where the
+propagation was coming from all along.
+
+**Pros:**
+- Removes the only preview-pinned class in the reactor. Both lines become preview-clean **today**,
+  with no per-line source exclusion, so ADR-028 obligation 1 survives intact and the GA/`-preview`
+  split reduces to a JDK and build concern.
+- Removes the preview type from our public API by removing the API, rather than by wrapping it in
+  another type that would also have to track JDK 28.
+- Removes a per-fork allocation cost that buys nothing.
+- Deletes the maintenance obligation outright: nothing to re-verify when `StructuredTaskScope` changes
+  on 28, and nothing to converge when it goes GA at the next LTS.
+- Withdrawing a default-off, 1.0-preview surface with no GA commitment is close to free now, and stops
+  being free the moment it is promised.
+
+**Cons:**
+- Phase 3B-α loses a named deliverable, and ADR-029 obligation 2 must be withdrawn rather than
+  amended — a decision-level change, not a doc edit.
+- Callers lose the `failFast` / `firstSuccess` / `allSuccessful` naming over `Joiner`. This is an
+  aliasing convenience, not a capability.
+- If a consumer later wants scope propagation on the GA line, that work starts from nothing. It would
+  have started from nothing anyway: the wrapper's propagation is STS's, and does not port.
+
+**Cost:** one class and its test deleted; ADR-029 amended; roadmap and phase docs corrected.
 
 ### Option A: `ExerisStructuredScope` ships on the `-preview` line only
 
@@ -172,28 +244,36 @@ what the kernel built for itself, and put `ExerisStructuredScope` on top of it f
 
 ## Recommendation
 
-**Option A — `ExerisStructuredScope` ships on the `-preview` line only.**
+**Option D — withdraw `ExerisStructuredScope` entirely.**
 
-The decisive argument is not cost, it is honesty about what the GA mechanism can do. Option B produces
-an API with today's shape and different behaviour, and the difference is invisible until a consumer's
-own `ScopedValue` comes back unbound inside a fork — the kernel's 404, relocated to a customer's
-application where we cannot even name the missing slot. Option A declines to make a promise instead of
-making one it cannot keep. Given Phase 3B-α is default-off, 1.0-preview, and carries no GA commitment,
-declining now is nearly free; it will not be later.
+The probe changes the question. This was framed as "which line should the wrapper ship on", which
+presumes the wrapper does something. It does not: `StructuredTaskScope` already propagates
+`RequestScope`, the explicit rebind is redundant in every reachable case, and the §4 invariant we cite
+as ours is the JDK's. What is left is three factory aliases and about three allocations per fork spent
+on a no-op — and that no-op is why the reactor cannot build preview-clean, why a preview type sits in
+our public API, and why the two-line split would need a per-line source exclusion.
 
-Option A also resolves the `Subtask` leak without writing anything. The leak is only a defect on a line
-that claims to be preview-clean. On the `-preview` line, preview is the premise — `Subtask` in the
-signature is accurate there, and the allocation argument in the javadoc becomes valid rather than
-merely convenient.
+Option A was the right answer to the wrong question. It keeps a class on the `-preview` line whose
+only content is naming, and it accepts a source exclusion that breaks ADR-028 obligation 1 in order to
+do so. Removing the class instead makes both lines preview-clean immediately from **one** source tree
+— measured, not projected: with the class gone and the compiler flag removed, the reactor compiles and
+carries zero preview-pinned classes.
 
-Residual uncertainty, stated plainly: this leaves the commercially primary line without a
-structured-concurrency helper, and we do not yet know whether any consumer wants one. That is a
-question to answer with a consumer, not with a design. If the answer turns out to be yes, the right
-response is an explicit-carrier fork API restricted to slots we define — narrower than today's, and a
-different decision from this one.
+The argument against Option B stands and gets stronger. It would build a GA layer whose propagation
+consumers cannot rely on, duplicating a temporary kernel helper in the layer least entitled to own
+concurrency — and we now know it would be replacing a wrapper that never provided the propagation in
+the first place.
+
+Residual uncertainty, stated plainly: this leaves neither line with a Spring-side structured-concurrency
+helper, and we do not know whether any consumer wants one. The wrapper's existence is not evidence that
+one does — it was never load-bearing. If the answer turns out to be yes, the honest starting point is an
+explicit-carrier fork API restricted to slots we define, which is a different design from today's and
+would have had to be written from scratch under any of these options.
 
 ### Why not the alternatives?
 
+- **Option A** — ships a class whose only remaining content is naming, and pays for it with a per-line
+  source exclusion that ADR-028 obligation 1 forbids.
 - **Option B** — ships an API whose behaviour silently diverges from its shape, and duplicates a
   temporary kernel helper in the layer least entitled to own concurrency.
 - **Option C** — pushes `--enable-preview` onto every brownfield consumer's whole build, which is the
@@ -201,17 +281,31 @@ different decision from this one.
 
 ### Risks of the recommendation
 
-- **Per-line source exclusion contradicts ADR-028 obligation 1** ("no `src/sb3`, no `src/sb4`") if read
-  as a general rule rather than one about the Spring axis. The resulting ADR must say which axis each
-  obligation governs, or the next reader will apply the wrong one.
-- **ADR-067's binary-neutrality gate does not extend to this axis.** It compares the same source
-  compiled twice. Here the lines contain *different* sets of classes, so a descriptor diff would report
-  the intended divergence as a failure. The gate needs an explicit scope statement, not a silent
-  assumption that it generalises.
-- **Two artefacts is a reversal of ADR-067's rejection of per-line classifiers** — for a different
-  reason (one jar cannot be both major 69 and major 70), but it will read as inconsistency unless
-  stated. The Spring axis stays classifier-free; only the JDK axis gains them. **Two artefacts, not
-  four.**
+- **Withdrawing a published API, even a default-off one.** `ExerisStructuredScope` shipped in the
+  `0.6.0` train and was consumed as `0.5.0-SNAPSHOT` downstream. Checked rather than assumed: neither
+  `budgetHQ` nor `pbm` references the class, the `scope.concurrent` package, or
+  `exeris.runtime.context.scope.enabled`. The known-consumer blast radius is zero. That does not cover
+  an external brownfield customer, but the surface is default-off and carries no GA commitment, which
+  is what the withdrawal rests on.
+- **The §4 invariant and its two tests are deleted with the class.** They tested the JDK, so nothing
+  real is lost — but the phase document must say *why* an invariant disappeared, or the next reader
+  reads it as coverage quietly dropped.
+- **Two artefacts is still a reversal of ADR-067's rejection of per-line classifiers** — for a
+  different reason (one jar cannot be both major 69 and major 70), and it will read as inconsistency
+  unless stated. The Spring axis stays classifier-free; only the JDK axis gains them. **Two artefacts,
+  not four.**
+- **The roadmap and ADR-029 both name `StructuredTaskScope` helpers as Phase 3B-α content.** Under this
+  option they are not amended but *withdrawn*, which is the heavier move: ADR-029 obligation 2 must go
+  through withdrawal rather than a body edit, per this repo's rule against silently amending an
+  accepted ADR.
+
+Two risks recorded in an earlier revision of this RFC **no longer apply**, and are noted so the
+reasoning is not re-derived: the per-line source exclusion breaking ADR-028 obligation 1, and
+ADR-067's binary-neutrality gate mis-reporting an intended divergence. Both were consequences of
+keeping the class on one line only. With the class gone, both lines compile from one source tree with
+the same set of classes — and the gate arguably *should* be extended to the JDK axis, since the same
+source compiled at two `--release` levels can still bind to different JDK overloads. That extension is
+follow-up work, not a risk.
 - **The roadmap and ADR-029 both name `StructuredTaskScope` helpers as Phase 3B-α content** without a
   line qualifier. Left unamended, they will read as a GA-line promise.
 - **"0.6.0-preview" is a naming collision waiting to be misread.** ADR-029 scopes 3B-α to the
@@ -238,8 +332,13 @@ different decision from this one.
 - **Re-measure the startup budget.** `startupTimeoutSeconds` defaults to 30, chosen against parallel
   subsystem start. Measure against the sequential shape on the widest subsystem set before the kernel
   pin moves — owner: this repo, gated on a released kernel carrying S19.
-- **Does any consumer want structured concurrency on the GA line?** Answer with a consumer, not a
-  design. If yes, scope an explicit-carrier fork API restricted to slots we define.
+- **Does any consumer want structured concurrency on either line?** Answer with a consumer, not a
+  design — and specifically check BudgetHQ for a compile-time dependency on `ExerisStructuredScope`
+  before the deletion lands. If the answer is yes, scope an explicit-carrier fork API restricted to
+  slots we define.
+- **Extend the ADR-067 binary-neutrality gate to the JDK axis.** The same source compiled at two
+  `--release` levels can bind to different JDK overloads — the identical failure class the gate was
+  built for, on a different axis. Cheap to add once both lines build from one tree.
 - **How do the Spring and JDK axes compose in CI?** Four build combinations exist; running all four on
   every push may not be worth it. Decide which cells are load-bearing.
 - **`ExerisRequestScope.callWith` as the documented GA answer.** It is already the right primitive and
