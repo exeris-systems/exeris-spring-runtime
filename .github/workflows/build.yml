@@ -91,3 +91,40 @@ jobs:
           path: '**/target/*-reports/'
           if-no-files-found: ignore
           retention-days: 7
+
+  # The `verify` matrix proves the source compiles and tests on both lines. It cannot prove what we
+  # ship: deploy.yml runs `mvn clean deploy` with no profile, so exactly one SB3-compiled jar is
+  # published and ADR-028 claims it runs on SB4 as well. Source compatibility does not imply binary
+  # compatibility — a call site can compile on both lines and bind to a different descriptor on each,
+  # which is invisible to a per-line build and fatal at runtime. ADR-067 decides that the artefact stays
+  # single and that this property is enforced rather than assumed; this job is that enforcement.
+  binary-neutrality:
+    name: ADR-067 binary neutrality (one jar, two lines)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PACKAGES_READ_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
+      MAVEN_OPTS: '-Xmx2g'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 26
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '26'
+          cache: maven
+
+      - name: Verify settings token wiring
+        run: |
+          if [ -z "${PACKAGES_READ_TOKEN}" ]; then
+            echo "::error::PACKAGES_READ_TOKEN secret is not set. Create a PAT (classic) with read:packages scope and add it as a repository secret."
+            exit 1
+          fi
+
+      - name: Compare Spring call-site descriptors across both matrix lines
+        run: ./.github/scripts/spring-binary-neutrality.sh

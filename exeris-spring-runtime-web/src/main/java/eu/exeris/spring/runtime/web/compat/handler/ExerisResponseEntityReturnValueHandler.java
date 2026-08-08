@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.springframework.core.MethodParameter;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageConverter;
@@ -62,7 +63,17 @@ public final class ExerisResponseEntityReturnValueHandler implements HandlerMeth
         }
 
         springResponse.setStatusCode(entity.getStatusCode());
-        springResponse.getHeaders().putAll(entity.getHeaders());
+
+        // forEach + put rather than putAll(entity.getHeaders()) for *binary* neutrality. The
+        // putAll form compiles on both matrix profiles but binds to different descriptors:
+        // Spring Framework 6 has HttpHeaders implement MultiValueMap, so it selects
+        // putAll(Map); Spring Framework 7 drops that and selects the putAll(HttpHeaders)
+        // overload. An SB3-compiled jar therefore calls putAll(Map) with an argument that is no
+        // longer a Map on SB4, and every ResponseEntity return value dies with
+        // IncompatibleClassChangeError. forEach and put(String, List) are identical on both
+        // lines. See ADR-028 §1 and spring-boot-4-matrix.md item 3.
+        HttpHeaders responseHeaders = springResponse.getHeaders();
+        entity.getHeaders().forEach(responseHeaders::put);
 
         Object body = entity.getBody();
         if (body == null) {
