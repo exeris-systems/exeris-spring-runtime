@@ -31,6 +31,7 @@ import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.method.support.HandlerMethodArgumentResolverComposite;
 import org.springframework.web.method.support.InvocableHandlerMethod;
 import org.springframework.web.method.support.ModelAndViewContainer;
+import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 /**
  * Compatibility-mode exception handler resolver. Checks controller-local

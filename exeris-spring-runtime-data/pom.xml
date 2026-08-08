@@ -62,6 +62,23 @@
             <artifactId>exeris-kernel-community</artifactId>
         </dependency>
 
+        <!-- exeris-spring-boot-autoconfigure — compile-only, for the @CompatibilityMode marker
+             (eu.exeris.spring.boot.autoconfigure.compat). ADR-011's marker moved here because
+             `data` and `actuator` both grew *.compat.* packages and neither may depend on `web`
+             (data -> web is a banned edge), which left six compat classes unmarkable.
+
+             `provided` on purpose: the annotation is @Retention(CLASS), so it is needed to
+             compile and never at runtime — this edge must not reach a consumer's runtime
+             classpath. Not a banned edge (the banned direction is autoconfigure -> data).
+             Do not widen this to `compile`, and do not import anything else from autoconfigure
+             here: `data` owns no wiring. -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-spring-boot-autoconfigure</artifactId>
+            <version>${project.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
         <!-- exeris-spring-runtime-tx — ExerisPlatformTransactionManager is referenced
              by ExerisDataAutoConfiguration to coordinate JDBC-bridge transaction lifecycle. -->
         <dependency>

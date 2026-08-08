@@ -4,7 +4,7 @@
  * Licensed under the Apache License, Version 2.0 with Commons Clause.
  * Commercial resale of this software as a competing product is prohibited.
  */
-package eu.exeris.spring.runtime.web.compat;
+package eu.exeris.spring.boot.autoconfigure.compat;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;

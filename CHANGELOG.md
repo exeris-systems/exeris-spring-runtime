@@ -133,6 +133,16 @@ application does not pay for what it does not use.
 
 These landed after the last feature train and are the reason the snapshot line moved on:
 
+- **`@CompatibilityMode` now covers the whole compat surface.** The marker was declared in
+  `exeris-spring-runtime-web`, and `data` and `actuator` — which both hold `*.compat.*` packages —
+  may not depend on `web`. Six compat classes were therefore structurally unmarkable, so ADR-011's
+  stated benefit, "a grep for `@CompatibilityMode` shows the full surface of compat-only behaviour",
+  silently under-reported by six. The annotation moves to
+  **`eu.exeris.spring.boot.autoconfigure.compat`** (a breaking change only for code that imported the
+  marker directly; it is a `@Retention(CLASS)` marker with no runtime semantics). Per-module guards
+  now enforce the coverage in `data` and `actuator` as well as `web`, each verified by watching it
+  fail on a removed marker.
+
 - **Compatibility Mode no longer breaks on Spring Boot 4.** `ResponseEntity<T>` return values failed
   with `IncompatibleClassChangeError` and multi-valued `@RequestHeader` binding failed with
   `NoSuchMethodError`, on the SB4 line only. Both call sites compiled cleanly on both matrix lines

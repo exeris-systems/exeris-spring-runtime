@@ -6,7 +6,7 @@
  */
 package eu.exeris.spring.runtime.web.compat.security;
 
-import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
+import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 /**
  * Raised when a request presents a Bearer token that cannot be decoded or validated.

@@ -21,6 +21,7 @@ import org.springframework.lang.NonNull;
 import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.spring.runtime.web.ExerisServerResponse;
+import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 /**
  * Minimal compatibility response collector for Spring server abstractions.

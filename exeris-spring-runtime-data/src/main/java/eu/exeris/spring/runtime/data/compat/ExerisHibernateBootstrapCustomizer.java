@@ -18,6 +18,7 @@ import org.springframework.util.ClassUtils;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 /**
  * Removes the last piece of Exeris-specific configuration a brownfield JPA application had to write
@@ -76,6 +77,7 @@ import java.util.Map;
  *
  * @since 0.7.0
  */
+@CompatibilityMode
 public final class ExerisHibernateBootstrapCustomizer implements BeanFactoryPostProcessor, EnvironmentAware {
 
     /** Hibernate's metadata probe switch. Disabling it is what defers the connection. */

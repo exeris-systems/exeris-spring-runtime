@@ -19,6 +19,7 @@ import eu.exeris.spring.runtime.web.compat.filter.ExerisSecurityContextFilter;
 import eu.exeris.spring.runtime.web.compat.security.InvalidBearerTokenException;
 import eu.exeris.spring.runtime.web.scope.KernelProviderBinder;
 import org.springframework.lang.Nullable;
+import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 /**
  * Exeris-owned compatibility dispatcher that routes inbound exchanges through the

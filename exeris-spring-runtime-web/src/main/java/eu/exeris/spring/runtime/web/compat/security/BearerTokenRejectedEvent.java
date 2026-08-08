@@ -6,7 +6,7 @@
  */
 package eu.exeris.spring.runtime.web.compat.security;
 
-import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
+import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 import jdk.jfr.Category;
 import jdk.jfr.Event;

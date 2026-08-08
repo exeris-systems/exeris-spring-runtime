@@ -6,7 +6,7 @@
  */
 package eu.exeris.spring.runtime.web.compat.context;
 
-import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
+import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.context.i18n.SimpleLocaleContext;

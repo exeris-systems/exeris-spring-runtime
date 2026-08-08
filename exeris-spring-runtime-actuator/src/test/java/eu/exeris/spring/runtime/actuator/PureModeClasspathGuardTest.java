@@ -13,7 +13,9 @@ import com.tngtech.archunit.lang.ArchRule;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 /**
  * ArchUnit guard tests for Pure Mode classpath isolation in the actuator module.
@@ -72,6 +74,26 @@ class PureModeClasspathGuardTest {
                 .should().dependOnClassesThat()
             .haveFullyQualifiedName("org.springframework.web.servlet.DispatcherServlet")
             .allowEmptyShould(true);
+
+        rule.check(actuatorModuleClasses);
+    }
+
+    /**
+     * ADR-011's marker must cover this module too. It moved to
+     * {@code eu.exeris.spring.boot.autoconfigure.compat} precisely because {@code actuator}
+     * cannot depend on {@code web}, which is where it used to live — so before the move the compat
+     * actuator controller was structurally unmarkable and the grep the marker exists for
+     * under-reported it. This guard is the reason that cannot silently come back.
+     */
+    @Test
+    void everyCompatClass_carriesTheCompatibilityModeMarker() {
+        ArchRule rule = classes()
+                .that().resideInAPackage("eu.exeris.spring.runtime.actuator.compat..")
+                .and().areNotMemberClasses()
+                .and().areNotLocalClasses()
+                .and().areNotAnonymousClasses()
+                .should().beAnnotatedWith(CompatibilityMode.class)
+                .as("every eu.exeris.spring.runtime.actuator.compat.. type must carry @CompatibilityMode (ADR-011)");
 
         rule.check(actuatorModuleClasses);
     }
