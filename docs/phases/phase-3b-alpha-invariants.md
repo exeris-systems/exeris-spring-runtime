@@ -50,17 +50,21 @@ available to Compatibility Mode applications via the existing Spring path.
 
 - **Guard:** `RequestScopeArchitectureTest#scopePackageMustNotDependOnSpringWebContextRequest`.
 
-## 4. Tenant isolation across `StructuredTaskScope` forks
+## 4. ⛔ Withdrawn 2026-08-08 — tenant isolation across `StructuredTaskScope` forks
 
-Two concurrent outer request scopes with different tenants must never see each other's tenant
-from inside a fork. `ExerisStructuredScope.fork(...)` rebinds the captured `RequestScope` for
-the duration of each forked virtual thread.
+This invariant, and the two merge-blocking tests that guarded it, are **withdrawn** together with
+ADR-029 obligations 2 and 6. It is recorded here rather than deleted so the disappearance of a
+merge-blocking guard is explained instead of merely noticed.
 
-- **Guards (merge-blocking):**
-  - `ExerisStructuredScopeIntegrationTest#tenantIdPropagatesAcrossForks` — fork sees outer
-    scope's tenant.
-  - `ExerisStructuredScopeIntegrationTest#tenantIdIsolatesPerOutermostRequest` — concurrent
-    outer scopes don't leak tenants into each other's forks.
+It asserted that two concurrent outer scopes never leak tenants into each other's forks, and
+credited `ExerisStructuredScope.fork(...)`'s rebind for it. Measured on JDK 26, a raw
+`StructuredTaskScope` propagates the binding on its own and the rebind was redundant — so the
+property was `StructuredTaskScope`'s, and the tests passed against the JDK. Nothing this repository
+owned was being verified, and the class has been deleted.
+
+What is ours, and is still guarded, is the facade: see invariant 5 and
+`ExerisRequestScopeTest`. Full rationale in ADR-029 §"Withdrawal of obligations 2 and 6" and
+[RFC-2026-08-08](../rfc/RFC-2026-08-08-two-track-jdk-line.md).
 
 ## 5. Disabled-path returns `Optional.empty()` — no fallback to thread-bound state
 
@@ -69,7 +73,10 @@ path — for example a `@Scheduled` method on a Spring bean), every `Optional`-r
 `ExerisRequestScope` returns `Optional.empty()`. The `require*` helpers throw
 `IllegalStateException`. There is no `ThreadLocal` fallback path that would mask the absence.
 
-- **Guard:** `ExerisStructuredScopeIntegrationTest#disabledPathReturnsEmpty`.
+- **Guards:** `ExerisRequestScopeTest#unboundScope_typedAccessorsReturnEmpty`,
+  `#unboundScope_requireAccessorsThrow`. (Previously
+  `ExerisStructuredScopeIntegrationTest#disabledPathReturnsEmpty` — restated without the withdrawn
+  wrapper, since it was always a property of the facade.)
 
 ## 6. No tracing emission, no W3C `traceparent` ingress, no OTel bridge in 3B-α
 
@@ -108,8 +115,9 @@ If the resolver returns `null` (it should not), the binder falls back to
 | Default-off activation | `ExerisWebAutoConfigurationTest` (default-disabled path) |
 | `ScopedValue` only — no `ThreadLocal` | `RequestScopeArchitectureTest#scopePackageMustNotUseThreadLocal` |
 | No Spring web-context coupling | `RequestScopeArchitectureTest#scopePackageMustNotDependOnSpringWebContextRequest` |
-| Tenant isolation across forks | `ExerisStructuredScopeIntegrationTest#tenantIdPropagatesAcrossForks`, `#tenantIdIsolatesPerOutermostRequest` |
-| Disabled-path returns empty | `ExerisStructuredScopeIntegrationTest#disabledPathReturnsEmpty` |
+| ~~Tenant isolation across forks~~ | **withdrawn 2026-08-08** — see invariant 4; the property was `StructuredTaskScope`'s |
+| Disabled-path returns empty | `ExerisRequestScopeTest#unboundScope_typedAccessorsReturnEmpty`, `#unboundScope_requireAccessorsThrow` |
+| Explicit rebind off the request thread | `ExerisRequestScopeTest#callWith_rebindsOnAThreadThatInheritedNothing`, `#nestedScopes_innerShadowsOuterAndOuterIsRestored` |
 | No tracing/OTel emission in 3B-α | code review (ADR-029 obligation 5); attribute API stays the only seam ADR-031 attaches to |
 | Resolver is the sole extension point | autoconfig test matrix (three-state) |
 

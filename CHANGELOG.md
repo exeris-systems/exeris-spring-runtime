@@ -37,7 +37,7 @@ default-off flags instead.
 
 | | |
 |:---|:---|
-| Java | **26 with `--enable-preview`** (the kernel uses preview features → class file minor version 65535) |
+| Java | **26**. Compiling against this runtime needs **no** preview flag — nothing it ships is preview-compiled. Running needs `--enable-preview` on the JVM, because `exeris-kernel` 0.10.2 is itself preview-compiled (class file minor version 65535) and will not load without it. That runtime requirement retires when the kernel pin moves to a preview-clean release. |
 | `exeris-kernel` | **0.10.2** (released coordinate, not a snapshot) |
 | Spring Boot | **3.5.14** (default) or **4.1.0** — see the note below |
 | Resolution | GitHub Packages — `maven.pkg.github.com/exeris-systems/*`, not Maven Central |
@@ -92,10 +92,19 @@ serialization/deadlock failure — callers handle `40001`/`40P01` themselves.
 `DataSource` adapter over the kernel persistence engine, scoped by ADR-017 — a migration aid for
 brownfield code, not a first-class persistence path. No HikariCP, no JPA/Hibernate.
 
-**Request scope + structured concurrency (`exeris.runtime.context.scope.enabled=true`, ADR-029).**
-`ScopedValue<RequestScope>` bound around `HttpHandler.handle`, with tenant/correlation propagation across
-`StructuredTaskScope` forks and no `ThreadLocal` copying. The disabled path is zero-cost. This is the
-substrate a future OTel bridge attaches to — it is **not** tracing.
+**Request scope (`exeris.runtime.context.scope.enabled=true`, ADR-029).** `ScopedValue<RequestScope>`
+bound around `HttpHandler.handle`, carrying tenant and correlation identity with no `ThreadLocal`
+copying. The disabled path is zero-cost. This is the substrate a future OTel bridge attaches to — it is
+**not** tracing.
+
+No fan-out helper ships. `ExerisStructuredScope` was withdrawn before this release (ADR-029 obligations
+2 and 6, [RFC-2026-08-08](docs/rfc/RFC-2026-08-08-two-track-jdk-line.md)): it wrapped
+`StructuredTaskScope` to rebind the scope into forks, and `StructuredTaskScope` was measured to do that
+by itself — so the wrapper's only effect was an allocation per fork and a JDK **preview** type in this
+runtime's public API, which would have forced `--enable-preview` on every consumer's entire build. Use
+`StructuredTaskScope` directly and the propagation still holds; off the request thread, rebind with
+`ExerisRequestScope.runWith` / `callWith`. Removing it makes this reactor compile with no preview flag
+and ship zero preview-pinned classes.
 
 **Events seam (`exeris.runtime.events.enabled=true`, ADR-027).** Kernel `EventBus` exposed to Spring
 beans. Spring's `ApplicationEventPublisher` and the Exeris `EventBus` stay strictly separate — neither is

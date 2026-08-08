@@ -37,8 +37,8 @@ public record RequestScope(UUID tenantId, String correlationId, Map<String, Obje
 
     /**
      * Construct an empty {@code RequestScope} with no tenant, no correlation ID, and no
-     * attributes. Useful when the scope is opt-in for {@code StructuredTaskScope} propagation
-     * but no request-level identity has been resolved yet.
+     * attributes. Useful when the scope is bound but no request-level identity has been resolved
+     * yet.
      */
     public static RequestScope empty() {
         return new RequestScope(null, null, Map.of());
