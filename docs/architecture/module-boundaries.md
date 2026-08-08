@@ -72,7 +72,10 @@ without inverting a dependency: `data` and `actuator` both hold `*.compat.*` pac
 on `web`. `data` carries a **`provided`**-scoped edge to `autoconfigure` for exactly this and nothing else —
 the annotation is `@Retention(CLASS)`, so it is needed to compile and never at runtime, and the edge must not
 reach a consumer's runtime classpath. Widening that edge to `compile`, or importing anything else from
-`autoconfigure` inside `data`, is a boundary regression: `data` owns no wiring.
+`autoconfigure` inside `data`, is a boundary regression: `data` owns no wiring. That sentence is enforced, not
+advisory: `DataModuleBoundaryTest#dataModule_mayUseAutoconfigureOnlyForTheCompatibilityModeMarker`
+fails the build on any dependency from `data` into `eu.exeris.spring.boot.autoconfigure..` other than
+the marker itself.
 
 ---
 

@@ -14,6 +14,9 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.equivalentTo;
+import static com.tngtech.archunit.base.DescribedPredicate.not;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
@@ -113,6 +116,32 @@ class DataModuleBoundaryTest {
                 .and().areNotAnonymousClasses()
                 .should().beAnnotatedWith(CompatibilityMode.class)
                 .as("every eu.exeris.spring.runtime.data.compat.. type must carry @CompatibilityMode (ADR-011)");
+
+        rule.check(dataClasses);
+    }
+
+    /**
+     * The {@code data -> autoconfigure} edge exists for exactly one type: ADR-011's
+     * {@code @CompatibilityMode} marker, which {@code data} cannot otherwise reach because
+     * {@code data -> web} is banned. {@code module-boundaries.md} states that widening it — to
+     * {@code compile} scope, or to any other autoconfigure type — is a boundary regression.
+     *
+     * <p>This rule is that statement, enforced. The PR that introduced the edge also introduced
+     * this test, because the defect it was fixing was a claim about module structure that nothing
+     * checked; leaving the replacement claim unchecked would have reproduced it one edge over.
+     *
+     * <p>{@code data} owns no wiring, so a legitimate second use of {@code autoconfigure} here
+     * would itself be the thing to question.
+     */
+    @Test
+    void dataModule_mayUseAutoconfigureOnlyForTheCompatibilityModeMarker() {
+        ArchRule rule = noClasses()
+                .that().resideInAPackage("eu.exeris.spring.runtime.data..")
+                .should().dependOnClassesThat(
+                        resideInAPackage("eu.exeris.spring.boot.autoconfigure..")
+                                .and(not(equivalentTo(CompatibilityMode.class))))
+                .as("data may depend on autoconfigure only for @CompatibilityMode "
+                        + "(ADR-011 marker placement; module-boundaries.md)");
 
         rule.check(dataClasses);
     }

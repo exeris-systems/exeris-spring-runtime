@@ -10,7 +10,6 @@ import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
-import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 /**
  * Marks a type or method as part of the Spring Compatibility Mode bridge.

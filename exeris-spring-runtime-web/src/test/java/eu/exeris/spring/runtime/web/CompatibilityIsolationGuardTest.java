@@ -175,7 +175,10 @@ class CompatibilityIsolationGuardTest {
      * <p>Scoped to top-level types. Member, local and anonymous classes are excluded: they are
      * not independently greppable surface, they cannot be reached without going through their
      * enclosing type, and a local class inside a method body cannot carry a meaningful marker.
-     * The annotation itself is excluded too — a marker does not mark itself.
+     * The marker itself needs no exclusion clause any more: it moved to
+ * {@code eu.exeris.spring.boot.autoconfigure.compat} (ADR-011 §"Marker placement amendment"), so it
+ * no longer resides in the package this rule scans. It is out of scope incidentally, by location —
+ * not by an explicit rule.
      */
     @Test
     void everyCompatClass_carriesTheCompatibilityModeMarker() {
