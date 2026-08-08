@@ -79,9 +79,49 @@ Two bounds keep it honest:
   signature, the build fails: consumers moving between lines must not be recompiling against a
   different surface.
 
+  **It cannot be an ArchUnit rule** — see §"ArchUnit does not run on the preview line". The mechanism
+  is deliberately dumber and therefore portable: the GA build emits a public-API signature snapshot per
+  carrier, the snapshot is checked in, and the preview line asserts its overlay class matches by plain
+  reflection. No bytecode inspection, so no ASM, so no class-file-major ceiling. The two classes share
+  a fully-qualified name and can never be on one classpath, which is the other reason a direct
+  comparison is not available.
+
 ADR-028 obligation 1 is not weakened for the Spring axis, which is what it was written about. It is
 read as axis-specific rather than universal, and this ADR says so explicitly so the next reader does
 not apply it to the wrong axis — the same mistake ADR-067 had to correct in the other direction.
+
+## ArchUnit does not run on the preview line
+
+The architecture-guard layer — 16 test classes, including `WallIntegrityTest`, `ModuleBoundaryTest`,
+the seven `PureModeClasspathGuardTest`s, `CompatibilityIsolationGuardTest` and
+`RequestScopeArchitectureTest` — **is excluded from the preview line**. ArchUnit 1.5.0 tops out at
+JDK 27 support; there is no JDK 28 support to pin to.
+
+The justification is not the missing version, it is the **failure mode**, and this repository has
+already recorded it. From the root POM's own rationale for pinning 1.4.2:
+
+> 1.3.0's older ASM throws "Unsupported class file major version 70" and **silently skips those
+> classes** — which would let the Wall/boundary guards pass without actually inspecting Java 26
+> bytecode.
+
+An ArchUnit whose ASM cannot read the class-file major does not fail; it inspects nothing and reports
+green. Running the guard suite on major 72 would therefore produce 16 passing tests that verified
+nothing — a fail-open gate, and a worse outcome than not running them, because a green guard is read
+as evidence. Excluding them is the correct action, not a reluctant concession.
+
+The exclusion must be **explicit** in the preview profile. Leaving the suite enabled in the hope that a
+future ASM handles major 72 is precisely how the vacuous pass arrives unnoticed.
+
+**Consequence: the GA line is the sole authority for the architecture-guard layer.** A change is never
+validated by the preview line alone. Since the two lines share one source tree apart from the carrier
+overlay, the GA line's guard run covers everything except the overlay itself — which is the bound that
+makes this acceptable.
+
+**The hole this leaves, stated rather than papered over:** `RequestScopeArchitectureTest` bans
+`ThreadLocal` under `eu.exeris.spring.runtime.web.scope..`, and the overlay carrier lives there. A
+`ThreadLocal` introduced *only* in the overlay would be caught by neither the GA guard run (different
+file) nor the identity guard (a private field is not public API). The mitigation is the overlay's size
+and review, not a machine — and that is a reason to keep the overlay to carrier types and nothing else.
 
 ## Prerequisite: a preview-clean kernel
 
@@ -148,13 +188,20 @@ consumer's entire build.
 - **[-]** The preview line runs on an EA JDK, so its CI is exposed to EA churn — a broken EA build
   blocks a line that blocks nothing in production, and the policy for that needs to be "report, do not
   block the GA line."
+- **[-]** The preview line ships without the architecture-guard layer, because running it there would
+  pass vacuously rather than fail. Bounded by the GA line covering the shared source, and by the
+  overlay staying small — but it is a genuine asymmetry between the two artefacts' verification, and
+  the `ThreadLocal`-in-overlay hole above is its sharp edge.
 
 ## Compliance / Verification
 
 - `openjdk-28-ea+10` measurements above, reproducible from the scratch probes.
 - The preview line's build must fail if the kernel on the classpath carries preview class files —
   otherwise the failure surfaces as an unexplained `UnsupportedClassVersionError` mid-suite.
-- The public-API identity guard between overlay and GA carrier is merge-blocking.
+- The public-API identity guard between overlay and GA carrier is merge-blocking, and is reflection
+  based rather than ArchUnit based so it survives the class-file-major ceiling.
+- The preview profile **explicitly excludes** the ArchUnit suite. A preview build that reports those
+  tests as passing is a defect in the profile, not a signal about the code.
 - ADR-067's binary-neutrality gate stays scoped to the Spring axis. It compares one source compiled
   twice; across the JDK axis the sources differ by design, so extending it unmodified would report the
   intended divergence as a failure.
@@ -166,7 +213,13 @@ consumer's entire build.
    guard. The fix is the signature, never a suppression.
 3. The `-preview` artefact is not published from a release whose only difference is the JDK target.
 4. A red preview-line CI axis reports; it does not block the GA line.
-5. When `value` exits preview at an LTS, the overlay merges into the single source tree and this ADR is
+5. No change is merged on preview-line evidence alone. The GA line is the sole authority for the
+   architecture-guard layer, and a green preview run says nothing about The Wall, module boundaries,
+   pure-mode classpath purity, or compat isolation.
+6. Re-enabling ArchUnit on the preview line requires demonstrating that its ASM actually reads the
+   current class-file major — by observing a guard **fail** on a deliberate violation, not by observing
+   the suite pass.
+7. When `value` exits preview at an LTS, the overlay merges into the single source tree and this ADR is
    superseded rather than amended — the two-line premise is the decision, not an implementation detail.
 
 ## Cross-references
