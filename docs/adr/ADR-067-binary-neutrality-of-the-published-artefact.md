@@ -60,6 +60,9 @@ usage the reporting application does not have:
 | `ExerisResponseEntityReturnValueHandler:65` `headers.putAll(entity.getHeaders())` | `putAll:(Ljava/util/Map;)V` | `putAll:(Lorg/springframework/http/HttpHeaders;)V` | `IncompatibleClassChangeError` on every `ResponseEntity` return value |
 | `ExerisNativeWebRequest:79` `getHeaders().get(name)` | `get:(Ljava/lang/Object;)Ljava/util/List;` | `get:(Ljava/lang/String;)Ljava/util/List;` | `NoSuchMethodError` on any multi-valued `@RequestHeader` |
 
+Line numbers here are the **failing** revision, matching the stack trace above — they are a record of
+where the defect was, not a pointer into the current file, where both call sites have since moved.
+
 Both reproduce deterministically by compiling the call shape against `spring-web` 6.2.7 and executing
 it on 7.0.8.
 

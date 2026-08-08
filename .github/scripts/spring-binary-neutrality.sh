@@ -50,7 +50,11 @@ fingerprint() {
   local out=$1
   local dir mod
   for dir in $(find . -path '*/target/classes' -type d | LC_ALL=C sort); do
-    mod=$(echo "$dir" | cut -d/ -f2)
+    # Strip the leading ./ and the trailing /target/classes rather than taking the first path
+    # segment: identical output for today's flat reactor, and still correct if a module is ever
+    # nested (where a first-segment cut would collapse a/b and a/c to the same label).
+    mod=${dir#./}
+    mod=${mod%/target/classes}
     (cd "$dir" && find . -name '*.class' | sed 's|^\./||; s|\.class$||; s|/|.|g') \
       | while read -r cls; do
           javap -v -p -cp "$dir" "$cls" 2>/dev/null \
