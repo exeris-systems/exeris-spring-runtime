@@ -23,8 +23,10 @@ This will be the first tagged release of the repository. Prior work was consumed
 `0.5.0-SNAPSHOT` from GitHub Packages. The version number jumps to `0.7.0` because the snapshot line had
 already accumulated three planned release trains: `0.5.0` (Phase 4A + 4B), `0.6.0` (Phase 3B-α), and
 `0.7.0` (Phase 4C). Tagging it `0.5.0` would have published 0.6.0 and 0.7.0 content under a label that
-understates it. `0.7.0` is the highest train that has actually landed — the next train (Spring Boot 4
-dual matrix, ADR-028) has not started.
+understates it. `0.7.0` is the highest train that had landed when the number was chosen. The Spring
+Boot 4 dual matrix (ADR-028) has since landed here too, rather than in the `0.8.0` train the ADR
+scheduled it for: 0.7.0 is still untagged — held for the kernel 0.11 drain fix — so work merged in the
+meantime ships in it. The ADR's train label is a scheduling estimate, not a decision.
 
 Train names in `docs/roadmap-1.0-trl9.md` carry a `-preview` suffix; **published Maven coordinates do
 not**. Maven's `ComparableVersion` sorts the unknown qualifier `preview` as *newer* than the bare
@@ -37,10 +39,23 @@ default-off flags instead.
 |:---|:---|
 | Java | **26 with `--enable-preview`** (the kernel uses preview features → class file minor version 65535) |
 | `exeris-kernel` | **0.10.2** (released coordinate, not a snapshot) |
-| Spring Boot | 3.5.14 |
+| Spring Boot | **3.5.14** (default) or **4.1.0** — see the note below |
 | Resolution | GitHub Packages — `maven.pkg.github.com/exeris-systems/*`, not Maven Central |
 
-Spring Boot 4 is **not** supported in this release; the dual matrix is the 0.8.0 train (ADR-028).
+**Spring Boot 4 — nominal compatibility (ADR-028).** Both lines build and pass the full test suite in
+CI on every push, and a failure on either blocks merge. Two caveats worth reading before you take this
+as a support commitment:
+
+- **One artefact serves both lines**, built against Spring Boot 3. There are no per-line classifiers.
+  Because the two Spring Framework versions differ in ways that are invisible to a per-line build — a
+  call site can compile on both and bind to a different method on each — a dedicated CI job compares
+  every Spring call site's compiled descriptor across the two lines and fails the build on any
+  divergence. Two such defects were found in Compatibility Mode by a downstream Spring Boot 4
+  application before that job existed, and both are fixed here; see
+  [ADR-067](docs/adr/ADR-067-binary-neutrality-of-the-published-artefact.md) for the decision and
+  [`docs/architecture/spring-boot-4-matrix.md`](docs/architecture/spring-boot-4-matrix.md)
+  §"Binary neutrality" for the measurements.
+- **Spring Security 7 is a separate axis** (ADR-028 obligation 6) and is not covered by that claim.
 
 ### Published artefacts
 
@@ -108,6 +123,15 @@ application does not pay for what it does not use.
 ### Hardening since the feature trains
 
 These landed after the last feature train and are the reason the snapshot line moved on:
+
+- **Compatibility Mode no longer breaks on Spring Boot 4.** `ResponseEntity<T>` return values failed
+  with `IncompatibleClassChangeError` and multi-valued `@RequestHeader` binding failed with
+  `NoSuchMethodError`, on the SB4 line only. Both call sites compiled cleanly on both matrix lines
+  while binding to a different `HttpHeaders` method on each, so neither axis of the dual matrix
+  objected — Spring Framework 7 stopped `HttpHeaders` implementing `MultiValueMap`. Both now use
+  members whose signature is identical on both lines, and a new `binary-neutrality` CI job compares
+  every Spring call site's compiled descriptor across the two lines so this class of defect cannot
+  recur silently.
 
 - Compat security under `web-application-type=none` (ADR-041) — Exeris runs with no servlet web
   application type, so every Spring Boot `@ConditionalOnWebApplication(SERVLET)` auto-config silently
@@ -180,7 +204,10 @@ at least one downstream service has run it in production for a representative pe
   `PrometheusOtlpTelemetrySink`. `exeris.runtime.telemetry.tracing-enabled` is forwarded to the kernel
   as configuration, but there is no Spring-side propagation or span-emission bridge in this release —
   setting it does not produce spans.
-- **No Spring Boot 4.** 0.8.0 train (ADR-028).
+- **Spring Boot 4 is nominal compatibility, not a support commitment.** Both lines are built and
+  tested in CI and one artefact serves both, but Spring Security 7 is out of scope (ADR-028
+  obligation 6) and Compatibility Mode coverage on the SB4 line is only as broad as this repo's own
+  test suite. See the Requirements section above.
 - **No edge gateway.** Phase 5 / `exeris-spring-runtime-gateway` does not exist yet (0.9.0 train). It
   will not be a Spring Cloud Gateway compatibility bridge (ADR-021) — SCG DSL workloads run native SCG
   outside Exeris.

@@ -74,10 +74,33 @@ public final class ExerisNativeWebRequest implements NativeWebRequest {
         return springRequest.getHeaders().getFirst(headerName);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Looked up through {@code forEach} rather than {@code get(headerName)} for <em>binary</em>
+     * neutrality, not source neutrality. {@code get} compiles on both matrix profiles, but to
+     * different descriptors — Spring Framework 6 declares {@code get(Object)} (inherited from
+     * {@code Map}), Spring Framework 7 declares {@code get(String)}. A jar compiled on one line
+     * therefore fails with {@code NoSuchMethodError} on the other. {@code forEach} has one
+     * signature on both (ADR-028 §1; see {@code spring-boot-4-matrix.md} item 3).
+     *
+     * <p>The scan is linear in header count where {@code get} was a hash lookup — the same
+     * Compatibility Mode accessor trade-off documented on {@link #getHeaderNames()}. Absent versus
+     * present-but-empty is preserved explicitly, because {@code WebRequest} callers such as
+     * Spring's {@code RequestHeaderMethodArgumentResolver} read {@code null} as "header missing"
+     * and turn it into a 400.
+     */
     @Override
     public String[] getHeaderValues(String headerName) {
-        List<String> values = springRequest.getHeaders().get(headerName);
-        return values != null ? values.toArray(new String[0]) : null;
+        List<String> values = new ArrayList<>();
+        boolean[] present = {false};
+        springRequest.getHeaders().forEach((name, headerValues) -> {
+            if (name.equalsIgnoreCase(headerName)) {
+                present[0] = true;
+                values.addAll(headerValues);
+            }
+        });
+        return present[0] ? values.toArray(new String[0]) : null;
     }
 
     /**

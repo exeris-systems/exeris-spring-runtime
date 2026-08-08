@@ -9,12 +9,14 @@ package eu.exeris.spring.runtime.web.compat;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.entry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -160,6 +162,25 @@ class ExerisCompatMvcIntegrationTest {
         assertThat(statusOf(exchange.response())).isEqualTo(201);
     }
 
+    /**
+     * The header copy in {@code ExerisResponseEntityReturnValueHandler} is the call site that failed on
+     * Spring Boot 4 with {@code IncompatibleClassChangeError} — {@code putAll} bound to {@code Map} on
+     * the SB3 compile and {@code HttpHeaders} stopped being a {@code Map} on Spring Framework 7, so
+     * every {@code ResponseEntity} return value died. It now copies through {@code forEach} +
+     * {@code put}, identical on both lines. See {@code docs/architecture/spring-boot-4-matrix.md}
+     * §"Binary neutrality".
+     */
+    @Test
+    void compatMode_responseEntity_propagatesHeaders() throws Exception {
+        TestExchange exchange = TestExchange.get(HttpMethod.GET, "/compat-created-with-headers", anyHttpVersion());
+        dispatcher.handle(exchange.proxy());
+
+        assertThat(statusOf(exchange.response())).isEqualTo(201);
+        assertThat(headersOf(exchange.response()))
+                .contains(entry("X-Compat", "yes"), entry("Location", "/compat/created/1"));
+        assertThat(bodyOf(exchange.response())).contains("created");
+    }
+
     // ── Scenario 9: POST + @RequestBody ───────────────────────────────────
 
     @Test
@@ -263,6 +284,22 @@ class ExerisCompatMvcIntegrationTest {
             return ((HttpStatus) m.invoke(response)).code();
         } catch (ReflectiveOperationException ex) {
             throw new AssertionError("Cannot read HttpResponse status", ex);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, String> headersOf(HttpResponse response) {
+        try {
+            Method m = response.getClass().getMethod("headers");
+            List<eu.exeris.kernel.spi.http.HttpHeader> headers =
+                    (List<eu.exeris.kernel.spi.http.HttpHeader>) m.invoke(response);
+            Map<String, String> byName = new LinkedHashMap<>();
+            for (eu.exeris.kernel.spi.http.HttpHeader header : headers) {
+                byName.put(header.name(), header.value());
+            }
+            return byName;
+        } catch (ReflectiveOperationException ex) {
+            throw new AssertionError("Cannot read HttpResponse headers", ex);
         }
     }
 
@@ -371,6 +408,14 @@ class ExerisCompatMvcIntegrationTest {
         @GetMapping("/compat-created")
         ResponseEntity<String> created() {
             return ResponseEntity.status(201).body("created");
+        }
+
+        @GetMapping("/compat-created-with-headers")
+        ResponseEntity<String> createdWithHeaders() {
+            return ResponseEntity.status(201)
+                    .header("X-Compat", "yes")
+                    .header("Location", "/compat/created/1")
+                    .body("created");
         }
 
         @PostMapping("/compat-echo")

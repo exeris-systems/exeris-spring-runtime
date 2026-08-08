@@ -15,7 +15,8 @@ the SB4 line actually costs**, measured rather than anticipated, and what has la
 | **SB4 pin** | `4.1.0` (`matrix-sb4`) |
 | **SB3 line** | ✅ green — full reactor, tests included |
 | **SB4 line** | ✅ green — full reactor, tests included |
-| **CI** | both axes run `-Pmatrix-<line>,coverage clean verify` on every push; failure on either blocks merge (ADR-028 obligation 2) |
+| **CI** | both axes run `-Pmatrix-<line>,coverage clean verify` on every push; failure on either blocks merge (ADR-028 obligation 2). A third job, `binary-neutrality`, compares Spring call-site descriptors across the two lines — see §"Binary neutrality" for why the matrix alone is not enough |
+| **What ships** | **one** jar, built by the default `matrix-sb3` profile (`deploy.yml` runs `clean deploy` with no `-P`) and claimed to run on both lines |
 
 > **Measure with `clean`.** An incremental `-Pmatrix-sb4 install` can report SUCCESS on stale classes
 > left by an SB3 build. The first run of this kind here did exactly that, and it looked like the
@@ -119,12 +120,18 @@ including two lists — counted properly while implementing it.)*
 |:---|:---|
 | **Was** | `HttpHeaders implements MultiValueMap<String, String>` — `entrySet()`, `keySet()` available |
 | **Is** | Spring Framework 7 drops that; `entrySet()` / `keySet()` do not exist, `headerNames()` arrives |
-| **Affected** | `ExerisMvcServerHttpResponse` (`headers.entrySet()`), `ExerisNativeWebRequest` (`getHeaders().keySet()`) |
+| **Affected** | `ExerisMvcServerHttpResponse` (`headers.entrySet()`), `ExerisNativeWebRequest` (`getHeaders().keySet()`), and — found later, see below — `ExerisResponseEntityReturnValueHandler` (`headers.putAll`) and `ExerisNativeWebRequest.getHeaderValues` (`headers.get`) |
 | **Anticipated?** | **No.** ADR-028's `org.springframework.http` row rated `HttpHeaders` "mostly stable" and named `MappingJackson2HttpMessageConverter` as the expected friction there |
 
 **Resolved with no bridge at all.** `forEach(BiConsumer<? super String, ? super List<String>>)` is
 declared on `HttpHeaders` in **both** Spring Framework 6.2 and 7.0 with an identical signature, so both
 call sites now iterate through it and one source compiles under both profiles.
+
+> **This item was closed twice, and the first closure was wrong.** The criterion above — "one source
+> compiles under both profiles" — is the whole error. It is necessary and not sufficient, and the two
+> call sites it missed are the subject of the §"Binary neutrality" section below. `entrySet()` and
+> `keySet()` were found because they *stopped compiling*; `putAll` and `get` kept compiling on both
+> lines while binding to a different method on each, so nothing in the dual matrix objected.
 
 > **Correction.** An earlier revision of this document asserted that all three items required ADR-028's
 > reflective third form, reasoning from the fact that no *import* could be redirected. That reasoning
@@ -230,12 +237,96 @@ Note the profile list — `-Pmatrix-sb3,coverage`, not `-Pcoverage`. Naming any 
 same trap described at the top of this document, and CI would have hit it silently: the SB3 axis would
 have fallen through to the fallback pin and still gone green, testing nothing the SB4 axis did not.
 
+A third job, `binary-neutrality`, sits beside the matrix rather than inside it: it needs both lines
+compiled in one workspace, which a per-line axis cannot provide. It skips tests — it only compares
+compiled call sites — so it costs two `install -DskipTests` runs rather than two `verify` runs. See
+[ADR-067](../adr/ADR-067-binary-neutrality-of-the-published-artefact.md) for why it exists.
+
+> **Filename drift.** ADR-028 obligation 2 and its Engineering Protocol §2 both name
+> `.github/workflows/ci.yml`. The workflow is `build.yml` — it predates the ADR and was never called
+> `ci.yml`. Recorded here rather than edited into the accepted ADR body; the axis itself is exactly as
+> the obligation specifies.
+
+---
+
+## Binary neutrality — what the dual matrix does not prove
+
+**Found downstream, in a running Compatibility Mode application on Spring Boot 4**, after both matrix
+axes had been green for the whole train:
+
+```
+IncompatibleClassChangeError: Class org.springframework.http.HttpHeaders
+                              does not implement the requested interface java.util.Map
+    at org.springframework.http.HttpHeaders.putAll(HttpHeaders.java:1992)
+    at ExerisResponseEntityReturnValueHandler.handleReturnValue(...:65)
+```
+
+Every `@RestController` method returning `ResponseEntity<T>` failed. A controller returning a bare
+`List<T>` did not, because it goes through `ExerisResponseBodyReturnValueHandler` and never reaches
+that line — which is why the failure looked selective rather than total.
+
+### The mechanism
+
+`deploy.yml` runs `mvn clean deploy` with **no profile**, so `matrix-sb3` is active by default and the
+published jar is compiled against Spring Framework 6. ADR-028 then claims that one jar runs on both
+lines. The dual matrix proves the *source* compiles and tests on both. It cannot prove anything about
+the *binary*, and the two are not the same claim:
+
+> A call site can compile on both lines and bind to a **different descriptor** on each. Both axes go
+> green. The published SB3-compiled binary then calls a method that resolves differently — or not at
+> all — on SB4.
+
+Two instances, both invisible to the matrix:
+
+| Call site | SB3 binds to | SB4 binds to | Failure on SB4 |
+|---|---|---|---|
+| `responseHeaders.putAll(entity.getHeaders())` | `putAll:(Ljava/util/Map;)V` | `putAll:(Lorg/springframework/http/HttpHeaders;)V` | `IncompatibleClassChangeError` — SF7 stopped `HttpHeaders` implementing `MultiValueMap`, so the SB3-compiled call hands a non-`Map` to a `Map` parameter |
+| `springRequest.getHeaders().get(headerName)` | `get:(Ljava/lang/Object;)Ljava/util/List;` | `get:(Ljava/lang/String;)Ljava/util/List;` | `NoSuchMethodError` — SF6 inherited `get(Object)` from `Map`; SF7 declares `get(String)` |
+
+The second one was **not** in the downstream report. It surfaces only on `@RequestHeader` binding a
+multi-valued header, which that application does not do — it was found by the sweep below, not by a
+second bug report.
+
+Both are fixed by using members whose signature is identical on both lines: `forEach` plus
+`put(String, List)`, and `forEach` with a case-insensitive name match. Verified by compiling the new
+call shapes against `spring-web` 6.2.7 and executing them on 7.0.8 — multi-value lists, absent-header
+`null`, and pre-existing headers all preserved.
+
+### The gate
+
+A one-off fix does not close this; the *class* of defect is inherent to one source tree published as
+one binary. `.github/scripts/spring-binary-neutrality.sh` compiles the reactor under both profiles and
+compares every constant-pool reference our `target/classes` make into `org/springframework/**`. Any
+difference fails the build and names the call site. It runs as its own `build.yml` job because it needs
+both lines in one workspace, which the per-line matrix cannot give it.
+
+Across the reactor there are **262** such references. Before the fix, exactly two differed; after it,
+none. The check also sees method *references* behind `invokedynamic` — `responseHeaders::put` appears
+in the constant pool as an ordinary `Methodref`, so the lambda form is not a blind spot.
+
+### Two things this corrects
+
+- **The earlier "measure with `clean`" note undersold what it had found.** An incremental profile
+  switch produced a `NoSuchMethodError` on `HttpHeaders.putAll`, which was diagnosed as stale classes
+  and filed under build hygiene. That diagnosis was locally right — the classes *were* stale — but a
+  build that runs SB3-compiled classes against SB4 jars is precisely the deployment we ship, and the
+  accident had reproduced the production failure. It was read as noise about the build rather than as
+  a signal about the product.
+- **ADR-028 obligation 2 is necessary and not sufficient.** "Both axes run the full reactor including
+  integration tests; failure on either blocks merge" verifies two builds; it does not verify the one
+  artefact. That is a product-level question about what "nominal SB4 compatibility" promises, so it is
+  settled in [ADR-067](../adr/ADR-067-binary-neutrality-of-the-published-artefact.md) rather than here:
+  the artefact stays single and SB3-compiled, per-line classifiers are rejected, and binary neutrality
+  becomes an enforced obligation joining obligation 2 rather than superseding it.
+
 ---
 
 ## Cross-references
 
 - [ADR-028](../adr/ADR-028-spring-boot-4-nominal-compatibility-scope.md) — the decision, the obligations,
   and the bridge-package taxonomy.
+- [ADR-067](../adr/ADR-067-binary-neutrality-of-the-published-artefact.md) — one artefact serves both
+  lines, and binary neutrality is enforced rather than assumed. Supplements ADR-028 obligation 2.
 - [ADR-041](../adr/ADR-041-compat-resource-server-security-under-none.md) — the compat resource-server
   surface that friction item 2 lands on.
 - [ADR-011](../adr/ADR-011-pure-mode-vs-compatibility-mode.md) — why `compat.sb4.*` is hidden from
