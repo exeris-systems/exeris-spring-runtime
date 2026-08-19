@@ -45,10 +45,22 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
-        <!-- Java version — aligned with exeris-kernel -->
-        <maven.compiler.source>26</maven.compiler.source>
-        <maven.compiler.target>26</maven.compiler.target>
-        <maven.compiler.release>26</maven.compiler.release>
+        <!-- Java version — aligned with the exeris-kernel GA line (kernel ADR-066, ADR-068).
+
+             25, not 26, and this is a widening rather than a restriction: anything that ran on
+             26 still runs, and JDK 25 is an LTS, which is what a brownfield Spring consumer is
+             actually able to deploy. The 26 was never load-bearing — nothing here used a
+             JDK-26-only API. It was inherited from a kernel that was preview-compiled, and
+             preview class files are major-pinned, so the whole chain was nailed to one exact
+             JDK. Kernel 0.11.0 removed that stamp; this removes the pin it forced.
+
+             Consequence worth stating: the published jars are class-file major 69, minor 0 —
+             same as the kernel's. Verified on the built output, not assumed. Raising this back
+             to 26 re-imposes an exact-JDK requirement on every consumer and needs a decision
+             that says why. -->
+        <maven.compiler.source>25</maven.compiler.source>
+        <maven.compiler.target>25</maven.compiler.target>
+        <maven.compiler.release>25</maven.compiler.release>
 
         <!-- Dependency versions -->
         <!-- Pinned to a released kernel (clean, not -SNAPSHOT): the datasource SPI-unwrap
@@ -131,7 +143,11 @@
 
         <!-- Coverage quality gate (opt-in via -Pcoverage). 0.8.15 is the first
              JaCoCo with JDK 26 class-file support (major version 70) — see the
-             budgetHQ backend parent pom, which pins it for the same reason. -->
+             budgetHQ backend parent pom, which pins it for the same reason.
+             The baseline has since moved to 25 (major 69), which 0.8.15 also reads,
+             so this stays put: a class-file reader that is ahead of the baseline is
+             the safe direction, and a developer building on a newer JDK still needs
+             it. Do not downgrade it to "match" the baseline. -->
         <jacoco.maven.plugin.version>0.8.15</jacoco.maven.plugin.version>
         <!-- Per-module LINE floor enforced by the -Pcoverage `check` goal. This is
              a RATCHET, not the target: each module overrides it in its own
@@ -151,22 +167,27 @@
              class files (major version 70); 1.3.0's older ASM throws
              "Unsupported class file major version 70" and silently skips
              those classes — which would let the Wall/boundary guards pass
-             without actually inspecting Java 26 bytecode. Aligned with the
-             exeris-kernel BOM (archunit 1.4.2). -->
+             without actually inspecting the bytecode. That failure mode is the
+             reason to keep the reader ahead of the baseline rather than level with
+             it: the guards do not fail when they cannot parse a class, they go
+             quiet. Aligned with the exeris-kernel BOM (archunit 1.4.2). -->
         <archunit.version>1.4.2</archunit.version>
         <!-- Jackson annotations version required by tools.jackson.databind:3.1.1 -->
         <jackson.annotations.version>2.21</jackson.annotations.version>
 
         <!-- Test JVM args — aligned with kernel conventions.
-             The preview flag here was a *runtime* need, not a compile one: exeris-kernel-core
-             used to be compiled with preview features (class file minor version 65535) and the
-             JVM refused to load those classes without it. As of the 0.11.0 pin that is no longer
-             true — the kernel carries the ADR-066 substitution and is preview-clean, and nothing
-             this repository compiles has been preview for some time either. The flag is
-             therefore now inert rather than load-bearing, and survives only because removing it
-             also moves the compiler release and the CI JDK; see the pin comment above for why
-             that is a separate slice. -->
-        <test.jvm.args>--enable-preview -XX:+UnlockExperimentalVMOptions -XX:+UseZGC</test.jvm.args>
+
+             The JVM preview flag used to be here as a *runtime* need: exeris-kernel-core was
+             compiled with preview features (class file minor version 65535) and the JVM refused
+             to load those classes without it. Kernel 0.11.0 carries the ADR-066 substitution and
+             is preview-clean, so the flag retired as that comment said it would — this reactor
+             now compiles and runs with no preview anywhere.
+
+             Do not reintroduce it to make something compile. It is whole-compilation and
+             whole-JVM, so it would propagate to every consumer's entire build and pin them to
+             one exact JDK. That is the failure mode ADR-066 and RFC-2026-08-08 exist to prevent;
+             the preview line in ADR-068 is where preview-dependent work belongs. -->
+        <test.jvm.args>-XX:+UnlockExperimentalVMOptions -XX:+UseZGC</test.jvm.args>
     </properties>
 
     <dependencyManagement>

@@ -58,11 +58,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up JDK 26
+      - name: Set up JDK 25 (LTS baseline)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '26'
+          java-version: '25'
           cache: maven
 
       - name: Verify settings token wiring

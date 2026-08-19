@@ -42,7 +42,7 @@ permissions:
 
 jobs:
   verify:
-    name: mvn verify (JDK 26, --enable-preview, ${{ matrix.spring-boot-line }})
+    name: mvn verify (JDK 25 LTS, ${{ matrix.spring-boot-line }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -63,11 +63,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 26
+      - name: Set up JDK 25 (LTS baseline)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '26'
+          java-version: '25'
           cache: maven
 
       - name: Verify settings token wiring
@@ -82,6 +82,50 @@ jobs:
           mvn -B -ntp -s .github/maven-settings.xml
           -Pmatrix-${{ matrix.spring-boot-line }},coverage
           clean verify
+
+      # The JDK baseline and the absence of preview stamps are properties of the bytecode we
+      # publish, so they are checked on the bytecode rather than inferred from the compiler
+      # configuration. A source grep or a pom property cannot see a preview stamp that arrives
+      # through generated code, a shaded dependency, or a kernel pin that moves back onto a
+      # preview-compiled release — and the stamp is what a consumer trips over: preview class
+      # files are major-pinned and refuse to load on any other JDK even with the flag. Kernel
+      # ADR-066 learned this the expensive way; this is the same check on our side of the wall.
+      #
+      # Jars rather than target/classes, because the jar is the distributed surface.
+      - name: Class-file baseline gate (major 69, no preview stamp)
+        run: |
+          python3 - <<'EOF'
+          import pathlib, sys, zipfile
+
+          EXPECTED_MAJOR = 69   # JDK 25 — must track maven.compiler.release in the root pom
+          bad, scanned, jars = [], 0, 0
+
+          for jar in sorted(pathlib.Path('.').glob('*/target/*.jar')):
+              if jar.name.endswith(('-sources.jar', '-javadoc.jar')):
+                  continue
+              jars += 1
+              with zipfile.ZipFile(jar) as z:
+                  for entry in z.namelist():
+                      if not entry.endswith('.class'):
+                          continue
+                      head = z.read(entry)[:8]
+                      minor = int.from_bytes(head[4:6], 'big')
+                      major = int.from_bytes(head[6:8], 'big')
+                      scanned += 1
+                      if major != EXPECTED_MAJOR or minor != 0:
+                          bad.append(f"{jar}!{entry}: major={major} minor={minor}")
+
+          if jars == 0:
+              sys.exit("::error::no jars found to scan — the gate would have passed vacuously")
+
+          print(f"scanned {scanned} classes across {jars} jars")
+          if bad:
+              for line in bad[:40]:
+                  print(f"::error::{line}")
+              sys.exit(f"{len(bad)} class(es) off the baseline "
+                       f"(expected major {EXPECTED_MAJOR}, minor 0; minor 65535 means preview)")
+          print(f"all classes at major {EXPECTED_MAJOR}, minor 0 — no preview stamp")
+          EOF
 
       - name: Upload Surefire/Failsafe reports on failure
         if: failure()
@@ -112,11 +156,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 26
+      - name: Set up JDK 25 (LTS baseline)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '26'
+          java-version: '25'
           cache: maven
 
       - name: Verify settings token wiring

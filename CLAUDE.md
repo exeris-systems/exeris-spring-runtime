@@ -23,7 +23,9 @@ The kernel (`exeris-kernel-spi`, `exeris-kernel-core`) is consumed as binary dep
 
 ## Build & test
 
-Java **26 with `--enable-preview`** is required (kernel uses preview features → class file minor version 65535). Test JVM args are wired in the root POM (`-XX:+UnlockExperimentalVMOptions -XX:+UseZGC --enable-preview`).
+Java **25 (LTS)** is the baseline, with **no preview flag anywhere** — not at compile time, not on the test JVM, not on a consumer's JVM. Test JVM args are wired in the root POM (`-XX:+UnlockExperimentalVMOptions -XX:+UseZGC`). Published classes are class-file **major 69, minor 0**, enforced in CI by the class-file baseline gate in `build.yml`.
+
+> This changed at the kernel 0.11.0 pin. Before it, the baseline was Java 26 with `--enable-preview`, because `exeris-kernel` was itself preview-compiled and preview class files are major-pinned — which forced the flag and one exact JDK onto every consumer's *entire* build. Kernel ADR-066 removed the stamp; this repo followed. Do not reintroduce `--enable-preview` to make something compile: preview-dependent work belongs on the `-preview` line (ADR-068), not on the GA line. Building on a newer JDK is fine — `--release 25` governs the output.
 
 ```bash
 mvn -s .github/maven-settings.xml clean install        # full reactor build
