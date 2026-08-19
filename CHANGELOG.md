@@ -9,15 +9,15 @@ application framework; Exeris is the runtime owner. See [`docs/architecture/over
 
 ## 0.7.0 — first published release
 
-**Not yet tagged.** No `v0.7.0` tag exists in this repository and nothing has been deployed under that
-coordinate; the release is deliberately on hold until the kernel pin can move to 0.11.0 and the
-in-flight-drain gap disclosed below is closed rather than merely documented. This section is
-therefore still being edited in place — entries are added and corrected here rather than in an
-`[Unreleased]` block, and the section freezes when the tag is cut.
+**Not yet tagged**, but no longer held. Both conditions this release was waiting on have been met:
+the kernel pin has moved to **0.11.0**, and the in-flight-drain gap is **closed** — the kernel
+reordered its shutdown, and the wire-level coverage that was disabled against 0.10.2 is active and
+green again. This section is still edited in place — entries are added and corrected here rather than
+in an `[Unreleased]` block — and it freezes when the tag is cut.
 
 **Status: preview.** No module in this release is GA. Every phase bridge beyond the Pure Mode request
 path ships default-off, and "the code landed" is explicitly *not* the graduation criterion — see
-[Preview status](#preview-status-what-07x-does-not-promise) below.
+[Preview status](#preview-status--what-07x-does-not-promise) below.
 
 This will be the first tagged release of the repository. Prior work was consumed downstream as
 `0.5.0-SNAPSHOT` from GitHub Packages. The version number jumps to `0.7.0` because the snapshot line had
@@ -25,8 +25,8 @@ already accumulated three planned release trains: `0.5.0` (Phase 4A + 4B), `0.6.
 `0.7.0` (Phase 4C). Tagging it `0.5.0` would have published 0.6.0 and 0.7.0 content under a label that
 understates it. `0.7.0` is the highest train that had landed when the number was chosen. The Spring
 Boot 4 dual matrix (ADR-028) has since landed here too, rather than in the `0.8.0` train the ADR
-scheduled it for: 0.7.0 is still untagged — held for the kernel 0.11 drain fix — so work merged in the
-meantime ships in it. The ADR's train label is a scheduling estimate, not a decision.
+scheduled it for: 0.7.0 stayed untagged for weeks while it was held for the kernel drain fix, so work
+merged in the meantime ships in it. The ADR's train label is a scheduling estimate, not a decision.
 
 Train names in `docs/roadmap-1.0-trl9.md` carry a `-preview` suffix; **published Maven coordinates do
 not**. Maven's `ComparableVersion` sorts the unknown qualifier `preview` as *newer* than the bare
@@ -37,8 +37,8 @@ default-off flags instead.
 
 | | |
 |:---|:---|
-| Java | **26**. Compiling against this runtime needs **no** preview flag — nothing it ships is preview-compiled. Running needs `--enable-preview` on the JVM, because `exeris-kernel` 0.10.2 is itself preview-compiled (class file minor version 65535) and will not load without it. That runtime requirement retires when the kernel pin moves to a preview-clean release. |
-| `exeris-kernel` | **0.10.2** (released coordinate, not a snapshot) |
+| Java | **25 (LTS)**, and **no preview flag anywhere** — not to compile against this runtime, not to run it. Published classes are class-file major 69, minor 0, enforced in CI against the built jars rather than inferred from the compiler configuration. Building on a newer JDK is fine. |
+| `exeris-kernel` | **0.11.0** (released coordinate, not a snapshot). This is the kernel's **GA line**; the separate `0.11.0-preview` coordinate is a different artefact on a newer JDK and is not what this release consumes. |
 | Spring Boot | **3.5.14** (default) or **4.1.0** — see the note below |
 | Resolution | GitHub Packages — `maven.pkg.github.com/exeris-systems/*`, not Maven Central |
 
@@ -56,6 +56,53 @@ as a support commitment:
   [`docs/architecture/spring-boot-4-matrix.md`](docs/architecture/spring-boot-4-matrix.md)
   §"Binary neutrality" for the measurements.
 - **Spring Security 7 is a separate axis** (ADR-028 obligation 6) and is not covered by that claim.
+
+**Java 25, and the preview flag is gone.** Earlier drafts of this section required JDK 26 with
+`--enable-preview` at *runtime*, because the kernel was itself preview-compiled. That was never a
+per-library opt-in: `--enable-preview` is whole-compilation and whole-JVM, preview class files are
+stamped and pinned to one exact class-file major, and the requirement therefore propagated to every
+consumer's entire build — their code included. Kernel 0.11.0 removed the stamp and this release
+followed, moving the baseline **26 → 25 LTS**. For anyone already on 26 this is a widening, not a
+restriction.
+
+### Kernel 0.11.0 — what the bump changes for you
+
+Four items reach a consumer. Only the first can change who gets served.
+
+**🔒 The kernel's `/secure` path convention is gone (kernel ADR-061), and this release ships no
+replacement.** Until kernel 0.11.0 the Community HTTP dispatcher hardcoded a `/secure` prefix:
+anything beneath it required a token and a scope. That convention has been replaced by a declared
+`HttpRoutePolicy` which the application binds — and **this runtime does not bind one yet**. So a
+deployment that served routes under `/secure/...` and relied on the kernel to answer `401` for an
+anonymous caller now gets `200` instead. Nothing in this repository referenced the convention, so
+nothing here broke; the exposure is entirely on the deployment side, which is why it is stated here
+rather than buried in a list.
+
+What still protects those routes: Compatibility Mode's bearer-token authentication (ADR-041) is
+unaffected and still runs, and `@PreAuthorize` inside handlers is unaffected. What does not exist yet
+is a **per-path rule surface**. [ADR-063](docs/adr/ADR-063-exeris-http-security-route-policy-binding.md)
+(`ExerisHttpSecurity`) is accepted and specifies exactly that — it was blocked on this very pin and is
+now unblocked, but it is not in this release. Until it lands, express path-level authorization inside
+your handlers.
+
+Also note the kernel closed a related hole in the same release: on kernel 0.10.0/0.10.2, a route
+resolved to a **stream** handler never reached the admission check at all, so an SSE route under
+`/secure/...` was served to anonymous callers with no principal bound. If you ran streaming routes
+there on an earlier kernel, treat them as having been public.
+
+**`EventBus.publishAndAwait` runs handlers on the calling thread**, in subscription order. Durations
+now sum rather than overlap, and a slow handler delays its successors. The method always blocked until
+every handler finished — it now does that work instead of delegating it. `publish` is unchanged and
+remains the fan-out path. This preserves the `ScopedValue` contract: a handler observes every binding
+the publisher made, including ones the kernel cannot enumerate because they are yours, which no
+fork-based mechanism built on GA APIs can deliver.
+
+**`ImmutableStorageContext` gained a sixth component** (`sharedScopeKey`) without retaining the
+five-argument constructor, so code constructing that record directly must be recompiled. Prefer the
+`withSharedScope()` composer over the canonical constructor while the surface is `preview`.
+
+**A failed subsystem in a parallel boot phase throws `BootstrapException`** rather than the preview
+type `StructuredTaskScope.FailedException`. If you catch that preview type, remove it.
 
 ### Published artefacts
 
@@ -132,6 +179,19 @@ application does not pay for what it does not use.
 ### Hardening since the feature trains
 
 These landed after the last feature train and are the reason the snapshot line moved on:
+
+- **The kernel pin moved to 0.11.0, which closed the shutdown gap that held this release.** See
+  [Shutdown drains in-flight requests](#shutdown-drains-in-flight-requests) for what now holds and
+  [Kernel 0.11.0 — what the bump changes for you](#kernel-0110--what-the-bump-changes-for-you) for the
+  four consumer-visible changes it carries, one of them a security item.
+
+- **The JDK baseline moved 26 → 25 LTS and the preview flag is gone from the whole chain.** The old
+  requirement was inherited from a preview-compiled kernel rather than chosen, and it did not stop at
+  this runtime's boundary — `--enable-preview` is whole-compilation and whole-JVM, so it reached every
+  consumer's entire build and pinned them to one exact JDK. A CI gate now reads the published jars and
+  fails on any class off class-file major 69 or carrying a preview stamp, because that is a property
+  of what ships rather than of the compiler configuration; it fails rather than passes when it finds
+  no jars to scan.
 
 - **`@CompatibilityMode` now covers the whole compat surface.** The marker was declared in
   `exeris-spring-runtime-web`, and `data` and `actuator` — which both hold `*.compat.*` packages —
@@ -219,10 +279,11 @@ at least one downstream service has run it in production for a representative pe
   `GraphChurnRatioTck` Community binding is not yet gated in kernel CI. `GraphCursor` and a fluent query
   DSL do not exist in the kernel SPI and are out of scope here.
 - **No tracing.** Phase 3B-β (W3C `traceparent`) and 3B-γ (OTel span/metric emission) are blocked on
-  kernel work that has not shipped: kernel 0.10.2 has no `TraceContext` carrier and no
-  `PrometheusOtlpTelemetrySink`. `exeris.runtime.telemetry.tracing-enabled` is forwarded to the kernel
-  as configuration, but there is no Spring-side propagation or span-emission bridge in this release —
-  setting it does not produce spans.
+  kernel work that has not shipped: kernel 0.11.0 has no `TraceContext` carrier and no
+  `PrometheusOtlpTelemetrySink`, and the kernel places the carrier around Sprint 0.12 of its 1.0 GA
+  roadmap, so this is not near-term. `exeris.runtime.telemetry.tracing-enabled` is forwarded to the
+  kernel as configuration, but there is no Spring-side propagation or span-emission bridge in this
+  release — setting it does not produce spans.
 - **Spring Boot 4 is nominal compatibility, not a support commitment.** Both lines are built and
   tested in CI and one artefact serves both, but Spring Security 7 is out of scope (ADR-028
   obligation 6) and Compatibility Mode coverage on the SB4 line is only as broad as this repo's own
@@ -232,28 +293,33 @@ at least one downstream service has run it in production for a representative pe
   outside Exeris.
 - **Compatibility Mode is bounded, not "all of Spring works."** It covers what this repo consumes from
   the framework, nothing broader.
-- **No graceful drain of in-flight requests at shutdown.** See the operational note below — this one
-  affects how you configure deployments, not just what you can call.
+- **No per-path route authorization.** ADR-063 (`ExerisHttpSecurity`) is accepted and unblocked but
+  not implemented, and kernel 0.11.0 removed the `/secure` prefix convention it would replace. See
+  the kernel-bump section above — this is the one gap in this release with a security consequence.
 
-### Known operational gap — shutdown drops in-flight requests
+### Shutdown drains in-flight requests
 
-On the pinned kernel (0.10.2), a request that is in flight when shutdown begins has its connection
-closed **without a response**. Clients that retry idempotent requests see the retry refused, because the
-listener is already gone.
+A request in flight when shutdown begins **completes and is answered**. The kernel's stop path runs as
+three phases — close ingress, drain while the write path is still alive, then tear down — with a
+distinct `draining` state so the reactors keep serving after the listening socket has closed. Ingress
+stops answering new requests as soon as shutdown has run.
 
-The kernel does implement a drain — `PaqsScheduler.close()` waits for its active stream count to reach
-zero with a 60 s hard deadline — but on 0.10.2 it is sequenced last: after the transport has closed the
-listening socket and every live channel, and after the reactor threads that write responses have exited.
-It therefore waits on work that can no longer respond. Confirmed kernel-side on 2026-08-02 and reordered
-upstream in kernel **0.11.0**; this release predates that bump.
+This is worth stating explicitly because it was the gap that held this release, and because the
+guarantee is what deployment sizing depends on. Verified end-to-end on a real socket by
+`ExerisWireLevelRuntimeIntegrationTest#pureMode_shutdownDrainsInFlightRequest_beforeIngressBecomesUnavailable`,
+re-enabled at the 0.11.0 pin and confirmed across repeated runs rather than a single pass — against
+the previous kernel it failed 7 of 12 runs, so one green run was never going to be the evidence.
 
-**What to do about it:** do not size `terminationGracePeriodSeconds` on the assumption that a drain
-window protects these requests. Take the instance out of load balancer rotation and let in-flight work
-finish *before* sending SIGTERM. What this release does guarantee is that ingress stops answering once
-shutdown has run.
+**If you are pinning an older kernel yourself, this does not hold.** Up to and including 0.10.2 the
+drain ran *last* — after the transport had closed the listening socket and every live channel, and
+after the reactor threads that write responses had exited — so it waited on work that could no longer
+respond, and the request was dropped without one. On such a build, take the instance out of load
+balancer rotation and let in-flight work finish *before* sending SIGTERM, rather than sizing
+`terminationGracePeriodSeconds` against a drain window that will not protect it.
 
-The wire-level coverage for drain (`ExerisWireLevelRuntimeIntegrationTest#pureMode_shutdownDrains…`) is
-`@Disabled` against 0.10.2 rather than deleted, and is re-enabled when the kernel pin moves.
+One operational note that survives the fix: the drain carries a kernel-side 60 s hard deadline and is
+not configurable from Spring. `exeris.runtime.shutdown.timeout-seconds` bounds how long Spring waits to
+join the kernel boot thread — it is not an in-flight request budget.
 
 ### Known operational note — version skew across modules
 
