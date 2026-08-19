@@ -3,7 +3,7 @@
 **Repository:** `exeris-spring-runtime`  
 **Version:** see the root `pom.xml` `<version>` for the current development coordinate. Release train: `0.7.0` (Phase 4C graph seam is the highest landed train; see [`CHANGELOG.md`](../../CHANGELOG.md)).  
 **Status:** Phases 0 / 1 / 2 / 3 (3A + 3C) / 3B-α / 4A / 4B / 4C all closed. Outstanding for 1.0: Spring Boot 4 dual matrix (0.8.0 train, ADR-028), Phase 5 edge gateway (0.9.0 train, ADR-021), Phase 3B-β/γ (kernel-gated, ADR-031). See `docs/roadmap-1.0-trl9.md` for the full release-train view.  
-**Kernel target:** `exeris-kernel` 0.11.0 — the GA line of the kernel's two-track model, not the `0.11.0-preview` coordinate (Java 26 with `--enable-preview` at this commit; the JDK baseline moves in the follow-up slice)
+**Kernel target:** `exeris-kernel` 0.11.0 — the GA line of the kernel's two-track model, not the `0.11.0-preview` coordinate. **JDK 25 (LTS), no preview flag** anywhere in the chain: not at compile time, not on the test JVM, not on a consumer's.
 
 ---
 

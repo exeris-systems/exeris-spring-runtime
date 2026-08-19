@@ -82,12 +82,11 @@
                 ExerisWireLevelRuntimeIntegrationTest#pureMode_shutdownDrainsInFlightRequest_...
                 (6/6, stable across repeated runs; it failed 7 of 12 runs on 0.10.2).
              2. Preview. 0.10.2 was itself preview-compiled, so running against it required the
-                JVM preview flag on every consumer. 0.11.0 retires that requirement — but note
-                that `test.jvm.args` below still carries the flag at this commit. That is not an
-                oversight and not a contradiction to resolve here: removing it changes the
-                build-time contract (and the compiler release, and the CI JDK), which is a
-                separate reviewable decision and lands in the follow-up baseline slice. This
-                commit makes the removal *possible*; it does not make it.
+                JVM preview flag on every consumer. 0.11.0 retired that requirement, and the
+                baseline slice that followed acted on it: the compiler release moved to 25 and
+                `test.jvm.args` below carries no preview flag. Moving this pin back to a
+                preview-compiled kernel would therefore not merely be a downgrade — it would
+                fail to load, and the class-file baseline gate in CI is what says so out loud.
 
              Consumer-visible behaviour that changed with this bump, none of which required a
              source change here but all of which are real:
