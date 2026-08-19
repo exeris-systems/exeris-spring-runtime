@@ -79,6 +79,7 @@ Read `docs/architecture/kernel-integration-seams.md` before touching any of thes
 | `SubsystemProvider` / bootstrap | `ExerisRuntimeLifecycle` (`SmartLifecycle`) — Spring refresh → kernel bootstrap → `HttpServerEngine.start()` | `autoconfigure` |
 | `KernelProviders` (`ScopedValue` slots) | `ExerisContextHolder` | `web` |
 | `TelemetrySink` → Micrometer | `ExerisActuatorTelemetryBridge` (`MeterBinder`) | `actuator` |
+| `HttpRoutePolicy` (`HttpKernelProviders.HTTP_ROUTE_POLICY`) | `ExerisHttpSecurity` + `ExerisRoutePolicyCompiler` (ADR-063) — compiled at startup, bound by `ExerisRuntimeLifecycle`; the kernel decides, this runtime only compiles | `web` |
 | `PersistenceEngine` / `ConnectionFactory` | `ExerisPlatformTransactionManager`, `ExerisDataSource` (compat-only JDBC adapter) | `tx` / `data` |
 | `GraphEngine` / `GraphSession` (`KernelProviders.GRAPH_ENGINE`) | `ExerisGraphTemplate` + `@ExerisGraphQuery` (Phase 4C — opt-in via `exeris.runtime.graph.enabled`, kernel-gated GA per ADR-030) | `graph` |
 
