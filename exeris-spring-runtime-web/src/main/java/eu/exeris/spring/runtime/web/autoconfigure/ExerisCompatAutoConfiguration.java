@@ -78,11 +78,17 @@ public class ExerisCompatAutoConfiguration {
     // meant before: "stand down if the application declared its own JSON converter". On SB4 an
     // application-declared Jackson 3 converter does not suppress ours; both land in the list, which is
     // additive and picks by media type, so the effect is redundancy rather than conflict.
+    //
+    // The type argument is Object, not a wildcard: both converters the factory can return are
+    // Object-typed (MappingJackson2HttpMessageConverter extends AbstractGenericHttpMessageConverter
+    // <Object>; JacksonJsonHttpMessageConverter extends AbstractSmartHttpMessageConverter<Object>),
+    // and HttpMessageConverter<Object> still satisfies the List<HttpMessageConverter<?>> consumers.
     @Bean
     @Conditional(OnAnyJacksonPresentCondition.class)
     @ConditionalOnMissingBean(MappingJackson2HttpMessageConverter.class)
-    public HttpMessageConverter<?> exerisCompatJacksonConverter() {
-        return ExerisCompatJsonConverterFactory.create(getClass().getClassLoader())
+    @SuppressWarnings("unchecked") // safe per the note above: the factory only builds Object-typed converters
+    public HttpMessageConverter<Object> exerisCompatJacksonConverter() {
+        return (HttpMessageConverter<Object>) ExerisCompatJsonConverterFactory.create(getClass().getClassLoader())
                 .orElseThrow(() -> new IllegalStateException(
                         "A Jackson databind is on the classpath but no matching Spring JSON converter "
                                 + "could be constructed. Declare an HttpMessageConverter bean explicitly."));

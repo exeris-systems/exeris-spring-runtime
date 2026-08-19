@@ -8,6 +8,7 @@ package eu.exeris.spring.runtime.web.compat.resolver;
 
 import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
+import java.io.IOException;
 import java.lang.annotation.Annotation;
 import java.util.ArrayList;
 import java.util.List;
@@ -100,7 +101,7 @@ public final class ExerisRequestBodyArgumentResolver implements HandlerMethodArg
                              MethodParameter parameter,
                              Class<?> targetType,
                              MediaType primaryContentType,
-                             @Nullable MediaType declaredContentType) throws Exception {
+                             @Nullable MediaType declaredContentType) throws IOException {
         List<MediaType> supportedTypes = new ArrayList<>();
         for (HttpMessageConverter<?> converter : converters) {
             if (converter.canRead(targetType, primaryContentType)) {

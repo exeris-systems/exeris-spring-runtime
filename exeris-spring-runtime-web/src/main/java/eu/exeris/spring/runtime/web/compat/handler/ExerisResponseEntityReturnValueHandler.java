@@ -17,6 +17,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.web.context.request.NativeWebRequest;
+import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.method.support.HandlerMethodReturnValueHandler;
 import org.springframework.web.method.support.ModelAndViewContainer;
 
@@ -57,7 +58,7 @@ public final class ExerisResponseEntityReturnValueHandler implements HandlerMeth
         ExerisMvcServerHttpResponse springResponse = (ExerisMvcServerHttpResponse)
         webRequest.getAttribute(
             ExerisCompatAttributes.SPRING_RESPONSE_ATTRIBUTE,
-            NativeWebRequest.SCOPE_REQUEST);
+            RequestAttributes.SCOPE_REQUEST);
         if (springResponse == null) {
             throw new IllegalStateException("No ExerisMvcServerHttpResponse in request attributes");
         }

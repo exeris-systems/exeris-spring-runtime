@@ -15,6 +15,7 @@ import org.springframework.core.MethodParameter;
 import org.springframework.core.convert.ConversionService;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.context.request.NativeWebRequest;
+import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.method.support.ModelAndViewContainer;
 
@@ -71,7 +72,7 @@ public final class ExerisPathVariableArgumentResolver implements HandlerMethodAr
         }
 
         Object vars = webRequest.getAttribute(ExerisHandlerMethodRegistry.PATH_VARIABLES_ATTRIBUTE,
-                NativeWebRequest.SCOPE_REQUEST);
+                RequestAttributes.SCOPE_REQUEST);
         if (!(vars instanceof Map)) {
             throw new IllegalStateException("No path variables in request — expected Map at attribute '"
                     + ExerisHandlerMethodRegistry.PATH_VARIABLES_ATTRIBUTE + "'");

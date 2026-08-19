@@ -14,7 +14,6 @@ import org.springframework.http.server.ServerHttpAsyncRequestControl;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.lang.NonNull;
-import org.springframework.lang.Nullable;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -81,10 +80,11 @@ public final class ExerisMvcServerHttpRequest implements ServerHttpRequest {
     }
 
     @Override
-    @Nullable
-    @SuppressWarnings("null") // widens Spring's @NonNullApi return; matches what
-    // servlet / reactor-netty adapters do when the underlying transport doesn't
-    // expose the bound socket.
+    // Deliberately NOT annotated @Nullable: ServerHttpRequest is declared under Spring's
+    // @NonNullApi package, so a @Nullable override would widen the inherited contract.
+    // We keep the contract as Spring declares it and document the deviation here instead —
+    // same treatment as getPrincipal() above.
+    @SuppressWarnings("null")
     public InetSocketAddress getLocalAddress() {
         // Kernel HttpRequest does not expose the bound local socket address.
         // The Host header is the requested authority, not the bound interface,
@@ -94,10 +94,11 @@ public final class ExerisMvcServerHttpRequest implements ServerHttpRequest {
     }
 
     @Override
-    @Nullable
-    @SuppressWarnings("null") // widens Spring's @NonNullApi return; null is the
-    // honest answer when no forwarding headers are present and the kernel SPI
-    // does not expose raw socket peer.
+    // Deliberately NOT annotated @Nullable, for the reason given on getLocalAddress():
+    // the inherited declaration is non-null and an override must not widen it. null is
+    // still the honest answer when no forwarding headers are present and the kernel SPI
+    // does not expose the raw socket peer.
+    @SuppressWarnings("null")
     public InetSocketAddress getRemoteAddress() {
         // Compatibility mode resolves the client address from standard reverse-proxy
         // forwarding headers (Forwarded / X-Forwarded-For / X-Real-IP). In real
