@@ -42,6 +42,19 @@ permissions:
 
 jobs:
   verify:
+    # ⚠️ This `name:` is a REQUIRED STATUS CHECK on `main`, by exact string. Branch protection
+    # matches contexts by name, not by job id — so renaming this job silently retires the context
+    # it was registered under. The old name is then never reported again, protection waits forever
+    # for a check that cannot arrive, and EVERY subsequent PR to `main` is blocked. It does not
+    # fail loudly; it hangs.
+    #
+    # This happened: the baseline slice renamed this job from "mvn verify (JDK 26,
+    # --enable-preview, …)" and blocked its own merge. The rename was correct — the old name had
+    # become a lie — but the settings change that has to accompany it is invisible from the diff.
+    #
+    # If you change this string, update the required contexts in the same change:
+    #   Settings → Branches → main → Require status checks
+    # Both matrix legs are separate contexts; both must be updated.
     name: mvn verify (JDK 25 LTS, ${{ matrix.spring-boot-line }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
