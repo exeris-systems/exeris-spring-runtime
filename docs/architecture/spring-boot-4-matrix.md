@@ -3,11 +3,12 @@
 Working document for the ADR-028 dual-matrix work. ADR-028 is the decision; this file records **what
 the SB4 line actually costs**, measured rather than anticipated, and what has landed.
 
-> **Release train.** ADR-028 scheduled this for `0.8.0-preview`. It is landing in **0.7.0**, because
-> 0.7.0 has not been tagged — it is held for the kernel 0.11 drain fix
-> ([`exeris-kernel#282`](https://github.com/exeris-systems/exeris-kernel/issues/282)) — so work merged
-> now ships there. The ADR's train label is a scheduling estimate, not a decision; recorded here rather
-> than silently relabelled in the ADR.
+> **Release train.** ADR-028 scheduled this for `0.8.0-preview`; it ships in **0.7.0**. The reason is
+> mundane: 0.7.0 stayed untagged for weeks while it was held for the kernel drain fix
+> ([`exeris-kernel#282`](https://github.com/exeris-systems/exeris-kernel/issues/282), closed in kernel
+> 0.11.0), so work merged in the meantime ships in it. The hold has since been lifted and the pin has
+> moved. The ADR's train label is a scheduling estimate, not a decision; recorded here rather than
+> silently relabelled in the ADR.
 
 | | |
 |:---|:---|

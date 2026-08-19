@@ -2,7 +2,7 @@
 
 **Repository:** `exeris-spring-runtime`  
 **Version:** see the root `pom.xml` `<version>` for the current development coordinate. Release train: `0.7.0` (Phase 4C graph seam is the highest landed train; see [`CHANGELOG.md`](../../CHANGELOG.md)).  
-**Status:** Phases 0 / 1 / 2 / 3 (3A + 3C) / 3B-α / 4A / 4B / 4C all closed. Outstanding for 1.0: Spring Boot 4 dual matrix (0.8.0 train, ADR-028), Phase 5 edge gateway (0.9.0 train, ADR-021), Phase 3B-β/γ (kernel-gated, ADR-031). See `docs/roadmap-1.0-trl9.md` for the full release-train view.  
+**Status:** Phases 0 / 1 / 2 / 3 (3A + 3C) / 3B-α / 4A / 4B / 4C all closed, and the Spring Boot 4 dual matrix has landed (ADR-028; it merged into the untagged 0.7.0 rather than the 0.8.0 train the ADR estimated). Outstanding for 1.0: Phase 5 edge gateway (0.9.0 train, ADR-021), Phase 3B-β/γ (kernel-gated, ADR-031), and per-path route authorization (ADR-063 — accepted, unblocked by the kernel 0.11.0 pin, not yet implemented). See `docs/roadmap-1.0-trl9.md` for the full release-train view.  
 **Kernel target:** `exeris-kernel` 0.11.0 — the GA line of the kernel's two-track model, not the `0.11.0-preview` coordinate. **JDK 25 (LTS), no preview flag** anywhere in the chain: not at compile time, not on the test JVM, not on a consumer's.
 
 ---
@@ -111,7 +111,8 @@ Interpretation rules:
 - **Phase 3B-α** adds request scope + structured concurrency on `ScopedValue` (ADR-029). Kernel-independent.
 - **Phase 3B-β/γ** add W3C `traceparent` propagation and OTel emission (ADR-031). **Kernel-gated** — waits
   on the kernel `TraceContext`/`ScopedValue` slot and `PrometheusOtlpTelemetrySink`; neither shipped as of
-  kernel 0.10.2.
+  the pinned kernel 0.11.0. The kernel places the `TraceContext` carrier in its consolidated 1.0 GA
+  roadmap around Sprint 0.12, so this is not near-term.
 - **Phase 4A / 4B / 4C** add the events, flow/saga, and graph seams — each a separate opt-in module,
   each default-off (ADR-027, ADR-030).
 - **Phase 5** adds the edge gateway (ADR-021). Not started; it is **not** a Spring Cloud Gateway bridge.
@@ -289,11 +290,12 @@ All integration code is adjacent to the kernel hot path. The following invariant
 | Phase 2 | Closed (2026-05-09) | Compatibility-mode `@RestController` bridge, no `DispatcherServlet` |
 | Phase 3A / 3C | Closed (2026-05-09) | `ExerisPlatformTransactionManager`; ADR-017-bounded JDBC bridge |
 | Phase 3B-α | Closed (2026-05-17) | Request scope + structured concurrency (ADR-029) |
-| Phase 3B-β / γ | **Kernel-gated** | Waits on kernel `TraceContext` slot / OTLP sink (ADR-031) — absent in kernel 0.10.2 |
+| Phase 3B-β / γ | **Kernel-gated** | Waits on kernel `TraceContext` slot / OTLP sink (ADR-031) — still absent in the pinned kernel 0.11.0 |
 | Phase 4A | Closed (2026-05-09) | Events seam, preview default-off |
 | Phase 4B | Closed (2026-05-11) | Flow/saga seam + durable snapshots, preview default-off |
 | Phase 4C | Closed (2026-05-17) | Graph seam, preview default-off, GA kernel-gated (ADR-030) |
-| SB4 matrix | Not started | Spring Boot 4 dual matrix (ADR-028), 0.8.0 train |
+| SB4 matrix | Landed | Spring Boot 4 dual matrix (ADR-028) — both lines build and test in CI on every push, plus an ADR-067 `binary-neutrality` job comparing Spring call-site descriptors across the two lines. Ships in 0.7.0, not the 0.8.0 train the ADR estimated. **Nominal compatibility, not a support commitment**: Spring Security 7 is a separate axis (ADR-028 obligation 6) |
+| ADR-063 route authorization | Accepted, not implemented | `ExerisHttpSecurity` compiles per-path rules onto the kernel `HttpRoutePolicy`. Was blocked on the kernel pin; unblocked by 0.11.0. Until it lands, a migrating application has no per-path rule surface — and kernel 0.11.0 also removed the Community driver's `/secure` prefix convention |
 | Phase 5 | Not started | Edge gateway (ADR-021), 0.9.0 train |
 
 "Closed" means the phase invariants are captured and green — **not** that the module is GA. Phases 4A–4C
