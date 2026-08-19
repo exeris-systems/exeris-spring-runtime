@@ -1,4 +1,5 @@
 eu.exeris.spring.runtime.web.autoconfigure.ExerisSecurityErrorMappingAutoConfiguration
 eu.exeris.spring.runtime.web.autoconfigure.ExerisWebAutoConfiguration
+eu.exeris.spring.runtime.web.autoconfigure.ExerisHttpSecurityAutoConfiguration
 eu.exeris.spring.runtime.web.autoconfigure.ExerisCompatJwtDecoderAutoConfiguration
 eu.exeris.spring.runtime.web.autoconfigure.ExerisCompatAutoConfiguration
