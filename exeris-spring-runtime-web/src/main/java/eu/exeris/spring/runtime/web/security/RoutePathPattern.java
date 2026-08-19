@@ -46,18 +46,36 @@ import java.util.Objects;
  */
 final class RoutePathPattern {
 
-    /** Matches one non-empty segment. Identity-compared, so it must be interned — a literal is. */
-    private static final String SINGLE = "*";
+    /** Segment kinds, held out of band so matching never compares strings by identity. */
+    private static final byte LITERAL = 0;
+    private static final byte SINGLE = 1;
+    private static final byte MULTI = 2;
 
-    /** Matches the remainder of the path. Only legal as the final segment. */
-    private static final String MULTI = "**";
+    private static final String SINGLE_TOKEN = "*";
+    private static final String MULTI_TOKEN = "**";
 
     private final String pattern;
-    private final String[] segments;
 
-    private RoutePathPattern(String pattern, String[] segments) {
+    /**
+     * Parallel arrays rather than a segment object per element, and a {@code byte} kind rather than a
+     * sentinel string.
+     *
+     * <p>An earlier version stored the wildcards as interned string constants and compared them with
+     * {@code ==} on the hot path. That was correct — and its correctness rested on an invariant nothing
+     * enforced: that every wildcard entry is the exact constant instance. One future code path putting
+     * an equal-but-distinct string into the array would have made a wildcard silently stop matching,
+     * which for a rule that grants access is a lockout and for one that demands a scope is a hole. The
+     * kind is now data, so there is no invariant left to break.
+     */
+    private final byte[] kinds;
+
+    /** Literal text per segment; {@code null} where the kind is a wildcard. */
+    private final String[] literals;
+
+    private RoutePathPattern(String pattern, byte[] kinds, String[] literals) {
         this.pattern = pattern;
-        this.segments = segments;
+        this.kinds = kinds;
+        this.literals = literals;
     }
 
     /**
@@ -84,7 +102,7 @@ final class RoutePathPattern {
         if ("/".equals(pattern)) {
             // The root has no segments. Handled before the loop because the loop reads "/x" pairs and
             // would see a trailing empty segment here — which is the error a trailing slash raises.
-            return new RoutePathPattern(pattern, new String[0]);
+            return new RoutePathPattern(pattern, new byte[0], new String[0]);
         }
 
         List<String> parsed = new ArrayList<>();
@@ -99,16 +117,28 @@ final class RoutePathPattern {
                 throw new IllegalArgumentException(
                         "Route pattern must not contain an empty segment: " + pattern);
             }
-            parsed.add(MULTI.equals(segment) ? MULTI : SINGLE.equals(segment) ? SINGLE : segment);
+            parsed.add(segment);
             position = end;
         }
-        for (int i = 0; i < parsed.size() - 1; i++) {
-            if (MULTI.equals(parsed.get(i))) {
-                throw new IllegalArgumentException(
-                        "'**' is only allowed as the final segment of a route pattern: " + pattern);
+
+        byte[] kinds = new byte[parsed.size()];
+        String[] literals = new String[parsed.size()];
+        for (int i = 0; i < parsed.size(); i++) {
+            String segment = parsed.get(i);
+            if (MULTI_TOKEN.equals(segment)) {
+                if (i != parsed.size() - 1) {
+                    throw new IllegalArgumentException(
+                            "'**' is only allowed as the final segment of a route pattern: " + pattern);
+                }
+                kinds[i] = MULTI;
+            } else if (SINGLE_TOKEN.equals(segment)) {
+                kinds[i] = SINGLE;
+            } else {
+                kinds[i] = LITERAL;
+                literals[i] = segment;
             }
         }
-        return new RoutePathPattern(pattern, parsed.toArray(new String[0]));
+        return new RoutePathPattern(pattern, kinds, literals);
     }
 
     /**
@@ -124,15 +154,14 @@ final class RoutePathPattern {
             return false;
         }
         int end = pathEnd(target);
-        if (segments.length == 0) {
+        if (kinds.length == 0) {
             // The root pattern. The leading '/' is already verified, so the whole path must be it.
             return end == 1;
         }
 
         int position = 0;
-        for (String segment : segments) {
-            //noinspection StringEquality — interned sentinels, compared by identity on the hot path
-            if (segment == MULTI) {
+        for (int i = 0; i < kinds.length; i++) {
+            if (kinds[i] == MULTI) {
                 return true;
             }
             if (position >= end || target.charAt(position) != '/') {
@@ -140,14 +169,14 @@ final class RoutePathPattern {
             }
             int start = position + 1;
             int segmentEnd = nextSlash(target, start, end);
-            //noinspection StringEquality — see above
-            if (segment == SINGLE) {
+            if (kinds[i] == SINGLE) {
                 if (segmentEnd == start) {
                     return false;
                 }
             } else {
+                String literal = literals[i];
                 int length = segmentEnd - start;
-                if (length != segment.length() || !target.regionMatches(start, segment, 0, length)) {
+                if (length != literal.length() || !target.regionMatches(start, literal, 0, length)) {
                     return false;
                 }
             }
