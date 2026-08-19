@@ -78,14 +78,25 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Set release version
+      # versions:set rewrites the poms in the working tree without committing. The commit here
+      # is what makes the tag below mean anything: it tags the tree that produced the artefacts
+      # rather than the tree that happened to be checked out. Without it `git tag` names HEAD —
+      # the pre-rewrite commit — so `git checkout v0.7.0` hands you poms declaring the previous
+      # SNAPSHOT while the artefacts published under that tag say otherwise.
+      #
+      # The commit is deliberately NOT pushed to a branch. `main` is protected by a ruleset
+      # requiring pull requests, and a release commit is not something to smuggle past it.
+      # Pushing the tag carries the commit's objects, so it stays reachable by tag — which is
+      # what a release tag is for. `main` gets the next-snapshot bump instead, further down.
+      - name: Set release version and commit it
         if: github.event_name == 'workflow_dispatch' && inputs.releaseVersion != ''
-        run: >
-          mvn -B -ntp -s .github/maven-settings.xml
-          versions:set
-          -DnewVersion=${{ inputs.releaseVersion }}
-          -DgenerateBackupPoms=false
-          -DprocessAllModules=true
+        run: |
+          mvn -B -ntp -s .github/maven-settings.xml versions:set \
+            -DnewVersion=${{ inputs.releaseVersion }} \
+            -DgenerateBackupPoms=false \
+            -DprocessAllModules=true
+          git add -A
+          git commit -m "release: v${{ inputs.releaseVersion }}"
 
       - name: Build, test, deploy
         run: >
@@ -99,13 +110,39 @@ jobs:
           git tag -a "v${{ inputs.releaseVersion }}" -m "Release ${{ inputs.releaseVersion }}"
           git push origin "v${{ inputs.releaseVersion }}"
 
+      # Computed from the branch, not from the release commit. The bump belongs on the branch's
+      # own history, and building it on top of an unpushed release commit would drag that commit
+      # onto `main` as a side effect.
+      #
+      # This push can legitimately be refused: `main` is protected, and github-actions[bot] is
+      # neither an OrganizationAdmin nor a holder of the admin role — the only bypass actors.
+      # That is the protection working, not a bug to route around. The bug would be losing the
+      # information, so a refusal says exactly what did and did not happen and fails the job.
+      # By that point the release is published and tagged; only the bump is outstanding, and it
+      # is a one-line PR. Re-running the workflow would try to publish an existing version.
       - name: Bump to next snapshot
         if: github.event_name == 'workflow_dispatch' && inputs.releaseVersion != '' && inputs.nextSnapshotVersion != ''
         run: |
+          git reset --hard "origin/${{ github.ref_name }}"
           mvn -B -ntp -s .github/maven-settings.xml versions:set \
             -DnewVersion=${{ inputs.nextSnapshotVersion }} \
             -DgenerateBackupPoms=false \
             -DprocessAllModules=true
           git add -A
           git commit -m "chore: bump to ${{ inputs.nextSnapshotVersion }} after ${{ inputs.releaseVersion }}"
-          git push origin HEAD:${{ github.ref_name }}
+          if git push origin "HEAD:${{ github.ref_name }}"; then
+            echo "Bumped \`${{ github.ref_name }}\` to \`${{ inputs.nextSnapshotVersion }}\`." >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### Release published — snapshot bump refused"
+              echo ""
+              echo "\`v${{ inputs.releaseVersion }}\` **is published and tagged.** Do not re-run this workflow."
+              echo ""
+              echo "Pushing the next-snapshot bump to \`${{ github.ref_name }}\` was refused — almost"
+              echo "certainly branch protection, since github-actions[bot] is not a bypass actor."
+              echo ""
+              echo "Finish by hand: set the version to \`${{ inputs.nextSnapshotVersion }}\` and open a PR."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::Release v${{ inputs.releaseVersion }} IS published and tagged. Only the ${{ inputs.nextSnapshotVersion }} bump failed to push to ${{ github.ref_name }}. Do NOT re-run this workflow — open a version-bump PR instead."
+            exit 1
+          fi
