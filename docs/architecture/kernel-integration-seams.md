@@ -30,6 +30,7 @@ EventEngine / EventBus   →    ExerisEventPublisher/Registrar     →    @Exeri
 FlowEngine               →    ExerisFlowTemplate/Registrar       →    @ExerisFlowDefinition beans
 FlowChoreographyMapper   →    ExerisFlowChoreographyBridge       →    ExerisFlowChoreographyMapper beans
 GraphEngine / GraphSession →  ExerisGraphTemplate                →    @ExerisGraphQuery beans
+HttpRoutePolicy          →    ExerisRoutePolicyCompiler          →    ExerisHttpSecurity bean
 PersistenceProvider      →    ExerisPersistenceAdapter           →    DataSource / @Transactional
 ```
 
@@ -489,6 +490,62 @@ Mappers receive only the `EventDescriptor` (routing metadata) — no payload, no
 reference. Payload-based logic belongs in `@ExerisEventListener` methods on the events
 module side. This keeps choreography mappers implementation-blind to broker types and
 makes the choreography decision a routing decision, not an event-handling decision.
+
+---
+
+## Seam 10: Route Authorization Policy (ADR-063)
+
+**Kernel SPI:** `eu.exeris.kernel.spi.http.HttpRoutePolicy`, bound into
+`HttpKernelProviders.HTTP_ROUTE_POLICY` (a `ScopedValue`).
+
+```java
+@FunctionalInterface
+public interface HttpRoutePolicy {
+    RouteRequirement requirementFor(HttpMethod method, String path);
+}
+```
+
+**Contract:**
+- Read on the kernel's **admission path**, for every request, ahead of the dispatcher.
+- Must be **allocation-free** — no per-call parsing, boxing, or `RouteRequirement` construction.
+- `RouteRequirement` has four kinds: `PERMIT_ALL`, `AUTHENTICATED`, `ANY_SCOPE`, `ALL_SCOPES`. There is
+  no role kind, and `RouteAuthorizationEnforcer` evaluates only `PrincipalContext.hasScope(...)`.
+- The slot being **unbound means no per-route requirement** — it fails open, which is why the binding
+  is asserted rather than assumed.
+
+**Integration strategy:**
+
+An application declares an `ExerisHttpSecurity` bean. `ExerisRoutePolicyCompiler` compiles it **once at
+startup** into a `CompiledHttpRoutePolicy`, published as the kernel SPI type by
+`ExerisHttpSecurityAutoConfiguration`. `ExerisRuntimeLifecycle` binds that into the slot around
+`KernelBootstrap.boot(...)`.
+
+```
+ExerisHttpSecurity bean (application, in `web`)
+    → ExerisRoutePolicyCompiler.compile()          ← the single compilation seam
+        → HttpRoutePolicy bean (kernel SPI type)
+            → ExerisRuntimeLifecycle binds HTTP_ROUTE_POLICY
+                → kernel admission path: RouteAuthorizationEnforcer.decide(...)
+                    → ADMIT → dispatcher → Spring handler
+                    → UNAUTHENTICATED → 401  (never reaches Spring)
+                    → FORBIDDEN       → 403  (never reaches Spring)
+```
+
+**Why the bean crossing the module boundary is a kernel type.** The binding happens in
+`exeris-spring-boot-autoconfigure`, and `autoconfigure → web` is a banned edge. So `web` publishes
+`HttpRoutePolicy` and the lifecycle injects `Optional<HttpRoutePolicy>` without knowing `web` exists —
+the same shape already used for `HttpHandler`. Only the compiled kernel contract travels.
+
+**The decision is the kernel's.** No production class under `eu.exeris.spring.runtime.web..` references
+`RouteAuthorizationEnforcer`, enforced by `RoutePolicyArchitectureTest`. ADR-061 placed that enforcer in
+kernel Core so a Spring-side DSL would translate onto it rather than growing a rival mechanism.
+
+**`path` is the raw request target**, query string included — the same contract detail that governs
+route lookup in Seam 1. Matching must be bounded at the `?`, and bounded by index, since a substring
+would breach the allocation requirement above.
+
+**Mode:** mode-neutral. Governs ingress for Pure and Compatibility Mode alike; deliberately not a
+`*.compat.*` type.
 
 ---
 

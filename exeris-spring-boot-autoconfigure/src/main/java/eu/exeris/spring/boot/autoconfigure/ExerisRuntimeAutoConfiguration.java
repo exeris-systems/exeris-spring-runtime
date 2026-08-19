@@ -7,6 +7,7 @@
 package eu.exeris.spring.boot.autoconfigure;
 
 import eu.exeris.kernel.spi.http.HttpHandler;
+import eu.exeris.kernel.spi.http.HttpRoutePolicy;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -56,7 +57,8 @@ public class ExerisRuntimeAutoConfiguration {
     public ExerisRuntimeLifecycle exerisRuntimeLifecycle(
             ExerisRuntimeProperties properties,
             ExerisSpringConfigProvider configProvider,
-            Optional<HttpHandler> httpHandler) {
-        return new ExerisRuntimeLifecycle(properties, configProvider, httpHandler);
+            Optional<HttpHandler> httpHandler,
+            Optional<HttpRoutePolicy> httpRoutePolicy) {
+        return new ExerisRuntimeLifecycle(properties, configProvider, httpHandler, httpRoutePolicy);
     }
 }

@@ -27,6 +27,7 @@ import eu.exeris.kernel.spi.flow.FlowEngine;
 import eu.exeris.kernel.spi.graph.GraphEngine;
 import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpKernelProviders;
+import eu.exeris.kernel.spi.http.HttpRoutePolicy;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 
@@ -114,6 +115,16 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
     private final ExerisRuntimeProperties properties;
     private final ExerisSpringConfigProvider configProvider;
     private final Optional<HttpHandler> httpHandler;
+    /**
+     * Compiled per-route authorization policy, if the application declared one (ADR-063).
+     *
+     * <p>Injected as the kernel SPI type rather than as {@code ExerisHttpSecurity}: the DSL and its
+     * compiler live in {@code exeris-spring-runtime-web}, and {@code autoconfigure -> web} is a banned
+     * dependency edge. Only the compiled kernel contract crosses the boundary — the same shape already
+     * used for {@link HttpHandler}. Empty means the slot is left unbound and the kernel applies no
+     * per-route requirement (ADR-063 obligation 6).
+     */
+    private final Optional<HttpRoutePolicy> httpRoutePolicy;
     private final Object lifecycleMonitor = new Object();
 
     private volatile boolean running = false;
@@ -177,12 +188,24 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
      */
     private final AtomicReference<MemoryAllocator> capturedMemoryAllocator = new AtomicReference<>();
 
+    /**
+     * Retained overload for callers predating the route-policy seam (ADR-063). Binds no policy,
+     * which is the same thing as an application declaring no {@code ExerisHttpSecurity} bean.
+     */
     public ExerisRuntimeLifecycle(ExerisRuntimeProperties properties,
                                    ExerisSpringConfigProvider configProvider,
                                    Optional<HttpHandler> httpHandler) {
+        this(properties, configProvider, httpHandler, Optional.empty());
+    }
+
+    public ExerisRuntimeLifecycle(ExerisRuntimeProperties properties,
+                                   ExerisSpringConfigProvider configProvider,
+                                   Optional<HttpHandler> httpHandler,
+                                   Optional<HttpRoutePolicy> httpRoutePolicy) {
         this.properties = properties;
         this.configProvider = configProvider;
         this.httpHandler = httpHandler;
+        this.httpRoutePolicy = httpRoutePolicy;
     }
 
     @Override
@@ -437,17 +460,31 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
             awaitStopSignal(releaseSignal);
         };
 
-        if (httpHandler.isEmpty()) {
+        // Both seams are optional and independent, so the carrier is built up rather than branched
+        // over: two Optionals is four combinations, and an if/else tree for them is where a slot
+        // quietly stops being bound. An unbound slot fails as "no policy" — i.e. open — so the
+        // structure that makes it hard to drop one is worth more than the brevity.
+        ScopedValue.Carrier carrier = null;
+        if (httpHandler.isPresent()) {
+            carrier = ScopedValue.where(HttpKernelProviders.HTTP_SERVER_HANDLER, httpHandler.get());
+        }
+        if (httpRoutePolicy.isPresent()) {
+            carrier = carrier == null
+                    ? ScopedValue.where(HttpKernelProviders.HTTP_ROUTE_POLICY, httpRoutePolicy.get())
+                    : carrier.where(HttpKernelProviders.HTTP_ROUTE_POLICY, httpRoutePolicy.get());
+        }
+
+        if (carrier == null) {
             kernelBootstrap.boot(holdKernelScopeOpen);
             return;
         }
 
+        ScopedValue.Carrier boundSeams = carrier;
         try {
-            ScopedValue.where(HttpKernelProviders.HTTP_SERVER_HANDLER, httpHandler.get())
-                    .call(() -> {
-                        kernelBootstrap.boot(holdKernelScopeOpen);
-                        return null;
-                    });
+            boundSeams.call(() -> {
+                kernelBootstrap.boot(holdKernelScopeOpen);
+                return null;
+            });
         } catch (Exception ex) {
             if (ex instanceof KernelBootstrap.BootstrapException bootstrapException) {
                 throw bootstrapException;
@@ -455,7 +492,7 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
             if (ex instanceof RuntimeException runtimeException) {
                 throw runtimeException;
             }
-            throw new IllegalStateException("Exeris runtime startup failed while binding the kernel HTTP handler seam", ex);
+            throw new IllegalStateException("Exeris runtime startup failed while binding the kernel HTTP seams", ex);
         }
     }
 
