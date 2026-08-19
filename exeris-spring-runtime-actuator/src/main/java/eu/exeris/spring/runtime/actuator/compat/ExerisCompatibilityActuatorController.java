@@ -19,6 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 /**
  * Compatibility-mode HTTP diagnostics endpoint for Exeris-hosted applications.
@@ -31,6 +32,7 @@ import java.util.Objects;
  * and the safe alias {@code /health}. Runtime info remains under {@code /actuator/info}.
  */
 @RestController
+@CompatibilityMode
 public final class ExerisCompatibilityActuatorController {
 
     private final ExerisRuntimeHealthIndicator healthIndicator;

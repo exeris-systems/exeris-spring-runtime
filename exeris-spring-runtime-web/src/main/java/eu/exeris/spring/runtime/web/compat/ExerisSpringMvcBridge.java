@@ -20,6 +20,7 @@ import eu.exeris.kernel.spi.http.HttpExchange;
 import eu.exeris.spring.runtime.web.ExerisServerRequest;
 import eu.exeris.spring.runtime.web.ExerisServerResponse;
 import eu.exeris.spring.runtime.web.compat.context.ExerisThreadLocalBridge;
+import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 /**
  * Compatibility-mode dispatch bridge between the Exeris request model and the Spring

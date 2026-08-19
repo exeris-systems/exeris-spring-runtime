@@ -30,6 +30,7 @@ import org.springframework.web.util.pattern.PathPattern;
 import org.springframework.web.util.pattern.PathPatternParser;
 
 import eu.exeris.kernel.spi.http.HttpMethod;
+import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 /**
  * Compatibility-mode registry that scans {@code @Controller}/{@code @RestController} beans

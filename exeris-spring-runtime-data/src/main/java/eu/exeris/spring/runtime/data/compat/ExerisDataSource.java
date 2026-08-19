@@ -19,6 +19,7 @@ import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
 import java.util.Optional;
 import java.util.logging.Logger;
+import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 /**
  * Compatibility-mode {@link DataSource} adapter for the Exeris JDBC compatibility bridge.
@@ -51,6 +52,7 @@ import java.util.logging.Logger;
  * @since 0.1.0
  * @see ExerisConnectionProxy
  */
+@CompatibilityMode
 public final class ExerisDataSource implements DataSource {
 
     // =========================================================================

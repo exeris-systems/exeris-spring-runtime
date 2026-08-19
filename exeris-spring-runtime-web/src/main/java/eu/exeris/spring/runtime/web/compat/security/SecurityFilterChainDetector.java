@@ -6,7 +6,7 @@
  */
 package eu.exeris.spring.runtime.web.compat.security;
 
-import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
+import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 import org.springframework.beans.factory.FactoryBean;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
@@ -81,10 +81,13 @@ public final class SecurityFilterChainDetector {
         try {
             Class<?> beanType = beanFactory.getType(beanName, false);
             return beanType != null && SECURITY_FILTER_CHAIN_TYPE.equals(beanType.getName());
-        } catch (Throwable _) {
+        } catch (Exception | LinkageError _) {
             // Type introspection can fail for beans whose declared types are servlet-only and
             // absent from this classpath — which is precisely the situation this runtime creates.
             // A failure to resolve is not evidence of a chain, so treat it as "no match".
+            // LinkageError (NoClassDefFoundError) is that exact failure mode, so it is caught
+            // alongside Exception rather than by a blanket Throwable that would also swallow
+            // VM errors such as OutOfMemoryError.
             return false;
         }
     }

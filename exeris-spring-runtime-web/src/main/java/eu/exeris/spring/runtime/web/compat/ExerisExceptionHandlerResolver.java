@@ -8,6 +8,7 @@ package eu.exeris.spring.runtime.web.compat;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -27,10 +28,12 @@ import org.springframework.lang.NonNull;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.context.request.NativeWebRequest;
+import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.method.support.HandlerMethodArgumentResolverComposite;
 import org.springframework.web.method.support.InvocableHandlerMethod;
 import org.springframework.web.method.support.ModelAndViewContainer;
+import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 /**
  * Compatibility-mode exception handler resolver. Checks controller-local
@@ -151,9 +154,7 @@ public final class ExerisExceptionHandlerResolver implements ApplicationContextA
     @SuppressWarnings("unchecked")
     private static List<Class<? extends Throwable>> resolveHandledTypes(Method method, ExceptionHandler annotation) {
         LinkedHashSet<Class<? extends Throwable>> handledTypes = new LinkedHashSet<>();
-        for (Class<? extends Throwable> declaredType : annotation.value()) {
-            handledTypes.add(declaredType);
-        }
+        Collections.addAll(handledTypes, annotation.value());
         if (handledTypes.isEmpty()) {
             for (Class<?> parameterType : method.getParameterTypes()) {
                 if (Throwable.class.isAssignableFrom(parameterType)) {
@@ -215,7 +216,7 @@ public final class ExerisExceptionHandlerResolver implements ApplicationContextA
         webRequest.setAttribute(
             ExerisCompatAttributes.SPRING_RESPONSE_ATTRIBUTE,
             springResponse,
-            NativeWebRequest.SCOPE_REQUEST);
+            RequestAttributes.SCOPE_REQUEST);
 
         Object returnValue = ihm.invokeForRequest(webRequest, mavContainer, ex);
 

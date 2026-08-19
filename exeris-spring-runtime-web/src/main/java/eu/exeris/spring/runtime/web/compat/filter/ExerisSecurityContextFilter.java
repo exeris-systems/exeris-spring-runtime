@@ -6,7 +6,7 @@
  */
 package eu.exeris.spring.runtime.web.compat.filter;
 
-import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
+import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.spring.runtime.web.compat.security.BearerTokenRejectedEvent;

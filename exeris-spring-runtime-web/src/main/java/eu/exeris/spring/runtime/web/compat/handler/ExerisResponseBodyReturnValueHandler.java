@@ -6,7 +6,7 @@
  */
 package eu.exeris.spring.runtime.web.compat.handler;
 
-import eu.exeris.spring.runtime.web.compat.CompatibilityMode;
+import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,6 +17,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.context.request.NativeWebRequest;
+import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.method.support.HandlerMethodReturnValueHandler;
 import org.springframework.web.method.support.ModelAndViewContainer;
 
@@ -58,7 +59,7 @@ public final class ExerisResponseBodyReturnValueHandler implements HandlerMethod
         ExerisMvcServerHttpResponse springResponse = (ExerisMvcServerHttpResponse)
         webRequest.getAttribute(
             ExerisCompatAttributes.SPRING_RESPONSE_ATTRIBUTE,
-            NativeWebRequest.SCOPE_REQUEST);
+            RequestAttributes.SCOPE_REQUEST);
         if (springResponse == null) {
             throw new IllegalStateException("No ExerisMvcServerHttpResponse in request attributes");
         }
