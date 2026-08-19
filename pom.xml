@@ -70,7 +70,12 @@
                 ExerisWireLevelRuntimeIntegrationTest#pureMode_shutdownDrainsInFlightRequest_...
                 (6/6, stable across repeated runs; it failed 7 of 12 runs on 0.10.2).
              2. Preview. 0.10.2 was itself preview-compiled, so running against it required the
-                JVM preview flag on every consumer. 0.11.0 retires that requirement.
+                JVM preview flag on every consumer. 0.11.0 retires that requirement — but note
+                that `test.jvm.args` below still carries the flag at this commit. That is not an
+                oversight and not a contradiction to resolve here: removing it changes the
+                build-time contract (and the compiler release, and the CI JDK), which is a
+                separate reviewable decision and lands in the follow-up baseline slice. This
+                commit makes the removal *possible*; it does not make it.
 
              Consumer-visible behaviour that changed with this bump, none of which required a
              source change here but all of which are real:
@@ -153,11 +158,14 @@
         <jackson.annotations.version>2.21</jackson.annotations.version>
 
         <!-- Test JVM args — aligned with kernel conventions.
-             enable-preview here is a *runtime* need, not a compile one: exeris-kernel-core is
-             still compiled with Java 26 preview features (class file minor version 65535) and
-             the JVM refuses to load those classes without the flag. Nothing this repository
-             compiles is preview any more (see the compiler-plugin note below), so this argument
-             retires when the kernel pin moves to a release carrying the ADR-066 substitution. -->
+             The preview flag here was a *runtime* need, not a compile one: exeris-kernel-core
+             used to be compiled with preview features (class file minor version 65535) and the
+             JVM refused to load those classes without it. As of the 0.11.0 pin that is no longer
+             true — the kernel carries the ADR-066 substitution and is preview-clean, and nothing
+             this repository compiles has been preview for some time either. The flag is
+             therefore now inert rather than load-bearing, and survives only because removing it
+             also moves the compiler release and the CI JDK; see the pin comment above for why
+             that is a separate slice. -->
         <test.jvm.args>--enable-preview -XX:+UnlockExperimentalVMOptions -XX:+UseZGC</test.jvm.args>
     </properties>
 
