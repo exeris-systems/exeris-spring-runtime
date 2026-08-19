@@ -64,6 +64,18 @@ public final class ExerisEventPublisher {
      * Synchronously publishes and waits until the kernel has fully dispatched the event
      * to all subscribed handlers. Use sparingly — this blocks the calling thread.
      *
+     * <p><strong>Handlers run on the calling thread</strong>, in subscription order, as of
+     * kernel 0.11.0. Their durations therefore <em>sum</em> rather than overlap, and a slow
+     * handler delays its successors — which matters if you call this from a request thread
+     * with several subscribers attached. The method always blocked until every handler had
+     * finished; what changed is that it now does that work rather than delegating it.
+     *
+     * <p>This is not a regression the kernel worked around — it is what preserves the
+     * contract. A handler observes every {@code ScopedValue} the publisher had bound,
+     * including bindings the kernel cannot enumerate because the application made them, and
+     * no fork-based mechanism using only GA APIs can carry those. {@link #publish} is
+     * unchanged and is the fan-out path.
+     *
      * @throws InterruptedException if the calling thread is interrupted while waiting
      */
     public void publishAndAwait(EventDescriptor descriptor, EventPayload payload) throws InterruptedException {

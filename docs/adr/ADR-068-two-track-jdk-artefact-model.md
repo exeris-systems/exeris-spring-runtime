@@ -142,6 +142,19 @@ So the `-preview` artefact waits on the kernel's preview-clean build, which kern
 the same 0.11.0 this repository is already holding 0.7.0 for. If 0.11.0 ships the structured-concurrency
 layer without the substitution, the preview line waits for the release that carries it.
 
+> **Prerequisite met (2026-08-19).** It did ship the substitution. Kernel 0.11.0 is preview-clean —
+> measured at the cut as 2 286 classes across eight published modules at class-file major 69 with zero
+> preview stamps — and the kernel also published a companion `0.11.1-preview` in which its carriers are
+> JEP 401 value classes. Both halves of the conditional above therefore resolved in this ADR's favour:
+> the GA line has a preview-clean kernel to compile against (taken by this repository's 0.11.0 pin and
+> the JDK 25 baseline that followed), and the preview line has a kernel counterpart that already
+> carries value-class content rather than being an empty coordinate.
+>
+> This unblocks the `-preview` artefact; it does not schedule it. Nothing about the decision changes —
+> the cost stated below (a per-line source overlay for carrier types, an API-identity guard, and a CI
+> axis on an EA JDK that must report rather than block) is unchanged and is what the implementing
+> slice has to pay.
+
 ## Scope and Non-Goals
 
 **In scope.** What this repository publishes, on which JDK lines, and where the two lines' sources may
