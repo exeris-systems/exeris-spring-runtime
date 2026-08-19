@@ -7,13 +7,13 @@ application framework; Exeris is the runtime owner. See [`docs/architecture/over
 
 ---
 
-## 0.7.0 — first published release
+## 0.7.0 — first published release — 2026-08-19
 
-**Not yet tagged**, but no longer held. Both conditions this release was waiting on have been met:
-the kernel pin has moved to **0.11.0**, and the in-flight-drain gap is **closed** — the kernel
-reordered its shutdown, and the wire-level coverage that was disabled against 0.10.2 is active and
-green again. This section is still edited in place — entries are added and corrected here rather than
-in an `[Unreleased]` block — and it freezes when the tag is cut.
+**Frozen.** This section said "not yet tagged" for as long as the release was held, and stated that it
+would freeze when the tag was cut. This is that freeze: subsequent changes belong in a new section,
+not here. Both conditions the release waited on were met before the cut — the kernel pin moved to
+**0.11.0**, and the in-flight-drain gap is **closed** rather than documented: the kernel reordered its
+shutdown, and the wire-level coverage that was disabled against 0.10.2 is active and green again.
 
 **Status: preview.** No module in this release is GA. Every phase bridge beyond the Pure Mode request
 path ships default-off, and "the code landed" is explicitly *not* the graduation criterion — see
