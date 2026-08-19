@@ -44,7 +44,11 @@ This ADR answers: **does 1.0 commit to supporting Spring Boot 4 as a nominal ver
 
 **The 1.0 release supports Spring Boot 3.5+ and Spring Boot 4.x as nominal versions. From 0.8.0-preview onward, the reactor builds and tests under a dual matrix (SB3 and SB4); CI matrix failure on either line blocks merge.**
 
-The 1.0 support statement reads, in normalized form: *"`exeris-spring-runtime` 1.0 is supported on Spring Boot 3.5.x and Spring Boot 4.x. JVM baseline is JDK 26 with `--enable-preview`. Servlet containers (Tomcat/Jetty/Undertow), Netty, and Reactor remain out of scope on Pure Mode classpath under both matrices."*
+The 1.0 support statement reads, in normalized form: *"`exeris-spring-runtime` 1.0 is supported on Spring Boot 3.5.x and Spring Boot 4.x. JVM baseline is JDK 25 (LTS), with no preview flag. Servlet containers (Tomcat/Jetty/Undertow), Netty, and Reactor remain out of scope on Pure Mode classpath under both matrices."*
+
+> **JDK baseline amendment (2026-08-19).** This sentence read *"JVM baseline is JDK 26 with `--enable-preview`"* when the ADR was drafted, and both rows of the matrix table below said `26 + preview`. That was inherited, not chosen: `exeris-kernel` was itself preview-compiled, preview class files are major-pinned, and `--enable-preview` is whole-compilation and whole-JVM — so the flag and one exact JDK propagated to every consumer's entire build. Kernel 0.11.0 shipped the ADR-066 substitution and is preview-clean, so this repository's pin bump retired the requirement rather than negotiating it. The baseline moves **26 → 25 LTS**, which is a *widening* for consumers: anything that ran on 26 still runs, and LTS-only environments become reachable. Nothing here used a JDK-26-only API.
+>
+> This is amended in place rather than by a new ADR because [ADR-068](ADR-068-two-track-jdk-artefact-model.md) §"Scope and Non-Goals" put it out of ADR scope explicitly — *"Which JDK each line pins… The GA line follows the kernel's LTS; tracking those is mechanical and does not need an ADR per bump."* What is **not** mechanical, and stays decided here, is that the support statement names a JDK at all. Verified on the built output (class-file major 69, minor 0) and enforced by the class-file baseline gate in `build.yml`, not asserted from the compiler configuration.
 
 **Concrete obligations:**
 
@@ -65,8 +69,10 @@ The 1.0 support statement reads, in normalized form: *"`exeris-spring-runtime` 1
 
 | Matrix profile | Spring Boot BOM | Spring Framework | Spring Security | Jakarta EE | JDK baseline | Pure Mode classpath guards |
 |:---------------|:----------------|:-----------------|:----------------|:-----------|:-------------|:---------------------------|
-| `matrix-sb3` (default) | 3.5.x | 6.1.x | 6.x | 10.x | 26 + preview | Must stay green |
-| `matrix-sb4`           | 4.x (tracks the current release; 4.1.0 at implementation) | 7.x   | 7.x (separate axis — see obligation 6) | 11.x | 26 + preview | Must stay green |
+| `matrix-sb3` (default) | 3.5.x | 6.1.x | 6.x | 10.x | 25 LTS, no preview | Must stay green |
+| `matrix-sb4`           | 4.x (tracks the current release; 4.1.0 at implementation) | 7.x   | 7.x (separate axis — see obligation 6) | 11.x | 25 LTS, no preview | Must stay green |
+
+The JDK column read `26 + preview` on both rows until 2026-08-19 — see the amendment under §The Decision. The JDK axis is deliberately *not* a matrix dimension here: one baseline serves both Spring Boot lines, as one artefact does (ADR-067). The second JDK line that does exist is the `-preview` artefact in ADR-068, which is a distribution axis rather than a compatibility one.
 
 Banned coordinates (both matrices, no exceptions): `org.apache.tomcat.embed:*`, `org.eclipse.jetty:*`, `io.undertow:*`, `io.netty:*`, `io.projectreactor:*`, `jakarta.servlet:jakarta.servlet-api`, `com.zaxxer:HikariCP`, `spring-cloud-starter-gateway*`, `spring-webflux`.
 
