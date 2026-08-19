@@ -205,10 +205,19 @@ is honest about what it can enforce: scopes as the identity provider emits them.
 
 ## Engineering Protocol
 
-1. **Blocked on the kernel pin.** This binds SPI that ships in kernel 0.11.0. The pin cannot move while
-   [`exeris-kernel#282`](https://github.com/exeris-systems/exeris-kernel/issues/282) stands — the 0.11.0
-   graceful drain waits on idle keep-alive connections and takes ~60 s to shut down, which also breaks a
-   currently-green wire-level test. Implementation does not start before the pin moves.
+1. **~~Blocked on the kernel pin.~~ Unblocked 2026-08-19.** This binds SPI that ships in kernel 0.11.0.
+   When this ADR was written the pin could not move: the 0.11.0 graceful drain waited on idle keep-alive
+   connections and took the full ~60 s deadline to shut down after any request, which would also have
+   broken a then-green wire-level test. That was raised as
+   [`exeris-kernel#282`](https://github.com/exeris-systems/exeris-kernel/issues/282), **fixed in the
+   released kernel 0.11.0, and this repository's pin has since moved to it.** The drain now completes
+   promptly and the previously disabled in-flight-drain scenario is green.
+
+   The condition this clause set — *"implementation does not start before the pin moves"* — is therefore
+   satisfied. Implementation may start; nothing else in this ADR changes, and none of it has been
+   implemented yet. Recorded here rather than left in the future tense because a resolved blocker that
+   still reads as live is the drift `CLAUDE.md` calls out by name: a reader arriving from the 0.7.0
+   release notes would conclude this work is still gated when it is merely not yet done.
 2. **End-to-end verification is gated on the `ClaimsMapper` slice.** Scope requirements can be tested with
    tokens carrying literal `scope` claims before then; parity with an application's `JwtAuthenticationConverter`
    cannot.
