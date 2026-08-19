@@ -49,11 +49,13 @@ The previously `@Disabled` wire-level test is now active. Six wire-level scenari
 green at seam closure: bind/route/cleanup, body+headers, 404, custom status, in-flight drain at
 shutdown, and telemetry scope evidence.
 
-> **Superseded 2026-08-02 for the drain scenario.** `pureMode_shutdownDrainsInFlightRequest_…`
-> proved intermittent and was then shown to be broken against the pinned kernel — 0.10.2 sequences
-> the PAQS drain after transport teardown, so an in-flight request is cut rather than completed. It
-> is now `@Disabled` and re-enables at kernel 0.11.0. The other five scenarios stand. See
-> [`phase-1-milestone-status.md`](phase-1-milestone-status.md).
+> **Drain scenario — withdrawn 2026-08-02, restored at the kernel 0.11.0 pin.**
+> `pureMode_shutdownDrainsInFlightRequest_…` proved intermittent and was then shown to be broken
+> against the kernel pinned at the time: 0.10.2 sequenced the PAQS drain after transport teardown, so
+> an in-flight request was cut rather than completed. It was `@Disabled` rather than deleted, and is
+> active again now that the kernel reorders its shutdown. The claim above therefore holds as
+> originally written — but it did not hold continuously, and the gap is recorded rather than smoothed
+> over. See [`phase-1-milestone-status.md`](phase-1-milestone-status.md).
 
 ## Testkit finding — `MEMORY_ALLOCATOR` `ScopedValue` propagation
 

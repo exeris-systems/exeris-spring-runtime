@@ -179,9 +179,8 @@ Ingress close and drain are **not** Spring-side steps: `stop()` calls `KernelBoo
 and then the callback, nothing else. `exeris.runtime.shutdown.timeout-seconds` (gated by
 `exeris.runtime.shutdown.graceful`) bounds joining the kernel boot thread, **not** the drain, which
 carries its own kernel-side deadline and is not configurable from Spring.
-On kernel 0.10.2 the drain runs after transport teardown and does not protect in-flight requests —
-see [`phase-0-invariants.md`](phase-0-invariants.md) and the
-[CHANGELOG known-gap section](../../CHANGELOG.md).
+On the pinned kernel (0.11.0) the drain runs before transport teardown and does protect in-flight
+requests; up to 0.10.2 it did not — see [`phase-0-invariants.md`](phase-0-invariants.md).
 
 ---
 

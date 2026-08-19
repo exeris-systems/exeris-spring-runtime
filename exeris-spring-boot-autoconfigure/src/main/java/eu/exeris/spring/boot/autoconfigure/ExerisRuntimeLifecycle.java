@@ -59,7 +59,7 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  *       → callback.run()
  * </pre>
  *
- * <h3>In-flight requests are not protected on kernel 0.10.2</h3>
+ * <h3>Ingress teardown and drain are kernel-side, not steps of this method</h3>
  * <p>This sequence previously listed {@code transport.closeIngress()} and a drain of
  * in-flight requests as steps of this method. They are not: {@link #stop()} calls
  * {@code KernelBootstrap.shutdown()} and the ingress-close and drain happen inside it,
@@ -71,29 +71,27 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  * join the kernel boot thread, not the drain, which has its own 60 s deadline inside the
  * kernel and is not configurable from here.
  *
- * <p>The drain itself is real and long-standing: {@code PaqsScheduler.close()} waits for
- * the active stream count to reach zero with a 60 s hard deadline. What was broken on
- * kernel 0.10.2 is its position in the shutdown order — it ran after the transport had
- * closed the listening socket and every live channel, and after the reactor threads that
- * write responses had exited. The reactors exit early because they poll a single
- * {@code isRunning()} flag that shutdown clears in its first line, so one flag meant both
- * "stop accepting" and "stop processing". Handlers completed correctly; their responses
- * had no path back out.
+ * <p>On the pinned kernel (0.11.0) that drain does protect in-flight requests. Stop runs as
+ * three phases — close ingress, drain while the write path is still alive, then tear down —
+ * with a distinct {@code draining} state so the reactors keep serving (polling
+ * {@code isReactorActive()}) after ingress has closed. A request in flight when shutdown
+ * begins therefore completes and is answered.
  *
- * <p>Observable consequence: a request in flight when shutdown begins has its connection
- * closed without a response. A client that retries the idempotent request sees the retry
- * refused, because the listener is already gone. Do not size
- * {@code terminationGracePeriodSeconds} on the assumption that the documented 60 s drain
- * window protects these requests on this kernel version — remove the instance from load
- * balancer rotation before sending SIGTERM instead.
+ * <p><strong>History worth keeping, because it changes how you size a deployment.</strong>
+ * On kernel 0.10.2 the same drain ({@code PaqsScheduler.close()}, waiting for the active
+ * stream count to reach zero under a 60 s hard deadline) ran <em>last</em> — after the
+ * transport had closed the listening socket and every live channel, and after the reactor
+ * threads that write responses had exited. The reactors exited early because they polled a
+ * single {@code isRunning()} flag that shutdown cleared in its first line, so one flag meant
+ * both "stop accepting" and "stop processing". Handlers completed correctly; their responses
+ * had no path back out, and the request was dropped without one. Only the ordering and the
+ * missing state distinction changed in 0.11.0 — the drain mechanism, deadline and backoff
+ * are the same. Anyone running a build pinned to 0.10.2 or earlier still has that gap and
+ * should take the instance out of load balancer rotation before sending SIGTERM rather than
+ * sizing {@code terminationGracePeriodSeconds} against the drain window.
  *
- * <p>Fixed upstream in kernel 0.11.0: a distinct {@code draining} state is introduced so
- * the reactors keep serving (polling {@code isReactorActive()}) while ingress is already
- * closed, and stop runs as three phases — close ingress, drain with the write path still
- * alive, then tear down. The drain mechanism, deadline and backoff are unchanged; only the
- * ordering and the missing state distinction were. This repository pins 0.10.2, so the gap
- * applies until that bump lands; the disabled coverage in
- * {@code ExerisWireLevelRuntimeIntegrationTest} is re-enabled at the same time.
+ * <p>Coverage: {@code ExerisWireLevelRuntimeIntegrationTest#pureMode_shutdownDrainsInFlightRequest_beforeIngressBecomesUnavailable},
+ * which was {@code @Disabled} against 0.10.2 and is active again from this pin.
  *
  * <h2>Phase Ordering</h2>
  * <p>Phase {@code Integer.MAX_VALUE - 100} ensures this lifecycle starts after

@@ -62,11 +62,11 @@ SmartLifecycle.stop(callback)
 > in-flight request budget; the kernel drain carries its own 60 s deadline and is not configurable
 > from here.
 >
-> On kernel 0.10.2 that drain (`PaqsScheduler.close()`, waits for zero active streams) is
-> sequenced after transport teardown and after the reactor threads that write responses have
-> exited, so in-flight requests are dropped without a response. Kernel 0.11.0 adds a distinct
-> `draining` state and a three-phase stop so the write path stays alive while draining. This
-> doc is revisited when the pin moves. See
+> On the pinned kernel (0.11.0) that drain (`PaqsScheduler.close()`, waits for zero active
+> streams) is sequenced *before* transport teardown, with a distinct `draining` state keeping the
+> write path alive, so an in-flight request completes and is answered. Up to and including 0.10.2
+> it ran last — after transport teardown and after the reactor threads that write responses had
+> exited — and in-flight requests were dropped without a response. See
 > [`phase-1-milestone-status.md`](phase-1-milestone-status.md).
 
 - **Guards:** `ExerisBootstrapIntegrationTest` (start/stop, thread liveness,
