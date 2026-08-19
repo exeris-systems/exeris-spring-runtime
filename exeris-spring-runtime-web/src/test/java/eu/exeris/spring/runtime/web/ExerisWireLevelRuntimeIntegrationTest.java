@@ -27,7 +27,6 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
@@ -306,33 +305,29 @@ class ExerisWireLevelRuntimeIntegrationTest {
     /**
      * Asserts that shutdown lets an in-flight request finish before ingress goes away.
      *
-     * <p><strong>Disabled against kernel 0.10.2.</strong> The assertion is correct as an
-     * intent but the behaviour is not available on the pinned kernel, so the test failed
-     * non-deterministically — 7 of 12 runs when pinned to two cores, and intermittently in
-     * CI, where a rerun could turn it green without anything changing.
-     *
-     * <p>Root cause, confirmed kernel-side on 2026-08-02: the kernel does implement a
+     * <p>This is the scenario that held the 0.7.0 release. It was {@code @Disabled} against
+     * kernel 0.10.2 rather than deleted, because the assertion was always correct as an
+     * intent — what was missing was the behaviour. On 0.10.2 the kernel did implement a
      * drain ({@code PaqsScheduler.close()} waits for its active stream count to reach zero
-     * with a 60 s hard deadline), but on 0.10.2 it runs last — after the transport has
-     * closed the listening socket and every live channel, and after the reactor threads
-     * that write responses have exited. The drain waits for work that can no longer
-     * respond. The failure surfaces here as {@code ExecutionException: ConnectException}
-     * rather than a timeout, because the JDK client retries the idempotent GET once the
-     * connection dies without a response and the retry finds no listener.
+     * under a 60 s hard deadline), but ran it last: after the transport had closed the
+     * listening socket and every live channel, and after the reactor threads that write
+     * responses had exited. The drain waited on work that could no longer respond, so the
+     * request reached the handler and was then dropped without a response.
      *
-     * <p>This is a genuine gap on 0.10.2, not a test defect: the request does reach the
-     * handler ({@code awaitEntered} passes) and is then dropped. Kernel 0.11.0 reorders
-     * shutdown so the drain precedes transport teardown.
+     * <p>Kernel 0.11.0 separates "stop accepting" from "stop processing" — a distinct
+     * {@code draining} state, {@code isReactorActive()}, and a three-phase stop that closes
+     * ingress, drains with the write path still alive, and only then tears down. The drain
+     * mechanism, deadline and backoff are unchanged; only the ordering was.
      *
-     * <p><strong>Re-enable when the kernel pin moves to 0.11.0 or later</strong> — delete
-     * this {@code @Disabled} and the corresponding note in {@code ExerisRuntimeLifecycle}'s
-     * stop-sequence Javadoc together. Until then the shutdown path keeps the coverage in
-     * {@link #pureMode_bindsPort_routesRequest_and_cleansUpAfterFixtureAndContextClose()},
-     * whose {@code assertEventuallyUnavailable} check asserts the part 0.10.2 does
-     * guarantee: that ingress stops answering once shutdown has run.
+     * <p><strong>On flakiness.</strong> Against 0.10.2 this failed non-deterministically —
+     * 7 of 12 runs when pinned to two cores — which is why a green run alone is not the
+     * evidence that matters here. Re-enabling it was confirmed by repeated runs against
+     * 0.11.0, not by one pass. If it ever goes intermittent again, suspect the shutdown
+     * ordering upstream before suspecting this test: the characteristic 0.10.2 failure was
+     * {@code ExecutionException: ConnectException} rather than a timeout, because the JDK
+     * client retries the idempotent GET once the connection dies without a response and
+     * the retry finds no listener.
      */
-    @Disabled("Kernel 0.10.2 sequences the PAQS drain after transport teardown, so in-flight "
-            + "requests cannot complete; re-enable when the kernel pin reaches 0.11.0")
     @Test
     void pureMode_shutdownDrainsInFlightRequest_beforeIngressBecomesUnavailable() throws Exception {
         HttpClient client = HttpClient.newBuilder()

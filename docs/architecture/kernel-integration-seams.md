@@ -4,8 +4,10 @@ This is the primary engineering reference for how Exeris kernel SPI interfaces
 map to Spring integration points. Engineers implementing features in this
 repository must read this document first.
 
-**Kernel version:** 0.10.2 (pinned in the root `pom.xml` as `<exeris.kernel.version>`; a released
-coordinate, never a `-SNAPSHOT`)  
+**Kernel version:** 0.11.0 (pinned in the root `pom.xml` as `<exeris.kernel.version>`; a released
+coordinate, never a `-SNAPSHOT`). This is the kernel's **GA line** — JDK 25 LTS, class-file major 69,
+no preview stamp. The companion `0.11.0-preview` coordinate is a different artefact on a newer JDK
+and is not what this repository consumes; see [ADR-068](../adr/ADR-068-two-track-jdk-artefact-model.md).  
 **Kernel package root:** `eu.exeris.kernel.spi.*`
 
 ---
@@ -220,14 +222,19 @@ ordering and their deadline. `exeris.runtime.shutdown.timeout-seconds` (default 
 joining the kernel boot thread (`awaitShutdown` → `thread.join(timeoutMillis)`), **not** the drain,
 which has its own kernel-side deadline and is not configurable from Spring.
 
-> **Kernel 0.10.2 — drain is broken.** On the pinned kernel the PAQS drain is sequenced *after*
-> transport teardown, so in-flight requests are cut rather than completed: the connection is dropped
-> without a response. Root cause upstream is a single `isRunning()` flag meaning both "stop accepting"
-> and "stop processing". Fixed in kernel 0.11.0 (`draining` state + `isReactorActive()` + three-phase
-> stop). Until this repo's kernel pin moves to 0.11.0 the guarantee above describes intent, not
-> observed behaviour — see the [CHANGELOG known-gap section](../../CHANGELOG.md) and
-> `ExerisWireLevelRuntimeIntegrationTest#pureMode_shutdownDrainsInFlightRequest_beforeIngressBecomesUnavailable`,
-> which is `@Disabled` for exactly this reason.
+**Drain behaviour on the pinned kernel.** On 0.11.0 the guarantee above is observed, not merely
+intended: stop runs as three phases — close ingress, drain while the write path is still alive, then
+tear down — with a distinct `draining` state so the reactors keep serving (`isReactorActive()`) after
+the listening socket has closed. Proven by
+`ExerisWireLevelRuntimeIntegrationTest#pureMode_shutdownDrainsInFlightRequest_beforeIngressBecomesUnavailable`.
+
+> **If you pin an older kernel, this does not hold.** Up to and including 0.10.2 the PAQS drain was
+> sequenced *after* transport teardown, so in-flight requests were cut rather than completed: the
+> connection was dropped without a response. Root cause upstream was a single `isRunning()` flag
+> meaning both "stop accepting" and "stop processing". The wire-level scenario above was `@Disabled`
+> for exactly that reason and is active again from the 0.11.0 pin. A deployment on an older kernel
+> should take the instance out of load balancer rotation before SIGTERM rather than relying on the
+> drain window.
 
 ### Strategy B — Exeris as a SubsystemProvider (advanced, Phase 3+)
 

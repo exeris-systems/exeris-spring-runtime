@@ -55,18 +55,48 @@
              bridge requires kernel >= 0.8.1, and -SNAPSHOT references fail to resolve
              (401/absent) from GitHub Packages in CI, so this must always name a published
              release tag.
-             0.10.2 is a patch over 0.10.0 (SPI-additive) — 0.10.1/0.10.2 are Community-internal
-             allocation work with no SPI change. The one pre-1.0 removal since 0.8.1 is the
-             0.9.0 diagnostics trim (listCapabilities / CompositionSnapshot /
-             CapabilityDescriptor), which this repo never consumed.
 
-             Taking 0.10.x also required a fix on OUR side: 0.10.0 re-based the open-core
-             ConfigProvider priorities to Community=0 / Enterprise=100 (kernel CHANGELOG 0.10.0,
-             #217), which ties CommunityConfigProvider with ExerisSpringConfigProvider's
-             no-Environment path. This repo is the only consumer that puts a second
-             ConfigProvider on the classpath, so it is the only one that sees the tie. See
+             0.11.0 is the GA line of the kernel's two-track model (kernel ADR-066) — JDK 25 LTS,
+             class-file major 69, zero preview-stamped classes. The companion `0.11.0-preview`
+             coordinate is NOT what this pin names and must not be substituted casually: its
+             classes are major 72 and will not load on the JDK this reactor targets. See ADR-068
+             for the artefact model this repository mirrors.
+
+             Why the pin moved off 0.10.2, in the order the reasons mattered:
+
+             1. Shutdown. 0.10.2 sequenced the PAQS drain after transport teardown, so an
+                in-flight request was dropped without a response. 0.11.0 adds a distinct
+                `draining` state and a three-phase stop, which is what re-enabled
+                ExerisWireLevelRuntimeIntegrationTest#pureMode_shutdownDrainsInFlightRequest_...
+                (6/6, stable across repeated runs; it failed 7 of 12 runs on 0.10.2).
+             2. Preview. 0.10.2 was itself preview-compiled, so running against it required the
+                JVM preview flag on every consumer. 0.11.0 retires that requirement — but note
+                that `test.jvm.args` below still carries the flag at this commit. That is not an
+                oversight and not a contradiction to resolve here: removing it changes the
+                build-time contract (and the compiler release, and the CI JDK), which is a
+                separate reviewable decision and lands in the follow-up baseline slice. This
+                commit makes the removal *possible*; it does not make it.
+
+             Consumer-visible behaviour that changed with this bump, none of which required a
+             source change here but all of which are real:
+               - The Community HTTP dispatcher's hardcoded `/secure` prefix convention is gone,
+                 replaced by a declared HttpRoutePolicy (kernel ADR-061). This repository binds
+                 no policy yet — ADR-063 is the slice that will — so routes under `/secure` are
+                 no longer protected by the kernel. Called out in the CHANGELOG.
+               - EventBus.publishAndAwait runs handlers on the calling thread, in subscription
+                 order; handler durations sum rather than overlap. `publish` is unchanged.
+               - A failed subsystem in a parallel boot phase throws BootstrapException rather
+                 than the preview type StructuredTaskScope.FailedException. Nothing here caught
+                 the preview type.
+               - ImmutableStorageContext gained a sixth component without retaining the
+                 five-argument constructor. Only `ImmutableStorageContext.GLOBAL` is consumed
+                 here, so a recompile covers it.
+
+             The ConfigProvider priority tie introduced by 0.10.0 (Community=0 / Enterprise=100,
+             kernel #217) still stands and is still handled on our side — this repo is the only
+             consumer putting a second ConfigProvider on the classpath. See
              ExerisSpringConfigProvider.priority() / systemPropertyFallback(...). -->
-        <exeris.kernel.version>0.10.2</exeris.kernel.version>
+        <exeris.kernel.version>0.11.0</exeris.kernel.version>
         <!--
              Dual matrix per ADR-028. Each line is pinned here; the matrix-sb3 /
              matrix-sb4 profiles below select which one ${spring.boot.version} resolves
@@ -128,11 +158,14 @@
         <jackson.annotations.version>2.21</jackson.annotations.version>
 
         <!-- Test JVM args — aligned with kernel conventions.
-             enable-preview here is a *runtime* need, not a compile one: exeris-kernel-core is
-             still compiled with Java 26 preview features (class file minor version 65535) and
-             the JVM refuses to load those classes without the flag. Nothing this repository
-             compiles is preview any more (see the compiler-plugin note below), so this argument
-             retires when the kernel pin moves to a release carrying the ADR-066 substitution. -->
+             The preview flag here was a *runtime* need, not a compile one: exeris-kernel-core
+             used to be compiled with preview features (class file minor version 65535) and the
+             JVM refused to load those classes without it. As of the 0.11.0 pin that is no longer
+             true — the kernel carries the ADR-066 substitution and is preview-clean, and nothing
+             this repository compiles has been preview for some time either. The flag is
+             therefore now inert rather than load-bearing, and survives only because removing it
+             also moves the compiler release and the CI JDK; see the pin comment above for why
+             that is a separate slice. -->
         <test.jvm.args>--enable-preview -XX:+UnlockExperimentalVMOptions -XX:+UseZGC</test.jvm.args>
     </properties>
 
