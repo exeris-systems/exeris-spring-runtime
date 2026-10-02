@@ -366,7 +366,7 @@ method signatures.
 
 Both are optional kernel SPI components. The Spring integration layer does not implement either.
 
-- Kernel 0.8.0 + [ADR-022](https://github.com/exeris-systems/exeris-kernel/blob/development/0.8.0/docs/adr/ADR-022-persistence-spi-extension-instant-binders.md)
+- Kernel 0.8.0 + [ADR-022](https://github.com/exeris-systems/exeris-kernel/blob/main/docs/adr/ADR-022-persistence-spi-extension-instant-binders.md)
   wire `JdbcFlowSnapshotStore` automatically inside `CommunityFlowSubsystem.initialize()`
   via the Community-internal `CommunityBootstrapServices` registry: the persistence
   subsystem registers its `PersistenceEngine` during the SERVICES phase, the flow

@@ -3,7 +3,7 @@
 **Status:** Locked-in (Phase 4B closed 2026-05-11; preview-track, default-off)
 **Source of authority:** ADR-006 (The Wall), ADR-010 (Host Runtime Model),
 ADR-011 (Pure vs Compatibility Mode), kernel
-[ADR-022](https://github.com/exeris-systems/exeris-kernel/blob/development/0.8.0/docs/adr/ADR-022-persistence-spi-extension-instant-binders.md)
+[ADR-022](https://github.com/exeris-systems/exeris-kernel/blob/main/docs/adr/ADR-022-persistence-spi-extension-instant-binders.md)
 (Persistence SPI Extension — Instant Binders, which closes the kernel-side
 `JdbcFlowSnapshotStore` wiring gap), and the master plan
 [`phase-4-events-flow.md`](phase-4-events-flow.md). This page enumerates the
