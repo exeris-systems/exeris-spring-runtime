@@ -19,9 +19,9 @@
         },
         "scope_class": {
           "enum": [
-            "spring-runtime",
-            "build-and-release",
-            "agent-layer",
+            "runtime hot path",
+            "runtime non-hot",
+            "test-tooling",
             "docs-only"
           ]
         },

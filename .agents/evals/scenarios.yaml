@@ -3,15 +3,21 @@
 # Runtime-independent on purpose: a case names a fixture, a prompt, the schema the answer must
 # conform to, and assertions over its fields. Every grader is deterministic — equality on a field.
 #
-# Three of these cases assert a REFUSAL to escalate, and they carry the `negative` tag so the count is
+# Four of these cases assert a REFUSAL to escalate, and they carry the `negative` tag so the count is
 # derivable rather than remembered — `--tags negative` selects exactly them.
 #
-# Three of the 3 are one half of a PAIR, and the pairing is the point: the same construct is a
+# Four of the 4 are one half of a PAIR, and the pairing is the point: the same construct is a
 # defect or ordinary depending on whose shape it describes or where it sits.
 #
-#   The Wall                Spring type in kernel SPI -> BLOCKED | canonical web bridge in runtime -> PASS
-#   Mode Discipline         compat leak in pure mode -> BLOCKED | isolated @CompatibilityMode handler -> PASS
-#   Hot-Path zero-copy      LoanedBuffer copy to byte[] -> BLOCKED | direct MemorySegment slice -> PASS
+#   The Wall            Spring in kernel SPI -> BLOCKED | canonical bridge in runtime -> PASS
+#   Mode Discipline     compat leak in pure -> BLOCKED  | isolated @CompatibilityMode -> PASS
+#   a heap copy         decode path -> BLOCKED          | test fixture -> PASS
+#   ThreadLocal         runtime -> BLOCKED, test -> BLOCKED | ThreadLocalRandom -> PASS
+#
+# The ThreadLocal row is the exception that proves the scope rule: ADR-007 bans it without a scope
+# class, so the test fixture case is BLOCKED too, and the negative half is a different type that shares
+# the name rather than the same type somewhere milder. Scope discipline narrows a policy's ban; it
+# never narrows an ADR's.
 #
 version: 1
 
@@ -20,68 +26,125 @@ defaults:
   fixture_dir: fixtures
 
 cases:
+  # ── The Wall (ADR-006) ────────────────────────────────────────────────────────────────────────
   - id: wall-reject-spring-in-kernel
     agent: exeris-spring-runtime-architect
-    fixture: wall-spring-in-kernel.java
-    prompt: "Review this proposed change."
+    fixture: wall-spring-in-kernel-spi.md
+    prompt: "Review this proposed change for kernel boundary integrity."
     expect:
       schema: verdict.schema.json
       fields:
         decision: BLOCKED
-        scope_class: spring-runtime
+        scope_class: runtime non-hot
     tags: [wall, architect]
 
   - id: wall-permit-canonical-bridge
     agent: exeris-spring-runtime-architect
-    fixture: wall-canonical-bridge.java
-    prompt: "Review this proposed change."
+    fixture: wall-canonical-bridge.md
+    prompt: "Review this proposed change for kernel boundary integrity."
     expect:
       schema: verdict.schema.json
       fields:
         decision: PASS
-        scope_class: spring-runtime
+        scope_class: runtime non-hot
     tags: [wall, architect, negative]
 
+  # ── Mode Discipline (ADR-011) ─────────────────────────────────────────────────────────────────
   - id: mode-reject-compat-leak-in-pure
     agent: exeris-spring-runtime-architect
-    fixture: mode-compat-leak-in-pure.java
-    prompt: "Review this proposed change."
+    fixture: mode-compat-leak-in-pure.md
+    prompt: "Review this proposed change for mode discipline."
     expect:
       schema: verdict.schema.json
       fields:
         decision: BLOCKED
-        scope_class: spring-runtime
+        scope_class: runtime hot path
     tags: [mode, architect]
 
   - id: mode-permit-isolated-compat-handler
     agent: exeris-spring-runtime-architect
-    fixture: mode-isolated-compat-handler.java
-    prompt: "Review this proposed change."
+    fixture: mode-isolated-compat-handler.md
+    prompt: "Review this proposed change for mode discipline."
     expect:
       schema: verdict.schema.json
       fields:
         decision: PASS
-        scope_class: spring-runtime
+        scope_class: runtime non-hot
     tags: [mode, architect, negative]
 
-  - id: hotpath-reject-loaned-buffer-copy
+  # ── scope discipline — the same construct is a defect or fine depending on where it sits ─────
+  - id: scope-a-heap-copy-on-a-hot-path-is-blocking
+    # A per-request `byte[]`, a copy out of the receive buffer and a `String` built from it: three
+    # allocations where a slice of the loaned buffer would do. The answer must name the ownership
+    # abstraction that replaces them, which the fixture deliberately does not.
     agent: exeris-spring-runtime-performance
-    fixture: hotpath-loaned-buffer-copy.java
-    prompt: "Review this proposed change."
+    fixture: heap-copy-on-the-decode-path.md
+    prompt: "Review this change against the hot-path performance contract."
     expect:
       schema: verdict.schema.json
       fields:
         decision: BLOCKED
-        scope_class: spring-runtime
-    tags: [hotpath, performance]
+        scope_class: runtime hot path
+      min_findings: 1
+      contains: ["LoanedBuffer"]
+    tags: [scope, performance, bans]
 
-  - id: hotpath-permit-zero-copy-segment
+  - id: scope-a-heap-copy-in-a-test-fixture-is-not
+    # The paired negative: the same copy, in a testkit helper nothing in production reaches. Without
+    # it the suite passes against an agent that has learned `new byte[]` and nothing about where the
+    # zero-copy discipline applies.
     agent: exeris-spring-runtime-performance
-    fixture: hotpath-zero-copy-segment.java
-    prompt: "Review this proposed change."
+    fixture: heap-copy-in-a-test-fixture.md
+    prompt: "Review this change against the hot-path performance contract."
     expect:
       schema: verdict.schema.json
       fields:
         decision: PASS
-        scope_class: spring-runtime
-    tags: [hotpath, performance, negative]
+        scope_class: test-tooling
+    tags: [scope, performance, negative]
+
+  # ── unscoped bans — ADR-007 states the ThreadLocal ban without a scope class ─────────────────
+  - id: ban-threadlocal-carrying-context-is-blocking
+    # Off the hot path on purpose: the ban is not a performance rule, so a reviewer that finds it
+    # only where latency matters has learned the wrong reason for it.
+    agent: exeris-spring-runtime-verification
+    fixture: threadlocal-carries-request-context.md
+    prompt: "Review this change and answer with a verdict."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        decision: BLOCKED
+        scope_class: runtime non-hot
+      min_findings: 1
+      contains: ["ScopedValue", "ADR-007"]
+    tags: [bans, verification]
+
+  - id: ban-threadlocal-in-a-test-fixture-is-still-blocking
+    # The scope class is test-tooling and the verdict is still BLOCKED. This is the case that keeps
+    # scope discipline from swallowing an ADR: a ban stated without a scope has no scope to classify
+    # out of.
+    agent: exeris-spring-runtime-verification
+    fixture: threadlocal-in-a-test-fixture.md
+    prompt: "Review this change and answer with a verdict."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        decision: BLOCKED
+        scope_class: test-tooling
+      min_findings: 1
+      contains: ["ADR-007"]
+    tags: [bans, verification]
+
+  - id: ban-threadlocalrandom-is-not-threadlocal
+    # The paired negative for both cases above. `ThreadLocalRandom` shares a prefix and nothing else:
+    # it holds no caller state, so there is nothing to outlive a scope. The architecture guards name
+    # `java.lang.ThreadLocal` by its qualified name for the same reason.
+    agent: exeris-spring-runtime-verification
+    fixture: threadlocal-random-for-jitter.md
+    prompt: "Review this change and answer with a verdict."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        decision: PASS
+        scope_class: runtime non-hot
+    tags: [bans, verification, negative]
