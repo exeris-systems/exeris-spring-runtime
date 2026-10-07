@@ -17,9 +17,8 @@ on:
       - 'docs/**'
       - '**/*.md'
       - '.github/workflows/claude*.yml'
-      - '.github/workflows/guardrails.yml'
-      - '.agents/**'
-      - '.claude/**'
+      - '.github/agents/**'
+      - '.github/skills/**'
   workflow_dispatch:
     inputs:
       releaseVersion:
