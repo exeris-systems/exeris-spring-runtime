@@ -32,31 +32,26 @@ import java.util.Set;
 
 /**
  * Compatibility-mode factory that re-creates the OAuth2 resource-server {@link JwtDecoder}
- * Spring Boot would normally auto-configure — but which is silently absent under
+ * Spring Boot would normally auto-configure &mdash; but which is silently absent under
  * {@code spring.main.web-application-type=none}.
  *
- * <h2>Why this exists (ADR-041)</h2>
- * <p>Spring Boot's {@code OAuth2ResourceServerAutoConfiguration} is
- * {@code @ConditionalOnWebApplication(type = SERVLET)}. When an app is hosted on the Exeris
- * runtime, Spring sees {@code web-application-type=none} (Exeris owns the transport, not a
- * servlet container), so no {@link JwtDecoder} bean is created — and
- * {@code ExerisSecurityContextFilter} (gated on a {@link JwtDecoder} bean) never activates.
- * A brownfield JWT resource server therefore loses authentication purely as a side effect of
- * the migration. This factory closes that gap on the Compatibility path.
+ * <p><b>Mode:</b> Compatibility Mode only. Lives in {@code *.compat.security.*}; never on a pure-mode path.
  *
- * <h2>Faithful, not hand-rolled</h2>
- * <p>The decoder and its validator chain are built with <b>public Spring Security factories</b>
- * ({@link NimbusJwtDecoder}, {@link JwtDecoders#fromIssuerLocation}, {@link JwtValidators}) and
- * mirror exactly what Spring Boot's {@code OAuth2ResourceServerJwtConfiguration.JwtDecoderConfiguration}
- * does — same key sources (jwk-set-uri / issuer-uri / public-key-location), same default validators
- * ({@link JwtValidators#createDefaultWithIssuer} / {@link JwtValidators#createDefault}), same audience
- * validation. No bespoke token validation is invented here: getting JWT validation subtly wrong is a
- * security defect, so this stays a thin re-wiring of Spring's own building blocks.
- *
- * <h2>Mode</h2>
- * <p>Compatibility Mode only. Lives in {@code *.compat.security.*}; never on a pure-mode path.
- *
- * @since 0.5.0
+ * @implSpec Spring Boot's {@code OAuth2ResourceServerAutoConfiguration} is
+ *     {@code @ConditionalOnWebApplication(type = SERVLET)}. When an app is hosted on the Exeris
+ *     runtime, Spring sees {@code web-application-type=none} (Exeris owns the transport, not a
+ *     servlet container), so no {@link JwtDecoder} bean is created &mdash; and
+ *     {@code ExerisSecurityContextFilter} (gated on a {@link JwtDecoder} bean) never activates.
+ *     A brownfield JWT resource server therefore loses authentication purely as a side effect of
+ *     the migration. This factory closes that gap on the Compatibility path.
+ * @implNote The decoder and its validator chain are built with public Spring Security factories
+ *     ({@link NimbusJwtDecoder}, {@link JwtDecoders#fromIssuerLocation}, {@link JwtValidators}) and
+ *     mirror Spring Boot's {@code OAuth2ResourceServerJwtConfiguration.JwtDecoderConfiguration} &mdash;
+ *     same key sources (jwk-set-uri / issuer-uri / public-key-location), same default validators
+ *     ({@link JwtValidators#createDefaultWithIssuer} / {@link JwtValidators#createDefault}), and same audience
+ *     validation.
+ * @since 0.5
+ * @see "ADR-041: Compatibility JWT Decoder"
  */
 @CompatibilityMode
 public final class ExerisCompatJwtDecoderFactory {
@@ -88,6 +83,8 @@ public final class ExerisCompatJwtDecoderFactory {
      *
      * @param jwt            the settings (never null)
      * @param resourceLoader loader for {@code public-key-location} (never null)
+     * @return the configured {@link JwtDecoder} instance
+     * @throws IllegalStateException if none of jwk-set-uri / public-key-location / issuer-uri is set
      */
     public static JwtDecoder build(ExerisResourceServerJwtProperties jwt, ResourceLoader resourceLoader) {
         String jwkSetUri = trimToNull(jwt.jwkSetUri());

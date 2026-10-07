@@ -18,25 +18,11 @@ import org.springframework.core.env.Environment;
  * Fails context refresh when Compatibility Mode is active and the application declares a
  * {@code SecurityFilterChain} that this runtime cannot execute.
  *
- * <h2>The fail-open this closes</h2>
- * <p>{@code NoSecurityFilterChainCondition} stands the compatibility fallback filter down when a
- * chain is present — correct in itself, because the two must not both run. But under
- * {@code web-application-type=none} there is no {@code FilterChainProxy} to run the chain either.
- * The result was a context that started cleanly, logged nothing, and served every request with
- * neither authentication nor authorization: the application believed its chain was enforcing rules,
- * and nothing was. A migration must fail loudly at startup rather than pass unauthenticated traffic.
- *
- * <h2>Why a BeanFactoryPostProcessor</h2>
- * <p>It runs after every bean definition is registered but before any singleton is instantiated, so
- * detection sees the full picture and the failure arrives before the application can bind a port.
- * It also inspects definitions rather than instances, which keeps servlet-only types off the
- * classpath — see {@link SecurityFilterChainDetector}.
- *
- * <h2>Escape hatch</h2>
- * <p>{@code exeris.runtime.web.compat.security.allow-unenforced-filter-chain=true} downgrades the
- * failure to a warning. It does not make the chain run.
- *
- * @since 0.7.0
+ * @implSpec Under {@code web-application-type=none} there is no {@code FilterChainProxy} to run a servlet filter chain.
+ *     This processor runs after bean definitions are registered but before singletons are instantiated,
+ *     detecting unenforced chains and failing startup before ports can bind.
+ * @implNote Setting {@value #ALLOW_PROPERTY} to {@code true} downgrades the failure to a warning log.
+ * @since 0.7
  */
 @CompatibilityMode
 public final class UnenforcedSecurityFilterChainCheck implements BeanFactoryPostProcessor, EnvironmentAware {
@@ -50,11 +36,28 @@ public final class UnenforcedSecurityFilterChainCheck implements BeanFactoryPost
 
     private Environment environment;
 
+    /**
+     * Default constructor for bean post-processing.
+     */
+    public UnenforcedSecurityFilterChainCheck() {
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * @param environment the environment to inspect
+     */
     @Override
     public void setEnvironment(Environment environment) {
         this.environment = environment;
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @param beanFactory the bean factory to inspect
+     * @throws BeansException if post-processing fails
+     */
     @Override
     public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) throws BeansException {
         SecurityFilterChainDetector.detect(beanFactory).ifPresent(this::report);

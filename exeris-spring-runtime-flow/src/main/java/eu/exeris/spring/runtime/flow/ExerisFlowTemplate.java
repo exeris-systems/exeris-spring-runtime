@@ -53,7 +53,7 @@ import eu.exeris.kernel.spi.flow.model.FlowState;
  *   <li>{@link #planFor(String)} fails fast if the flow is unknown.</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class ExerisFlowTemplate {
 
@@ -62,6 +62,11 @@ public final class ExerisFlowTemplate {
     private final FlowEngineSupplier engineSupplier;
     private final ConcurrentMap<String, FlowExecutionPlan> plans = new ConcurrentHashMap<>();
 
+    /**
+     * Creates a flow template.
+     *
+     * @param engineSupplier supplier for the flow engine
+     */
     public ExerisFlowTemplate(FlowEngineSupplier engineSupplier) {
         this.engineSupplier = Objects.requireNonNull(engineSupplier, "engineSupplier");
     }
@@ -98,6 +103,8 @@ public final class ExerisFlowTemplate {
     /**
      * Returns the compiled {@link FlowExecutionPlan} for the given definition name.
      *
+     * @param definitionName the flow definition name
+     * @return the compiled execution plan
      * @throws IllegalArgumentException if no plan was registered under that name
      */
     public FlowExecutionPlan planFor(String definitionName) {
@@ -114,12 +121,17 @@ public final class ExerisFlowTemplate {
     /**
      * Returns the names of all registered flows in this template's registry. Useful for
      * actuator / diagnostic surfaces.
+     *
+     * @return immutable set of registered flow definition names
      */
     public Set<String> registeredFlowNames() {
         return Set.copyOf(plans.keySet());
     }
 
     /**
+     * Checks whether a flow with the given definition name is registered.
+     *
+     * @param definitionName the flow definition name to check
      * @return {@code true} if a flow with the given definition name is registered
      */
     public boolean hasFlow(String definitionName) {
@@ -139,17 +151,16 @@ public final class ExerisFlowTemplate {
      * (or another scheduler operation). Kernel-side state advances internally; callers
      * MUST treat the returned record as immutable.
      *
-     * <h2>Why {@code timeoutNanos = 0L}</h2>
-     * <p>The kernel SPI defines {@code FlowContext.timeoutNanos()} as an <em>absolute</em>
-     * monotonic deadline computed as {@code System.nanoTime() + plan.timeoutDurationNanos()},
-     * not a duration. Passing the plan's duration directly here would be read as a
-     * deadline already in the past (because {@code System.nanoTime()} after JVM startup
-     * dwarfs any reasonable duration), and the kernel scheduler would time the flow out
-     * before invoking its first step. The kernel-side {@code RuntimeFlowInstance.fromContext}
-     * specifically treats {@code timeoutNanos <= 0} as "scheduler please compute the
-     * deadline from the plan", which is exactly what a freshly seeded context needs.
-     *
+     * @param definitionName the flow definition name
+     * @return a freshly initialized flow context
      * @throws IllegalArgumentException if no plan is registered under {@code definitionName}
+     * @implNote The kernel SPI defines {@code FlowContext.timeoutNanos()} as an <em>absolute</em>
+     *     monotonic deadline computed as {@code System.nanoTime() + plan.timeoutDurationNanos()},
+     *     not a duration. Passing the plan's duration directly here would be read as a
+     *     deadline already in the past, and the kernel scheduler would time the flow out
+     *     before invoking its first step. The kernel-side {@code RuntimeFlowInstance.fromContext}
+     *     specifically treats {@code timeoutNanos <= 0} as "scheduler please compute the
+     *     deadline from the plan", which is exactly what a freshly seeded context needs.
      */
     public FlowContext newContext(String definitionName) {
         FlowExecutionPlan plan = planFor(definitionName);
@@ -171,9 +182,10 @@ public final class ExerisFlowTemplate {
      * Schedules execution of a registered flow with a freshly minted context. Convenience
      * for {@code schedule(name, newContext(name))}.
      *
+     * @param definitionName the flow definition name to schedule
      * @return the seed context the engine was scheduled with — callers should retain this
-     *         to subsequently {@link #wake(FlowContext)} or {@link #park(FlowContext)} the
-     *         instance, since kernel-side instance lookup happens by id
+     *     to subsequently {@link #wake(FlowContext)} or {@link #park(FlowContext)} the
+     *     instance, since kernel-side instance lookup happens by id
      */
     public FlowContext schedule(String definitionName) {
         FlowContext ctx = newContext(definitionName);
@@ -184,6 +196,8 @@ public final class ExerisFlowTemplate {
     /**
      * Schedules execution of a registered flow with the supplied context.
      *
+     * @param definitionName the flow definition name to schedule
+     * @param context the flow context seed
      * @throws IllegalArgumentException if {@code definitionName} is unknown
      * @throws IllegalStateException    if the kernel {@link FlowEngine} is not bound
      */
@@ -196,6 +210,8 @@ public final class ExerisFlowTemplate {
     /**
      * Parks an in-flight flow instance. Idempotent in the sense that the kernel rejects
      * double-park attempts internally; callers do not need to track state manually.
+     *
+     * @param context the flow context to park
      */
     public void park(FlowContext context) {
         Objects.requireNonNull(context, CONTEXT_PARAM);
@@ -204,6 +220,8 @@ public final class ExerisFlowTemplate {
 
     /**
      * Wakes a previously parked flow instance.
+     *
+     * @param context the flow context to wake
      */
     public void wake(FlowContext context) {
         Objects.requireNonNull(context, CONTEXT_PARAM);
@@ -213,8 +231,10 @@ public final class ExerisFlowTemplate {
     /**
      * Looks up a parked flow by its instance id (UUID split into 64-bit halves).
      *
+     * @param instanceIdMost most significant 64 bits of the instance UUID
+     * @param instanceIdLeast least significant 64 bits of the instance UUID
      * @return the parked context if the kernel still holds it, or empty if it has been
-     *         woken / completed / never parked
+     *     woken / completed / never parked
      */
     public Optional<FlowContext> lookupParked(long instanceIdMost, long instanceIdLeast) {
         return scheduler().lookupParked(instanceIdMost, instanceIdLeast);
@@ -227,6 +247,8 @@ public final class ExerisFlowTemplate {
     /**
      * Returns the current engine statistics snapshot. Read-through to
      * {@link FlowEngine#stats()} — fails if the engine is not bound.
+     *
+     * @return current engine statistics snapshot
      */
     public FlowEngineStats stats() {
         return engine().stats();
@@ -235,6 +257,8 @@ public final class ExerisFlowTemplate {
     /**
      * Read-only view of the registered plan map for diagnostic / actuator use. Returned
      * map is a snapshot copy — mutations do not affect the template.
+     *
+     * @return snapshot copy of registered flow execution plans keyed by name
      */
     public Map<String, FlowExecutionPlan> registeredPlans() {
         return Map.copyOf(plans);

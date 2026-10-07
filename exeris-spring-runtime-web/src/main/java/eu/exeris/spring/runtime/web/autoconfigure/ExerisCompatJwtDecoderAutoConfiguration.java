@@ -27,30 +27,18 @@ import eu.exeris.spring.runtime.web.compat.security.ExerisCompatJwtDecoderFactor
  * Compatibility-mode re-activation of Spring Boot's OAuth2 resource-server {@link
  * org.springframework.security.oauth2.jwt.JwtDecoder JwtDecoder} (ADR-041).
  *
- * <h2>Why a separate auto-configuration ordered {@code before} {@link ExerisCompatAutoConfiguration}</h2>
- * <p>Spring Boot's {@code OAuth2ResourceServerAutoConfiguration} is
- * {@code @ConditionalOnWebApplication(type = SERVLET)}, so under {@code web-application-type=none}
- * (the Exeris-hosted shape) no {@code JwtDecoder} bean is created, and
- * {@code ExerisSecurityContextFilter} — gated {@code @ConditionalOnBean(JwtDecoder)} inside
- * {@link ExerisCompatAutoConfiguration} — never activates. A brownfield JWT resource server thus
- * silently loses authentication.
- *
- * <p>The decoder must therefore exist <b>before</b> the security filter's {@code @ConditionalOnBean}
- * is evaluated. {@code @ConditionalOnBean} only reliably observes beans contributed by
- * auto-configurations processed <em>earlier</em> — not a sibling nested {@code @Configuration} of the
- * same auto-config. So the decoder lives in its own auto-configuration ordered
- * {@code @AutoConfiguration(before = ExerisCompatAutoConfiguration.class)}; this mirrors how Spring
- * Boot itself separates the resource-server decoder from the security-filter-chain configuration.
- *
- * <h2>Construction</h2>
- * <p>The decoder is built by {@link ExerisCompatJwtDecoderFactory} from {@code
+ * <p><b>Construction:</b> The decoder is built by {@link ExerisCompatJwtDecoderFactory} from {@code
  * spring.security.oauth2.resourceserver.jwt.*} using public Spring Security factories only —
  * a faithful mirror of Spring Boot's own validator wiring, never bespoke token validation.
  *
- * <h2>Mode</h2>
- * <p>Compatibility Mode only — active only when {@code exeris.runtime.web.mode=compatibility}.
+ * <p><b>Mode:</b> Compatibility Mode only — active only when {@code exeris.runtime.web.mode=compatibility}.
  *
- * @since 0.5.0
+ * @implSpec Ordered before {@link ExerisCompatAutoConfiguration} so that the {@code JwtDecoder} bean
+ *     is registered before the security filter's {@code @ConditionalOnBean(JwtDecoder)} is evaluated.
+ *     Under {@code web-application-type=none}, Spring Boot's servlet-bound decoder auto-configuration
+ *     is dormant, so this configuration provides the equivalent bean using public Spring Security factories.
+ * @since 0.5
+ * @see "ADR-041: Compatibility Mode JWT Resource Server Auto-Configuration"
  */
 @AutoConfiguration(before = ExerisCompatAutoConfiguration.class)
 @ConditionalOnClass(name = "org.springframework.security.oauth2.jwt.JwtDecoder")
@@ -63,6 +51,10 @@ public class ExerisCompatJwtDecoderAutoConfiguration {
      * Re-creates the resource-server decoder absent under {@code web-application-type=none}.
      * {@code @ConditionalOnMissingBean} keeps this inert whenever a decoder already exists
      * (a servlet deployment, or an app-declared {@code JwtDecoder} bean — the app's wins).
+     *
+     * @param environment Spring environment to bind JWT properties from
+     * @param resourceLoader resource loader for resolving key file locations
+     * @return the configured JWT decoder bean
      */
     @Bean
     @ConditionalOnMissingBean(type = "org.springframework.security.oauth2.jwt.JwtDecoder")

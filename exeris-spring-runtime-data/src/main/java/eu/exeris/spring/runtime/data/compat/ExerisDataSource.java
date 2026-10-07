@@ -48,8 +48,7 @@ import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
  * <h2>JFR observability</h2>
  * <p>Emits {@link JpaConnectionAcquiredEvent} on new opens and
  * {@link JpaConnectionBoundEvent} on transactional reuse.
- *
- * @since 0.1.0
+ * @since 0.1
  * @see ExerisConnectionProxy
  */
 @CompatibilityMode

@@ -40,20 +40,24 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
  *             (caller owns the buffer per the template's ownership contract).</li>
  *       </ul>
  *       Any other return type fails fast.</li>
- *   <li>Method must declare exactly one parameter of type {@link GraphTraversal}. Phase 4C
- *       Step 3 does not support method-name-based parameter binding (deferred until the kernel
- *       SPI exposes a parser for the {@link ExerisGraphQuery#value()} MATCH-DSL string).</li>
+ *   <li>Method must declare exactly one parameter of type {@link GraphTraversal}.</li>
  * </ol>
  *
  * <p>The processor is registered as a {@code @Bean} by {@link ExerisGraphAutoConfiguration} so
  * application code does not need to do anything beyond annotating a method on a Spring bean.
  *
- * @since 0.7.0
+ * @since 0.7
+ * @see "ADR-030: Phase 4C Spring-Side Seam for Kernel Graph SPI"
  */
 public final class ExerisGraphQueryProcessor implements BeanPostProcessor {
 
     private final ExerisGraphTemplate template;
 
+    /**
+     * Creates a processor with the backing graph template.
+     *
+     * @param template the graph template to route queries through
+     */
     public ExerisGraphQueryProcessor(ExerisGraphTemplate template) {
         this.template = Objects.requireNonNull(template, "template must not be null");
     }

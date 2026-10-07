@@ -11,9 +11,9 @@ import org.springframework.boot.context.properties.bind.ConstructorBinding;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
 /**
- * Phase 4C graph-bridge properties (ADR-030).
+ * Configuration properties for the graph bridge module.
  *
- * <p>Two-property activation matrix mirroring Phase 4A / 4B autoconfig discipline:
+ * <p>Two-property activation matrix:
  *
  * <ul>
  *   <li>{@code enabled} (default {@code false}) — explicit opt-in for the bridge. The
@@ -39,14 +39,22 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *   <tr><td>{@code true}</td><td>{@code false}</td><td>no</td><td>Template constructed but unusable (dev/test only)</td></tr>
  * </table>
  *
- * @since 0.7.0
- * @see <a href="../../../../../../../../../docs/adr/ADR-030-phase-4c-spring-side-seam-for-kernel-graph-spi.md">ADR-030</a>
+ * @param enabled       whether graph support is enabled
+ * @param requireEngine whether to require a kernel graph engine at runtime
+ * @since 0.7
+ * @see "ADR-030: Phase 4C Spring-Side Seam for Kernel Graph SPI"
  */
 @ConfigurationProperties(prefix = "exeris.runtime.graph")
 public record ExerisGraphProperties(
         @DefaultValue("false") boolean enabled,
         @DefaultValue("true") boolean requireEngine) {
 
+    /**
+     * Compact constructor for {@link ExerisGraphProperties}.
+     *
+     * @param enabled whether graph support is enabled
+     * @param requireEngine whether to require a kernel graph engine at runtime
+     */
     @ConstructorBinding
     public ExerisGraphProperties {
     }

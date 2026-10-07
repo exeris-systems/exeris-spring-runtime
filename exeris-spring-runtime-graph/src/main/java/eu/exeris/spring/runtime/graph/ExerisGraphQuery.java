@@ -19,7 +19,7 @@ import eu.exeris.kernel.spi.graph.GraphDialect;
  *
  * <h2>Method shape</h2>
  *
- * <p>Phase 4C Step 3 supports two annotated-method shapes; the
+ * <p>Supports two annotated-method shapes; the
  * {@link ExerisGraphQueryProcessor} validates each at {@code BeanPostProcessor} time and fails
  * fast (before context refresh completes) on any other shape:
  *
@@ -42,33 +42,30 @@ import eu.exeris.kernel.spi.graph.GraphDialect;
  * <ul>
  *   <li>It is <strong>not</strong> a Spring Data repository abstraction — no entity manager,
  *       no dynamic query derivation from method names, no {@code findByXxxAndYyy}-style magic.</li>
- *   <li>It does <strong>not</strong> parse a custom MATCH-DSL string at this step. The
- *       {@link #value()} attribute is reserved for forward compatibility with a kernel-side
- *       parser (kernel currently exposes only the {@link
- *       eu.exeris.kernel.spi.graph.model.GraphTraversal} record); for Phase 4C Step 3 the
- *       processor does not interpret {@link #value()} and applications can leave it empty.
- *       When the kernel adds a parser, the processor will be extended to pass the value through
- *       — without an API surface change visible to callers.</li>
+ *   <li>It does <strong>not</strong> parse a custom MATCH-DSL string directly. The
+ *       {@link #value()} attribute is reserved for compatibility with the kernel graph engine;
+ *       the annotated method's parameter carries the traversal configuration.</li>
  * </ul>
  *
  * <h2>Compilation requirement</h2>
  *
  * <p>Spring Boot already requires {@code -parameters} for {@code @ConfigurationProperties}
- * record binding; the Phase 4C bridge inherits that requirement and exposes a clear error
+ * record binding; the graph bridge inherits that requirement and exposes a clear error
  * message at post-processing time if the offending method is on a class compiled without the
  * flag.
  *
- * @since 0.7.0
+ * @since 0.7
+ * @see "ADR-030: Phase 4C Spring-Side Seam for Kernel Graph SPI"
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.METHOD)
 public @interface ExerisGraphQuery {
 
     /**
-     * Optional MATCH-DSL string for a future kernel-side parser. Phase 4C Step 3 does not
-     * interpret this — the annotated method's single {@code GraphTraversal} parameter carries
-     * all dispatch state. The attribute is reserved so application code that writes
-     * placeholder annotations now does not need to re-annotate when a parser arrives.
+     * Optional MATCH-DSL string. Currently informational; dispatch state is carried
+     * by the {@code GraphTraversal} parameter.
+     *
+     * @return the MATCH-DSL query string
      */
     String value() default "";
 
@@ -76,9 +73,7 @@ public @interface ExerisGraphQuery {
      * Optional dialect override. Defaults to the engine's
      * {@link eu.exeris.kernel.spi.graph.GraphEngine#dialect() dialect()}.
      *
-     * <p>Phase 4C Step 3 does not switch dialects per call — the engine's dialect is the only
-     * effective one and this attribute is informational. When multi-dialect routing arrives
-     * (post-1.0), the processor will honour this override.
+     * @return the dialect class
      */
     Class<? extends GraphDialect> dialect() default GraphDialect.class;
 }

@@ -18,21 +18,14 @@ import jdk.jfr.StackTrace;
 /**
  * JFR event emitted whenever a Bearer token fails decoding or validation.
  *
- * <p>Before this existed, an invalid token was swallowed and the request continued as anonymous,
- * leaving no trace anywhere: an operator could not distinguish "nobody is calling with tokens"
- * from "every token is being rejected". A rejection is exactly the signal a deployment wants to
- * alert on — a rotated key, a clock skew, or a misconfigured issuer all present as a rejection
- * spike.
- *
  * <p>Emitted on both the reject path and the permissive path (see
  * {@code exeris.runtime.web.compat.security.reject-invalid-token}), so turning rejection off
  * silences the response, never the telemetry.
  *
  * <p>Carries the failure class name only. Token contents and validator messages are deliberately
- * excluded — a JFR recording is an artefact that gets shipped around, and validation messages can
- * echo claim values.
+ * excluded to prevent sensitive claim values from appearing in JFR recordings.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 @Name("eu.exeris.spring.runtime.web.BearerTokenRejected")
 @Label("Bearer Token Rejected")

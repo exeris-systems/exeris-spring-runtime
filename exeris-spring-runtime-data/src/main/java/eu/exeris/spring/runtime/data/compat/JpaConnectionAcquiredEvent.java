@@ -22,7 +22,7 @@ import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
  * transactional-reuse path. Together they provide minimum observability for the
  * JPA compat path (see ADR-017 §6.4).
  *
- * @since 0.1.0
+ * @since 0.1
  */
 @Name("eu.exeris.spring.runtime.data.JpaConnectionAcquired")
 @Label("JPA Connection Acquired")
@@ -36,13 +36,6 @@ public final class JpaConnectionAcquiredEvent extends Event {
 
     /**
      * Emits a {@link JpaConnectionAcquiredEvent} if JFR is enabled and recording.
-     *
-     * <p>The original event carried a {@code readOnly} field, but the only call site
-     * always passed {@code false} (the kernel {@code PersistenceConnection} surface does
-     * not currently expose a stable read-only flag, and JPA's read-only hint travels at
-     * a higher layer). The field was removed rather than left as an always-false
-     * placeholder. If a real read-only signal is plumbed through later, it should arrive
-     * with concrete semantics, not as a default.
      */
     public static void emit() {
         if (!EVENT_TYPE.isEnabled()) {

@@ -41,8 +41,7 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
  *
  * <h2>Engine resolution</h2>
  *
- * <p>The template holds a {@link GraphEngineSupplier} (per Phase 4A invariant §7 — engine is
- * resolved per call, not captured at construction). {@link ExerisGraphProperties#requireEngine()}
+ * <p>The template holds a {@link GraphEngineSupplier}. {@link ExerisGraphProperties#requireEngine()}
  * controls the missing-engine behaviour:
  *
  * <ul>
@@ -51,21 +50,23 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
  *       with an operator-readable diagnostic if no engine is bound.</li>
  *   <li>{@code requireEngine=false} (dev/test only) — every method still throws
  *       {@link IllegalStateException} when no engine is bound, but the supplier's
- *       {@code tryGet()} is consulted first so future-non-throwing semantics (e.g. health-check
- *       endpoints that want to inspect availability without bombing) have a hook. Step 3
- *       intentionally does not add a separate non-throwing branch; the property is recorded for
- *       documentation symmetry with the Phase 4A/4B precedent and is consumed by the
- *       {@code BeanPostProcessor} validation gate (see {@link ExerisGraphQueryProcessor}).</li>
+ *       {@code tryGet()} is consulted first.</li>
  * </ul>
  *
- * @since 0.7.0
- * @see <a href="../../../../../../../../docs/adr/ADR-030-phase-4c-spring-side-seam-for-kernel-graph-spi.md">ADR-030</a>
+ * @since 0.7
+ * @see "ADR-030: Phase 4C Spring-Side Seam for Kernel Graph SPI"
  */
 public final class ExerisGraphTemplate {
 
     private final GraphEngineSupplier engineSupplier;
     private final ExerisGraphProperties properties;
 
+    /**
+     * Creates a graph template.
+     *
+     * @param engineSupplier supplier for the kernel graph engine
+     * @param properties     graph configuration properties
+     */
     public ExerisGraphTemplate(GraphEngineSupplier engineSupplier, ExerisGraphProperties properties) {
         this.engineSupplier = Objects.requireNonNull(engineSupplier, "engineSupplier must not be null");
         this.properties = Objects.requireNonNull(properties, "properties must not be null");
@@ -79,6 +80,10 @@ public final class ExerisGraphTemplate {
      * not already a {@link RuntimeException} — otherwise it surfaces as-is so kernel
      * {@code GraphQueryException} (and other {@code EX-GRPH-*} codes) reach the caller without
      * an extra wrapper layer.
+     *
+     * @param <T>    the result type
+     * @param action the session callback to execute
+     * @return the result of executing the callback
      */
     public <T> T execute(ExerisGraphSessionCallback<T> action) {
         Objects.requireNonNull(action, "action must not be null");
@@ -95,7 +100,12 @@ public final class ExerisGraphTemplate {
         }
     }
 
-    /** Convenience BFS — equivalent to {@code execute(s -> s.traverseBreadthFirst(traversal))}. */
+    /**
+     * Convenience BFS — equivalent to {@code execute(s -> s.traverseBreadthFirst(traversal))}.
+     *
+     * @param traversal the graph traversal specification
+     * @return list of matching node identifiers
+     */
     public List<UUID> traverseBfs(GraphTraversal traversal) {
         Objects.requireNonNull(traversal, "traversal must not be null");
         return execute(session -> session.traverseBreadthFirst(traversal));
@@ -105,15 +115,15 @@ public final class ExerisGraphTemplate {
      * Zero-copy streaming BFS.
      *
      * <p><strong>Caller owns the returned {@link LoanedBuffer}.</strong> Use try-with-resources:
-     * <pre>{@code
+     * {@snippet lang="java" :
      * try (LoanedBuffer buffer = template.streamBfsJson(traversal)) {
      *     // consume buffer.segment() ...
      * }
-     * }</pre>
+     * }
      * The template does not retain a reference to the returned buffer and does not transfer
      * ownership to any other party.
      *
-     * <h2>Session-close-before-return semantics</h2>
+     * <p><b>Session-close-before-return semantics:</b></p>
      *
      * <p>This method is a <strong>fully-materialised</strong> operation. The control flow is:
      *
@@ -132,14 +142,8 @@ public final class ExerisGraphTemplate {
      * connection (and its cursor state), not the buffer's backing memory. {@code session.close()}
      * therefore does not reclaim the buffer.
      *
-     * <p><strong>Lazy / cursor-based streaming requires a different API shape.</strong> A future
-     * kernel implementation that materialises results lazily (e.g. a {@code bfsCursor()}
-     * variant where the buffer is only partially populated and rows arrive on demand) cannot use
-     * this wrapper — closing the session before the caller reads the buffer would invalidate
-     * cursor state. When the kernel ships {@code GraphSession.bfsCursor()} (currently "Planned"
-     * per {@code exeris-kernel/docs/subsystems/graph.md:149}), the Spring-side seam will add a
-     * separate {@code streamBfsJsonCursor()}-style method that keeps the session open across
-     * batch reads.
+     * @param traversal the graph traversal specification
+     * @return the loaned buffer containing JSON results
      */
     public LoanedBuffer streamBfsJson(GraphTraversal traversal) {
         Objects.requireNonNull(traversal, "traversal must not be null");
@@ -152,7 +156,9 @@ public final class ExerisGraphTemplate {
      *
      * <p>The transaction is the kernel {@link GraphSession}'s own — distinct from
      * {@code ExerisPlatformTransactionManager} (per ADR-030 §"What is NOT in scope" —
-     * cross-resource transactions are not bridged at Phase 4C).
+     * cross-resource transactions are not bridged).
+     *
+     * @param action the transactional action to perform
      */
     public void inTransaction(Consumer<GraphSession> action) {
         Objects.requireNonNull(action, "action must not be null");
@@ -169,7 +175,11 @@ public final class ExerisGraphTemplate {
         });
     }
 
-    /** Returns the active engine's {@link GraphDialect}. Throws if no engine is bound. */
+    /**
+     * Returns the active engine's {@link GraphDialect}. Throws if no engine is bound.
+     *
+     * @return the active graph dialect
+     */
     public GraphDialect dialect() {
         return resolveEngine().dialect();
     }
@@ -203,6 +213,12 @@ public final class ExerisGraphTemplate {
     /** Thrown only when an {@link ExerisGraphSessionCallback} surfaces a checked exception. */
     public static final class GraphTemplateExecutionException extends RuntimeException {
 
+        /**
+         * Creates an execution exception.
+         *
+         * @param message the detail message
+         * @param cause   the cause
+         */
         public GraphTemplateExecutionException(String message, Throwable cause) {
             super(message, cause);
         }

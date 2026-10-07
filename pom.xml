@@ -45,19 +45,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
-        <!-- Java version — aligned with the exeris-kernel GA line (kernel ADR-066, ADR-068).
-
-             25, not 26, and this is a widening rather than a restriction: anything that ran on
-             26 still runs, and JDK 25 is an LTS, which is what a brownfield Spring consumer is
-             actually able to deploy. The 26 was never load-bearing — nothing here used a
-             JDK-26-only API. It was inherited from a kernel that was preview-compiled, and
-             preview class files are major-pinned, so the whole chain was nailed to one exact
-             JDK. Kernel 0.11.0 removed that stamp; this removes the pin it forced.
-
-             Consequence worth stating: the published jars are class-file major 69, minor 0 —
-             same as the kernel's. Verified on the built output, not assumed. Raising this back
-             to 26 re-imposes an exact-JDK requirement on every consumer and needs a decision
-             that says why. -->
+        <!-- Java version — aligned with exeris-kernel GA baseline (Java 25 LTS, class-file 69.0 without preview). -->
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
         <maven.compiler.release>25</maven.compiler.release>
@@ -103,6 +91,7 @@
         <maven.surefire.plugin.version>3.2.5</maven.surefire.plugin.version>
         <maven.failsafe.plugin.version>3.2.5</maven.failsafe.plugin.version>
         <maven.deploy.plugin.version>3.1.4</maven.deploy.plugin.version>
+        <maven.javadoc.plugin.version>3.12.0</maven.javadoc.plugin.version>
 
         <!-- Coverage quality gate (opt-in via -Pcoverage). 0.8.15 is the first
              JaCoCo with JDK 26 class-file support (major version 70) — see the
@@ -323,6 +312,30 @@
                     <version>${maven.deploy.plugin.version}</version>
                     <configuration>
                         <deployAtEnd>true</deployAtEnd>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-javadoc-plugin</artifactId>
+                    <version>${maven.javadoc.plugin.version}</version>
+                    <configuration>
+                        <tags>
+                            <tag>
+                                <name>apiNote</name>
+                                <placement>a</placement>
+                                <head>API Note:</head>
+                            </tag>
+                            <tag>
+                                <name>implSpec</name>
+                                <placement>a</placement>
+                                <head>Implementation Requirements:</head>
+                            </tag>
+                            <tag>
+                                <name>implNote</name>
+                                <placement>a</placement>
+                                <head>Implementation Note:</head>
+                            </tag>
+                        </tags>
                     </configuration>
                 </plugin>
             </plugins>

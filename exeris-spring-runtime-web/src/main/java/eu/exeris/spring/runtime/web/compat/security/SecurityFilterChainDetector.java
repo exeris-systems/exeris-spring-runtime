@@ -17,20 +17,13 @@ import java.util.Optional;
  * Detects an application-declared {@code SecurityFilterChain} bean without loading servlet-only
  * Spring Security types.
  *
- * <h2>Why by name</h2>
- * <p>{@code SecurityFilterChain} lives in {@code spring-security-web}, which drags in
- * {@code jakarta.servlet}. Referencing the type here would put a servlet class on the compat
- * classpath and fail {@code PureModeClasspathGuardTest}. Detection therefore works on bean
- * definition metadata and type names only — nothing is instantiated and no chain class is loaded.
- *
- * <h2>Why it exists as a separate class</h2>
- * <p>Two callers need the same answer at two different points in the lifecycle: the condition that
- * keeps the compat fallback filter from activating, and the fail-fast check that stops the context
- * from starting. Duplicating the detection was how the two could silently disagree — the condition
- * seeing a chain and standing down while the check saw nothing and let the context start with no
- * security at all.
- *
- * @since 0.7.0
+ * @implSpec {@code SecurityFilterChain} lives in {@code spring-security-web}, which drags in
+ *     {@code jakarta.servlet}. Referencing the type here would put a servlet class on the compat
+ *     classpath and fail {@code PureModeClasspathGuardTest}. Detection therefore works on bean
+ *     definition metadata and type names only &mdash; nothing is instantiated and no chain class is loaded.
+ * @implNote Shared by the condition that keeps the compat fallback filter from activating and the fail-fast
+ *     check that stops the context from starting with unenforced security.
+ * @since 0.7
  */
 @CompatibilityMode
 public final class SecurityFilterChainDetector {

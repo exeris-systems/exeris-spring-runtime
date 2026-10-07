@@ -16,9 +16,7 @@ import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
  * Chooses the JSON {@link HttpMessageConverter} for the compatibility dispatch path by which Jackson
  * is actually on the classpath.
  *
- * <h2>Why a choice is needed</h2>
- * <p>The two Spring Boot lines ship different Jackson majors:
- *
+ * <p><b>JSON stack by line:</b></p>
  * <table>
  *   <caption>JSON stack by line</caption>
  *   <tr><th>Line</th><th>Jackson</th><th>Converter</th></tr>
@@ -29,29 +27,18 @@ import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
  *       <td>{@code JacksonJsonHttpMessageConverter}</td></tr>
  * </table>
  *
- * <p>This is not a relocation, which is why it behaves unlike the other Spring Boot 4 items in this
- * runtime. {@code MappingJackson2HttpMessageConverter} still exists in Spring Framework 7 and compiles
- * on both lines — what is missing under SB4 is the Jackson 2 <em>databind</em> it delegates to, so
- * constructing it there fails at runtime with
- * {@code NoClassDefFoundError: com/fasterxml/jackson/core/util/DefaultPrettyPrinter$Indenter} rather
- * than at compile time. It was found by running the test suite on the SB4 axis, not by compiling it.
+ * <p><b>Mode:</b> Compatibility Mode only &mdash; the pure-mode path does not use Spring message converters.
  *
- * <h2>Why only one of the two is reflective</h2>
- * <p>{@code MappingJackson2HttpMessageConverter} is nameable at compile time on both lines and is
- * therefore constructed directly. {@code JacksonJsonHttpMessageConverter} exists only in Spring
- * Framework 7, so naming it would break the SB3 compile — it is constructed reflectively. The
- * asymmetry is deliberate: reflection is used exactly where the compiler cannot follow, and nowhere
- * else.
- *
- * <h2>Preference order</h2>
- * <p>Jackson 2 first, then Jackson 3. On each line only one is present, so the order decides nothing
- * in practice; it matters for an application that has put both on the classpath, where matching the
- * long-standing behaviour is the safer default.
- *
- * <h2>Mode</h2>
- * <p>Compatibility Mode only — the pure-mode path does not use Spring message converters.
- *
- * @since 0.7.0
+ * @implSpec {@code MappingJackson2HttpMessageConverter} still exists in Spring Framework 7 and compiles
+ *     on both lines &mdash; what is missing under SB4 is the Jackson 2 <em>databind</em> it delegates to, so
+ *     constructing it there fails at runtime with
+ *     {@code NoClassDefFoundError: com/fasterxml/jackson/core/util/DefaultPrettyPrinter$Indenter} rather
+ *     than at compile time.
+ * @implNote {@code MappingJackson2HttpMessageConverter} is nameable at compile time on both lines and is
+ *     therefore constructed directly. {@code JacksonJsonHttpMessageConverter} exists only in Spring
+ *     Framework 7, so naming it would break the SB3 compile &mdash; it is constructed reflectively.
+ *     Jackson 2 is evaluated first, then Jackson 3.
+ * @since 0.7
  */
 @CompatibilityMode
 public final class ExerisCompatJsonConverterFactory {
@@ -69,6 +56,9 @@ public final class ExerisCompatJsonConverterFactory {
      *
      * <p>Used as the bean condition so the compat bridge stands down cleanly on a classpath with no
      * Jackson at all, rather than failing context refresh over a converter nothing may need.
+     *
+     * @param classLoader loader to resolve against; never {@code null}
+     * @return {@code true} if a supported Jackson databind is present, {@code false} otherwise
      */
     public static boolean isAvailable(ClassLoader classLoader) {
         return present(JACKSON2_DATABIND, classLoader) || present(JACKSON3_DATABIND, classLoader);

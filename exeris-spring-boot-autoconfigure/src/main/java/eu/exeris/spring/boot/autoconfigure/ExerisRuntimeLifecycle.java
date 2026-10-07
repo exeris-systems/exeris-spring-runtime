@@ -72,27 +72,9 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  * join the kernel boot thread, not the drain, which has its own 60 s deadline inside the
  * kernel and is not configurable from here.
  *
- * <p>On the pinned kernel (0.11.0) that drain does protect in-flight requests. Stop runs as
- * three phases — close ingress, drain while the write path is still alive, then tear down —
- * with a distinct {@code draining} state so the reactors keep serving (polling
- * {@code isReactorActive()}) after ingress has closed. A request in flight when shutdown
- * begins therefore completes and is answered.
- *
- * <p><strong>History worth keeping, because it changes how you size a deployment.</strong>
- * On kernel 0.10.2 the same drain ({@code PaqsScheduler.close()}, waiting for the active
- * stream count to reach zero under a 60 s hard deadline) ran <em>last</em> — after the
- * transport had closed the listening socket and every live channel, and after the reactor
- * threads that write responses had exited. The reactors exited early because they polled a
- * single {@code isRunning()} flag that shutdown cleared in its first line, so one flag meant
- * both "stop accepting" and "stop processing". Handlers completed correctly; their responses
- * had no path back out, and the request was dropped without one. Only the ordering and the
- * missing state distinction changed in 0.11.0 — the drain mechanism, deadline and backoff
- * are the same. Anyone running a build pinned to 0.10.2 or earlier still has that gap and
- * should take the instance out of load balancer rotation before sending SIGTERM rather than
- * sizing {@code terminationGracePeriodSeconds} against the drain window.
- *
- * <p>Coverage: {@code ExerisWireLevelRuntimeIntegrationTest#pureMode_shutdownDrainsInFlightRequest_beforeIngressBecomesUnavailable},
- * which was {@code @Disabled} against 0.10.2 and is active again from this pin.
+ * <p>Shutdown executes gracefully in three stages: closes transport ingress to reject new requests,
+ * drains in-flight requests while response-writing reactors remain active, and finally executes
+ * kernel teardown via {@code KernelBootstrap.shutdown()}.
  *
  * <h2>Phase Ordering</h2>
  * <p>Phase {@code Integer.MAX_VALUE - 100} ensures this lifecycle starts after
@@ -104,7 +86,7 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  * <p>After {@link #start()} returns successfully, Exeris owns the transport layer.
  * Spring does not directly manage sockets, connections, or the request execution path.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 public final class ExerisRuntimeLifecycle implements SmartLifecycle {
 
@@ -191,6 +173,10 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
     /**
      * Retained overload for callers predating the route-policy seam (ADR-063). Binds no policy,
      * which is the same thing as an application declaring no {@code ExerisHttpSecurity} bean.
+     *
+     * @param properties runtime configuration properties
+     * @param configProvider Spring configuration provider for kernel integration
+     * @param httpHandler optional HTTP handler bean
      */
     public ExerisRuntimeLifecycle(ExerisRuntimeProperties properties,
                                    ExerisSpringConfigProvider configProvider,
@@ -198,6 +184,14 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         this(properties, configProvider, httpHandler, Optional.empty());
     }
 
+    /**
+     * Creates an {@link ExerisRuntimeLifecycle} with route-policy support.
+     *
+     * @param properties runtime configuration properties
+     * @param configProvider Spring configuration provider for kernel integration
+     * @param httpHandler optional HTTP handler bean
+     * @param httpRoutePolicy optional HTTP route policy bean
+     */
     public ExerisRuntimeLifecycle(ExerisRuntimeProperties properties,
                                    ExerisSpringConfigProvider configProvider,
                                    Optional<HttpHandler> httpHandler,
@@ -327,6 +321,8 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
      * <p>Spring beans (publishers, listener registrars) consume this accessor to obtain
      * a long-lived engine reference, since {@link KernelProviders#EVENT_ENGINE} is a
      * {@code ScopedValue} only bound on kernel-owned virtual threads.
+     *
+     * @return captured {@link EventEngine} reference if present
      */
     public Optional<EventEngine> getEventEngine() {
         return Optional.ofNullable(capturedEventEngine.get());
@@ -341,6 +337,8 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
      * <p>Spring beans (flow definition registrars, flow templates) consume this accessor
      * to obtain a long-lived engine reference, since {@link KernelProviders#FLOW_ENGINE}
      * is a {@code ScopedValue} only bound on kernel-owned virtual threads.
+     *
+     * @return captured {@link FlowEngine} reference if present
      */
     public Optional<FlowEngine> getFlowEngine() {
         return Optional.ofNullable(capturedFlowEngine.get());
@@ -356,6 +354,8 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
      * accessor through {@code GraphEngineSupplier} in {@code exeris-spring-runtime-graph}
      * to obtain a long-lived engine reference, since {@link KernelProviders#GRAPH_ENGINE}
      * is a {@code ScopedValue} only bound on kernel-owned virtual threads.
+     *
+     * @return captured {@link GraphEngine} reference if present
      */
     public Optional<GraphEngine> getGraphEngine() {
         return Optional.ofNullable(capturedGraphEngine.get());
@@ -372,6 +372,8 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
      * {@link KernelProviders#PERSISTENCE_ENGINE} on threads that do not inherit the kernel
      * bootstrap scope, since that {@code ScopedValue} is otherwise only bound on kernel-owned
      * dispatch threads.
+     *
+     * @return captured {@link PersistenceEngine} reference if present
      */
     public Optional<PersistenceEngine> getPersistenceEngine() {
         return Optional.ofNullable(capturedPersistenceEngine.get());
@@ -386,6 +388,8 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
      * flow step bodies) to re-bind {@link KernelProviders#MEMORY_ALLOCATOR} when the executing
      * thread has no allocator bound — restoring the zero-copy response path instead of the
      * heap-backed fallback in {@code ExerisServerResponse}.
+     *
+     * @return captured {@link MemoryAllocator} reference if present
      */
     public Optional<MemoryAllocator> getMemoryAllocator() {
         return Optional.ofNullable(capturedMemoryAllocator.get());

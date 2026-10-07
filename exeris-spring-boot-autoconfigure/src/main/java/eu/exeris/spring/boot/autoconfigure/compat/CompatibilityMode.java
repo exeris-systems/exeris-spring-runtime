@@ -32,14 +32,8 @@ import java.lang.annotation.Target;
  * cannot tell an unmarked compat class from a pure-mode one without checking its package.
  * {@code CompatibilityIsolationGuardTest#everyCompatClass_carriesTheCompatibilityModeMarker}
  * enforces it.
- *
- * <p>This Javadoc previously said the opposite — that inner mechanics "need not be marked
- * individually" — and practice followed the Javadoc: 3 of 26 compat classes carried the
- * marker. That was drift from the accepted decision, not a narrower convention, and it is
- * corrected here.
- *
- * @see <a href="../../../../../../../docs/adr/ADR-011-pure-mode-vs-compatibility-mode.md">ADR-011 — Pure Mode vs Compatibility Mode</a>
- * @since 0.1.0
+ * @since 0.1
+ * @see "ADR-011: Pure Mode vs Compatibility Mode"
  */
 @Target({ ElementType.TYPE, ElementType.METHOD })
 @Retention(RetentionPolicy.CLASS)

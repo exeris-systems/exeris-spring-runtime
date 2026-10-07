@@ -18,11 +18,9 @@ import java.util.Map;
  * {@link ExerisRoute}. Route resolution is {@code O(1)} via a pre-computed immutable
  * map — no per-request allocation on the lookup path.
  *
- * <h2>Phase 1 Scope</h2>
- * <p>Phase 1 supports exact-match routes only (no path variables, no wildcards).
- * Path variable support ({@code /users/{id}}) is planned for Phase 1.1 or Phase 2.
+ * <p><b>Routing Semantics:</b> Supports exact-match routes with query string normalisation.</p>
  *
- * @since 0.1.0
+ * @since 0.1
  */
 public final class ExerisRouteRegistry {
 
@@ -73,14 +71,33 @@ public final class ExerisRouteRegistry {
         return q < 0 ? requestTarget : requestTarget.substring(0, q);
     }
 
+    /**
+     * Creates a new fluent {@link Builder} for route registrations.
+     *
+     * @return a new builder instance
+     */
     public static Builder builder() {
         return new Builder();
     }
 
+    /**
+     * Fluent builder for assembling an immutable {@link ExerisRouteRegistry}.
+     *
+     * @since 0.1
+     */
     public static final class Builder {
 
         private final Map<HttpMethod, Map<String, ExerisRequestHandler>> routes = new HashMap<>();
 
+        /**
+         * Registers a route handler for the specified HTTP method and path.
+         *
+         * @param method HTTP method
+         * @param path exact request path
+         * @param handler request handler
+         * @return this builder
+         * @throws IllegalStateException if a handler is already registered for this method and path
+         */
         public Builder register(HttpMethod method, String path, ExerisRequestHandler handler) {
             Map<String, ExerisRequestHandler> handlersByPath =
                     routes.computeIfAbsent(method, ignored -> new HashMap<>());
@@ -92,6 +109,11 @@ public final class ExerisRouteRegistry {
             return this;
         }
 
+        /**
+         * Builds an immutable {@link ExerisRouteRegistry} containing the registered routes.
+         *
+         * @return immutable route registry
+         */
         public ExerisRouteRegistry build() {
             return new ExerisRouteRegistry(routes);
         }

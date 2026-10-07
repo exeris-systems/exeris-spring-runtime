@@ -42,7 +42,7 @@ import java.util.Objects;
  *   <li>{@code REQUIRED} — joins an existing transaction or starts a new one.</li>
  *   <li>{@code REQUIRES_NEW} — always opens a second independent connection.</li>
  *   <li>{@code MANDATORY} — requires an active transaction; throws if none.</li>
- *   <li>{@code NESTED} — {@code UnsupportedOperationException} (Phase 3 scope limit); there are
+ *   <li>{@code NESTED} — {@code UnsupportedOperationException}; there are
  *       no savepoints on the kernel {@code PersistenceConnection} contract.</li>
  *   <li>{@code NOT_SUPPORTED} — <strong>not</strong> rejected here. Spring's
  *       {@code AbstractPlatformTransactionManager} suspends the current transaction and proceeds
@@ -59,7 +59,7 @@ import java.util.Objects;
  * <h2>Mode</h2>
  * <p>Compatibility Mode — enables {@code @Transactional} AOP on Spring-managed beans.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 public final class ExerisPlatformTransactionManager extends AbstractPlatformTransactionManager {
 
@@ -255,8 +255,8 @@ public final class ExerisPlatformTransactionManager extends AbstractPlatformTran
     private static void guardNotNestedOrUnsupported(int propagation) {
         if (propagation == TransactionDefinition.PROPAGATION_NESTED) {
             throw new UnsupportedOperationException(
-                    "PROPAGATION_NESTED is not supported by ExerisPlatformTransactionManager " +
-                    "(Phase 3 scope). Use PROPAGATION_REQUIRED or PROPAGATION_REQUIRES_NEW.");
+                    "PROPAGATION_NESTED is not supported by ExerisPlatformTransactionManager. " +
+                    "Use PROPAGATION_REQUIRED or PROPAGATION_REQUIRES_NEW.");
         }
         // Note: PROPAGATION_NOT_SUPPORTED is handled silently by AbstractPlatformTransactionManager
         // before doBegin is reached. It is not guarded here — see class Javadoc.

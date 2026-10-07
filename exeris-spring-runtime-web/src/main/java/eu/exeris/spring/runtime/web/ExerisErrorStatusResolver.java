@@ -12,33 +12,23 @@ import java.util.Optional;
  * Strategy for turning an unhandled exception into a specific HTTP status before
  * {@link ExerisErrorMapper} falls back to 500.
  *
- * <h2>Why this seam exists</h2>
- * <p>{@link ExerisErrorMapper} is created unconditionally on the pure-mode path and therefore
- * cannot reference optional dependencies. Spring Security is the concrete case: its
- * {@code AuthenticationException} must become a 401 and {@code AccessDeniedException} a 403, but
- * {@code spring-security-core} is an optional dependency of this module. A direct {@code instanceof}
- * in the mapper would make the class unloadable wherever Spring Security is absent — which is the
- * default. Resolvers are registered conditionally instead, so the mapper stays free of types it
- * cannot guarantee.
- *
- * <h2>Contract</h2>
+ * <p><b>Contract:</b>
  * <ul>
  *   <li>Return {@link Optional#empty()} for anything the resolver does not recognise. Never throw
- *       — a resolver that throws is swallowed and treated as "no opinion", because an error-mapping
- *       failure must not replace the original error.</li>
- *   <li>Resolvers are consulted in registration order; the first non-empty result wins. Order
- *       between two resolvers claiming the same exception is unspecified, so do not rely on it —
- *       declare disjoint interest instead.</li>
- *   <li>Called on the error path only, never on a successful dispatch. It is not a hot path, but it
- *       runs on the request thread: no blocking I/O.</li>
+ *       — a resolver that throws is treated as "no opinion", because an error-mapping failure must not
+ *       replace the original error.</li>
+ *   <li>Resolvers are consulted in registration order; the first non-empty result wins. Declare disjoint
+ *       interest rather than relying on order.</li>
+ *   <li>Called on the error path only, never on successful dispatch. Runs on the request thread: no blocking I/O.</li>
  * </ul>
  *
- * <h2>Mode</h2>
- * <p>Mode-neutral. The seam lives on the pure-mode path; individual resolvers declare their own
- * mode.
+ * <p><b>Mode:</b> Mode-neutral. The seam lives on the pure-mode path; individual resolvers declare their own mode.
  *
+ * @implSpec Keeps {@link ExerisErrorMapper} decoupled from optional framework dependencies
+ *     (such as Spring Security). Resolvers are registered conditionally so the pure-mode
+ *     mapper stays free of classes not guaranteed to be present on the classpath.
+ * @since 0.7
  * @see ExerisErrorMapper#mapUnhandled(Exception, eu.exeris.kernel.spi.http.HttpVersion)
- * @since 0.7.0
  */
 @FunctionalInterface
 public interface ExerisErrorStatusResolver {
