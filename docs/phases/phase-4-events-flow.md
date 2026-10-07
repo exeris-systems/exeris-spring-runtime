@@ -1,3 +1,12 @@
+---
+title: "Phase 4: Events, Flow/Saga, and Graph Integration"
+type: reference
+visibility: public
+owning-repo: exeris-spring-runtime
+status: active
+last-verified: 2026-10-07
+---
+
 # Phase 4: Events, Flow/Saga, and Graph Integration
 
 **Status:**

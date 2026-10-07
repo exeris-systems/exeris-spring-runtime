@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Triage result (exeris-spring-runtime)",
+  "description": "What exeris-spring-runtime-router hands to whoever runs next. Composed over the bundle base with task classes, roles, and validation gates narrowed to exeris-spring-runtime and closed.",
+  "allOf": [
+    {
+      "$ref": "../vendor/exeris-agents-2.1.0/schemas/triage-result.base.schema.json"
+    },
+    {
+      "properties": {
+        "task_class": {
+          "enum": [
+            "ARCHITECTURE",
+            "INTEGRATION_IMPLEMENTATION",
+            "VERIFICATION",
+            "DOCS_ADR",
+            "PERFORMANCE",
+            "MULTI_DOMAIN"
+          ]
+        },
+        "primary_agent": {
+          "enum": [
+            "exeris-spring-runtime-router",
+            "exeris-spring-runtime-architect",
+            "exeris-spring-runtime-implementer",
+            "exeris-spring-runtime-performance",
+            "exeris-spring-runtime-docs-adr",
+            "exeris-spring-runtime-verification"
+          ]
+        },
+        "secondary_handoffs": {
+          "items": {
+            "$ref": "handoff.schema.json"
+          }
+        },
+        "validation_gates": {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "../vendor/exeris-agents-2.1.0/schemas/triage-result.base.schema.json#/properties/validation_gates/items"
+              }
+            ],
+            "unevaluatedProperties": false
+          }
+        }
+      }
+    }
+  ],
+  "unevaluatedProperties": false
+}

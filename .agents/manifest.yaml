@@ -1,0 +1,132 @@
+# Composition and delivery metadata for this repository's agent material.
+# agents-md-schema.md rules 5, 7, 8 and 12: profiles and workflows compose by reference, provider
+# directories are generated, imports are version-pinned, and what a vendor cannot do is written
+# down rather than assumed.
+#
+# The check asserts this file and the filesystem agree in BOTH directions: every name here exists,
+# and every profile, skill and workflow on disk is named here.
+version: 2
+repository: exeris-spring-runtime
+
+imports:
+  - bundle: exeris-agents
+    version: 2.1.0
+    ref: abfdbe5336e3c29b807241b0bb00a6091cb42fea
+    sha256: sha256:7454a4e4f8682b664899225551dbf4e827e40a2c8889c989ff24e9ebdf2f960f
+
+agents:
+  - exeris-spring-runtime-router
+  - exeris-spring-runtime-architect
+  - exeris-spring-runtime-implementer
+  - exeris-spring-runtime-performance
+  - exeris-spring-runtime-docs-adr
+  - exeris-spring-runtime-verification
+
+skills:
+  - exeris-spring-docs-adr-check
+  - exeris-spring-kernel-wall-check
+  - exeris-spring-mode-clarity-review
+  - exeris-spring-module-boundary-review
+  - exeris-spring-ownership-boundary-review
+  - exeris-spring-routing-planner
+  - exeris-spring-runtime-path-performance-review
+  - exeris-spring-task-classifier
+  - exeris-spring-verification-planner
+
+workflows:
+  - wall-check
+  - module-boundary
+  - mode-clarity
+  - runtime-path-perf
+  - ownership-boundary
+
+policies:
+  - runtime-ownership
+  - the-wall
+  - mode-discipline
+  - hot-path-performance
+  - module-boundaries
+  - jdk-baseline
+  - bootstrap-invariance
+  - adr-triggers
+  - verification-guardrails
+
+references:
+  - adr-map
+  - architecture-seams
+  - build-and-testing
+
+schemas:
+  - triage-result
+  - verdict
+  - handoff
+
+hooks: hooks/hooks.yaml
+evals: evals/scenarios.yaml
+
+scripts:
+  - tools/eval-consistency-check/eval-consistency-check.sh
+  - tools/hook-deny-check/hook-deny-check.sh
+
+renderer:
+  source: exeris-systems/exeris-agents
+  entrypoint: tools/agents_render.py
+  check: tools/agents_file_check.py
+  bundle: tools/agents_bundle.py
+
+adapters:
+  claude:
+    target: .claude
+    agents: .claude/agents/{name}.md
+    skills: symlink
+    workflows: .claude/skills/{name}/SKILL.md
+    hooks: .claude/settings.json#hooks
+  copilot:
+    target: .github
+    agents: .github/agents/{name}.agent.md
+    skills: native
+    workflows: .github/prompts/{name}.prompt.md
+    hooks: .github/hooks/exeris.json
+    status: deferred
+  codex:
+    target: .codex
+    skills: native
+    hooks: .codex/hooks.json
+    status: deferred
+  gemini:
+    target: .gemini
+    skills: native
+    status: deferred
+  antigravity:
+    target: .agents
+    skills: native
+    hooks: .agents/hooks.json
+    status: deferred
+  cursor:
+    target: .cursor
+    skills: native
+    status: deferred
+
+degradations:
+  claude:
+    - no-canonical-capability-for-todo-tracking
+  copilot:
+    - stop-hook-warn-only
+    - no-role-profiles
+    - no-workflows
+  gemini: [stop-hook-warn-only, no-agent-scoped-hooks]
+  cursor: [stop-hook-warn-only]
+  antigravity:
+    - stop-hook-warn-only
+    - agent-selection-fails-silently
+  windows:
+    - skills-symlink-needs-copy-fallback
+
+provider-owned:
+  - .claude/settings.local.json
+  - .claude/README.md
+  - .claude/mcp.json
+  - .claude/worktrees
+  - .github/workflows
+  - path: .claude/settings.json
+    generated-region: hooks

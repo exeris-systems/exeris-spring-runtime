@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Review verdict (exeris-spring-runtime)",
+  "description": "The bundle's shape, narrowed to exeris-spring-runtime reviewing roles and scope vocabulary, with each composite object closed per bundle 2.0.0 closer discipline.",
+  "allOf": [
+    {
+      "$ref": "../vendor/exeris-agents-2.1.0/schemas/verdict.base.schema.json"
+    },
+    {
+      "properties": {
+        "agent": {
+          "enum": [
+            "exeris-spring-runtime-architect",
+            "exeris-spring-runtime-performance",
+            "exeris-spring-runtime-verification",
+            "exeris-spring-runtime-implementer",
+            "exeris-spring-runtime-docs-adr"
+          ]
+        },
+        "scope_class": {
+          "enum": [
+            "runtime hot path",
+            "runtime non-hot",
+            "test-tooling",
+            "docs-only"
+          ]
+        },
+        "findings": {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "../vendor/exeris-agents-2.1.0/schemas/verdict.base.schema.json#/properties/findings/items"
+              }
+            ],
+            "unevaluatedProperties": false
+          }
+        },
+        "checks_run": {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "../vendor/exeris-agents-2.1.0/schemas/verdict.base.schema.json#/properties/checks_run/items"
+              }
+            ],
+            "unevaluatedProperties": false
+          }
+        },
+        "handoffs": {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "../vendor/exeris-agents-2.1.0/schemas/verdict.base.schema.json#/properties/handoffs/items"
+              }
+            ],
+            "unevaluatedProperties": false
+          }
+        }
+      }
+    }
+  ],
+  "unevaluatedProperties": false
+}

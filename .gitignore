@@ -9,6 +9,13 @@
 # OS and local crash/log artifacts
 .DS_Store
 Thumbs.db
+# Logs
 *.log
 hs_err_pid*
+replay_pid*
 
+# Claude & agent state
+.claude/mcp.json
+.claude/worktrees/
+.agents-state/
+working-notes/eval-report.json
