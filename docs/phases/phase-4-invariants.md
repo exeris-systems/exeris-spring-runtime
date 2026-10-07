@@ -1,3 +1,12 @@
+---
+title: "Phase 4B Invariants — Flow / Saga Bridge"
+type: reference
+visibility: public
+owning-repo: exeris-spring-runtime
+status: active
+last-verified: 2026-10-07
+---
+
 # Phase 4B Invariants — Flow / Saga Bridge
 
 **Status:** Locked-in (Phase 4B closed 2026-05-11; preview-track, default-off)

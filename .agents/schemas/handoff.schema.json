@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Handoff (exeris-spring-runtime)",
+  "description": "One agent passing work to another within exeris-spring-runtime. Composed over the bundle base with role vocabulary narrowed to this repository's roles and closed.",
+  "allOf": [
+    {
+      "$ref": "../vendor/exeris-agents-2.1.0/schemas/handoff.base.schema.json"
+    },
+    {
+      "properties": {
+        "from": {
+          "enum": [
+            "human",
+            "exeris-spring-runtime-router",
+            "exeris-spring-runtime-architect",
+            "exeris-spring-runtime-implementer",
+            "exeris-spring-runtime-performance",
+            "exeris-spring-runtime-docs-adr",
+            "exeris-spring-runtime-verification"
+          ]
+        },
+        "to": {
+          "enum": [
+            "human",
+            "exeris-spring-runtime-router",
+            "exeris-spring-runtime-architect",
+            "exeris-spring-runtime-implementer",
+            "exeris-spring-runtime-performance",
+            "exeris-spring-runtime-docs-adr",
+            "exeris-spring-runtime-verification"
+          ]
+        }
+      }
+    }
+  ],
+  "unevaluatedProperties": false
+}

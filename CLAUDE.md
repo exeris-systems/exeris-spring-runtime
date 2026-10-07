@@ -1,136 +1,16 @@
-# CLAUDE.md
+---
+title: "CLAUDE.md — exeris-spring-runtime"
+type: reference
+visibility: public
+owning-repo: exeris-spring-runtime
+status: active
+last-verified: 2026-10-07
+---
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+# CLAUDE.md — exeris-spring-runtime
 
-## What this repo is
+This repository's agent contract is [`AGENTS.md`](AGENTS.md), and its detailed semantics live in [`.agents/`](.agents) — policies, references, skills, role profiles and workflows. Read `AGENTS.md` first; it is the entry point every compatible agent can discover.
 
-`exeris-spring-runtime` is an **independent Tier 1 product** in the Exeris ecosystem — a host-runtime integration layer, not a Spring Boot starter. The governing principle:
+This file exists only because a Claude client looks for it. It states no rule of its own: a rule written here would be a second place to author project semantics, which is forbidden.
 
-> Spring is the application framework. Exeris is the runtime owner.
-
-Spring owns DI, config binding, bean lifecycle. Exeris owns transport ingress, request lifecycle, backpressure, off-heap memory, provider discovery (`ServiceLoader`), and the telemetry hot path. Any change that quietly inverts this ownership (servlet/Netty/Reactor on the request path, IoC replacing `ServiceLoader`, JDBC-first persistence) is an architectural defect, not a style issue.
-
-**Who consumes this repo.** Exactly two consumers (see `~/exeris-systems/exeris-docs/high-level-architecture.md` §7 + §9):
-
-1. **Customers with existing Spring applications** doing brownfield migration onto the Exeris kernel — the primary commercial path. This is the structural showcase that **Exeris is a runtime, not a framework**: it can host Spring code on top of the same kernel that powers the platform's kernel-direct SKUs.
-2. **BudgetHQ** — the singular Spring-on-Exeris Family product (`~/exeris-systems/budgetHQ/`), deliberately structured to dogfood the Spring-on-Exeris combination as a shippable product under real customer load. All future Family products will be pure-Exeris on SDK + tooling; BudgetHQ's dogfooding role for Spring Runtime is filled once.
-
-**Who does NOT consume this repo.** The Exeris platform itself does not depend on `exeris-spring-runtime`: the kernel, the Tier 2 capability ecosystem (`exeris-caps-*`), and all first-party Tier 3 Platform SKUs (Gateway-family AND Service Boundary-family — API Gateway, Edge Proxy, Bot Blocker, IDP, PIM, OMS, Headless CMS) run kernel-direct. Their HTTP surface is generated from `@ExerisDomain` + `@Action` via the codegen pipeline in `exeris-tooling` (ADR-015), never via Spring `@RestController`. No cap `@Requires` `exeris-spring-runtime` and no SKU manifest layers it in.
-
-The kernel (`exeris-kernel-spi`, `exeris-kernel-core`) is consumed as binary dependencies and **must remain Spring-free**. This is "The Wall." The cap-tier Wall (per HLA §4) extends the same rule to every `exeris-caps-*` repository — no cap may reach into Spring internals, which keeps cap manifests reusable across both kernel-direct and Spring-Runtime-hosted deployments without manifest changes.
-
-> **Cross-repo paths in this file.** References like `~/exeris-systems/exeris-docs/...` and `~/exeris-systems/budgetHQ/` are valid in a full multi-repo workspace checkout (see `~/exeris-systems/CLAUDE.md`). They will NOT resolve in the GitHub UI or in a single-repo CI log inspection — that is by design. This file is primarily for AI tool use with a multi-repo workspace; human reviewers reading on GitHub should treat such paths as siblings of this repo's parent directory, not as relative-to-this-repo paths.
-
-## Build & test
-
-Java **25 (LTS)** is the baseline, with **no preview flag anywhere** — not at compile time, not on the test JVM, not on a consumer's JVM. Test JVM args are wired in the root POM (`-XX:+UnlockExperimentalVMOptions -XX:+UseZGC`). Published classes are class-file **major 69, minor 0**, enforced in CI by the class-file baseline gate in `build.yml`.
-
-> This changed at the kernel 0.11.0 pin. Before it, the baseline was Java 26 with `--enable-preview`, because `exeris-kernel` was itself preview-compiled and preview class files are major-pinned — which forced the flag and one exact JDK onto every consumer's *entire* build. Kernel ADR-066 removed the stamp; this repo followed. Do not reintroduce `--enable-preview` to make something compile: preview-dependent work belongs on the `-preview` line (ADR-068), not on the GA line. Building on a newer JDK is fine — `--release 25` governs the output.
-
-```bash
-mvn -s .github/maven-settings.xml clean install        # full reactor build
-mvn -s .github/maven-settings.xml -pl exeris-spring-runtime-web -am test    # one module + deps
-mvn -s .github/maven-settings.xml -pl exeris-spring-runtime-web test \
-    -Dtest=ExerisHttpDispatcherTest                    # single test class
-mvn -s .github/maven-settings.xml -pl exeris-spring-runtime-web test \
-    -Dtest=ExerisHttpDispatcherTest#methodName         # single test method
-mvn -s .github/maven-settings.xml clean deploy         # publish to GitHub Packages
-```
-
-The `.github/maven-settings.xml` flag is required for snapshot resolution from GitHub Packages. Two env vars are read:
-- `PACKAGES_READ_TOKEN` — used for the `github-exeris-kernel` server (cross-repo read of `maven.pkg.github.com/exeris-systems/exeris-kernel`). PAT (classic) with `read:packages` scope.
-- `GITHUB_TOKEN` — used for the three `github-exeris-runtime-*` servers (this repo's own packages). Same PAT works for local dev — just `export PACKAGES_READ_TOKEN=$GITHUB_TOKEN`.
-
-In CI, `GITHUB_TOKEN` is provided automatically by Actions and `PACKAGES_READ_TOKEN` must be configured as a repo secret (a PAT with `read:packages` scope). Deploy workflow: `.github/workflows/deploy.yml` (snapshots auto on push to main, releases via `workflow_dispatch`).
-
-## Module layout (and what belongs where)
-
-| Module | Role | Hard rules |
-|---|---|---|
-| `exeris-spring-runtime-bom` / `-build-config` | Version + plugin config | No source. |
-| `exeris-spring-boot-autoconfigure` | Boot wiring, properties, `SmartLifecycle`, `@Conditional*` | **Thin.** No transport, no request processing, no tx, no persistence. Classes >100 lines of logic are a smell. |
-| `exeris-spring-runtime-web` | `HttpHandler` impl bridging Exeris `HttpExchange` ↔ Spring handler beans | Pure mode: no `jakarta.servlet.*`, no `io.projectreactor.*`, no body copy from `LoanedBuffer` to `byte[]` on primary path. May depend on `spring-web` model only — never `spring-webmvc`. |
-| `exeris-spring-runtime-tx` | `PlatformTransactionManager` over `PersistenceConnection` | No `ThreadLocal` as tx context carrier; use `ScopedValue`. No `DataSource`/HikariCP ownership. |
-| `exeris-spring-runtime-data` | Optional persistence bridge (high scrutiny) | Each public class needs an ADR/Phase-3 reference comment. No HikariCP, no JPA/Hibernate as a first-class path. |
-| `exeris-spring-runtime-actuator` | Health, info, Micrometer bridge over `TelemetrySink` | Read-only / observability only. Never owns a data-plane path; never redefines `TelemetrySink`. |
-| `exeris-spring-runtime-graph` | Spring-side seam for kernel `GraphEngine` / `GraphSession` (Phase 4C, ADR-030) | Default-off via `exeris.runtime.graph.enabled`. No Spring Data Neo4j (`org.springframework.data..` banned). No fluent DSL builder. No `GraphCursor` until kernel ships it. No cross-resource transactions. Concrete drivers test-scope only. |
-
-Banned dependency edges: `autoconfigure → web/tx/data`, `web → data`, `data → web`, `tx → web`, `actuator → web (data-plane)`. Banned at the kernel boundary: any Spring type inside `eu.exeris.kernel.spi.*` or `eu.exeris.kernel.core.*`.
-
-Banned from the runtime classpath in pure mode: `org.apache.tomcat.embed:*`, `org.eclipse.jetty:*`, `io.undertow:*`, `io.netty:*`, `io.projectreactor:*`, `jakarta.servlet:jakarta.servlet-api`, `com.zaxxer:HikariCP`. Each module ships a `PureModeClasspathGuardTest` that asserts these are absent.
-
-## Pure Mode vs Compatibility Mode
-
-Every meaningful change must declare its mode: `PURE_MODE`, `COMPATIBILITY_MODE`, or `MIXED`.
-
-- **Pure Mode** (default): Exeris-native request path, no servlet/reactive runtime, performance-first. `ScopedValue` for context — `ThreadLocal` is banned on hot paths.
-- **Compatibility Mode** (opt-in, activated by `exeris.runtime.web.mode=compatibility`): isolated in `*.compat.*` sub-packages, must carry a `@CompatibilityMode` marker, never activates automatically when pure mode is running. Narrow `ThreadLocal` bridging (e.g., for `SecurityContextHolder`) is allowed only here, must be cleared in `finally`, and must not leak into pure-mode paths.
-
-Pure-mode code must not import from `*.compat.*`. Architecture tests (`*ArchitectureTest`, `*BoundaryTest`, `CompatibilityIsolationGuardTest`) enforce this — keep them green.
-
-## Kernel SPI seams (where the bridge happens)
-
-Read `docs/architecture/kernel-integration-seams.md` before touching any of these:
-
-| Kernel SPI | Bridge class | Module |
-|---|---|---|
-| `HttpHandler` / `HttpExchange` | `ExerisHttpDispatcher`, `ExerisServerRequest/Response`, `ExerisRouteRegistry` (`@ExerisRoute` + `ExerisRequestHandler` beans) | `web` |
-| `ConfigProvider` (registered via `META-INF/services`, priority 150) | `ExerisSpringConfigProvider` | `autoconfigure` |
-| `SubsystemProvider` / bootstrap | `ExerisRuntimeLifecycle` (`SmartLifecycle`) — Spring refresh → kernel bootstrap → `HttpServerEngine.start()` | `autoconfigure` |
-| `KernelProviders` (`ScopedValue` slots) | `ExerisContextHolder` | `web` |
-| `TelemetrySink` → Micrometer | `ExerisActuatorTelemetryBridge` (`MeterBinder`) | `actuator` |
-| `HttpRoutePolicy` (`HttpKernelProviders.HTTP_ROUTE_POLICY`) | `ExerisHttpSecurity` + `ExerisRoutePolicyCompiler` (ADR-063) — compiled at startup, bound by `ExerisRuntimeLifecycle`; the kernel decides, this runtime only compiles | `web` |
-| `PersistenceEngine` / `ConnectionFactory` | `ExerisPlatformTransactionManager`, `ExerisDataSource` (compat-only JDBC adapter) | `tx` / `data` |
-| `GraphEngine` / `GraphSession` (`KernelProviders.GRAPH_ENGINE`) | `ExerisGraphTemplate` + `@ExerisGraphQuery` (Phase 4C — opt-in via `exeris.runtime.graph.enabled`, kernel-gated GA per ADR-030) | `graph` |
-
-Bootstrap order is invariant: Spring `refresh()` → `ExerisRuntimeLifecycle.start()` → `KernelBootstrap.bootstrap()` (`ServiceLoader` discovers providers, DAG initialises, `KERNEL READY`) → handlers register → `HttpServerEngine` binds. Shutdown reverses exactly. The kernel's own bootstrap DAG (canonical, per `~/exeris-systems/exeris-kernel/docs/subsystems/bootstrap.md`) is `FOUNDATION: Memory (sequential) → SERVICES: Crypto & Persistence & Graph & Transport (parallel via StructuredTaskScope) → RUNTIME: Events & Flow & HTTP (parallel) → KERNEL READY`. `Config` is resolved by `KernelBootstrap` via `ServiceLoader<ConfigProvider>` before the orchestrator runs and is not a Subsystem in the DAG; `Exceptions` is not a Subsystem layer; `Security` is an L1 Citadel concept (ADR-012), not a boot-DAG node.
-
-## Hot-path discipline
-
-Code in `web` (and any tx/data adjacent to request flow) sits next to the kernel's hot path:
-
-- No per-request wrapper DTO allocation in pure mode.
-- No body copy from `LoanedBuffer` to `byte[]` / `InputStream` on the primary path — codecs operate on `MemorySegment` directly.
-- `LoanedBuffer` ownership: handler must release or transfer; after `exchange.respond(response)` the engine owns the response body — caller must NOT release it.
-- `HttpHandler.handle` must complete exactly once: respond OR throw `HttpException`, never both.
-- Compatibility-mode allocation cost must be measured and documented, never silently applied to pure-mode paths.
-
-## Documentation precedence
-
-When docs disagree, the source-of-truth order is:
-1. `docs/adr/*` — long-lived architectural intent
-2. `docs/architecture/module-boundaries.md` and `kernel-integration-seams.md` — structural contracts
-3. `docs/phases/phase-*.md` — current delivery scope
-4. `.github/copilot-instructions.md` — repo-wide review behaviour
-
-Phase semantics: **Phase 0** bootstrap coexistence + Wall integrity; **Phase 1** Exeris-owned ingress; **Phase 2** opt-in Spring compatibility; **Phase 3** tx/context/persistence; **Phase 3B-α** request scope + structured concurrency (1.0 preview, default-off; 0.6.0-preview train, ADR-029); **Phase 3B-β/γ** context propagation + OTel bridge (1.0 preview, kernel-gated on a **future** kernel tracing milestone — the `TraceContext`/`ScopedValue` slot lands in the consolidated 1.0 GA roadmap Sprint 0.12 (~v0.12), **not** in `exeris-kernel` 0.8.0; ADR-031 reserved); **Phase 4A** events bridge (1.0 preview, default-off); **Phase 4B** flow/saga bridge (1.0 preview, default-off); **Phase 4C** graph integration (1.0 preview, default-off, kernel-gated GA; 0.7.0-preview train, ADR-030); **Phase 5** edge gateway (`exeris-spring-runtime-gateway`, 1.0 preview, default-off; per ADR-021 — **not** an SCG compatibility bridge).
-
-When changes affect ownership model, mode semantics, module contracts, or compatibility guarantees → **trigger an ADR**, don't just edit code.
-
-### ADR status convention in this repo
-
-Two `Status` patterns appear in `docs/adr/*`:
-
-- **`Accepted`** / **`ACCEPTED (drafted and accepted YYYY-MM-DD; single decider — no future gating event; ratified by the PR that introduces this file)`** — the *accepted-on-merge* pattern. Use for ADRs with a **single decider, no future gating event, and a decision already made at draft time**. The PR review process refines wording; the decision itself is not subject to further deliberation. Merging the PR ratifies the already-made decision. Examples on main: ADR-010, ADR-017, ADR-021, ADR-027 (EventBus boundary), ADR-028 (SB4 nominal compat), ADR-029 (Phase 3B-α scope), ADR-030 (Phase 4C scope). The list is non-exhaustive — check `docs/adr/*` for current state.
-- **`PROPOSED`** — the *deferred-decision* pattern. Use for ADRs where the **decision is not yet made** and the PR exists to gather input before a decider commits. The ADR sits in `PROPOSED` until a follow-up commit moves it to `ACCEPTED` (or `WITHDRAWN`). **No ADR in `docs/adr/` currently sits in `PROPOSED`.** ADR-011 was cited here as the example until 2026-08-05; its `PROPOSED` line turned out to be drift — the decision was single-decider, made at draft time, and operative since ratification (#9), so it is `ACCEPTED` under the pattern above. See its "Status correction" section for what the stale line cost.
-
-  A stale `PROPOSED` is not a harmless label: it reads as "these requirements are not in force yet", especially when the ADR body itself says "Once this decision is ACCEPTED …". Flip the status in the same commit that ratifies, and if you find an ADR whose status contradicts observable practice, treat that as the drift rather than assuming practice is wrong.
-
-Picking between them is a function of *whether the decision is genuinely open*, not of *whether the PR is open*. An open PR for a single-decider ADR with the decision already made is `ACCEPTED`; an open PR for a multi-stakeholder ADR with the decision still being deliberated is `PROPOSED`.
-
-If a PR review surfaces a substantive change to the decision (not just wording), withdraw the ADR or move it back to `PROPOSED` before re-submitting — do not silently amend the body of an `ACCEPTED` document.
-
-## Testing expectations
-
-Four layers, choose what the change requires:
-1. **Unit** — adapter/wiring/codec/error-mapping logic.
-2. **Module integration** — real Spring wiring with collaborators.
-3. **Runtime integration** — end-to-end Exeris-hosted: context starts, kernel starts, ingress is Exeris's, Spring handler invoked, response returns through Exeris, shutdown is clean. (Wire-level socket E2E for Phase 1 ingress is still being built — see `docs/phases/phase-1-milestone-status.md`.)
-4. **Architecture guards** — ArchUnit-style: `WallIntegrityTest`, `ModuleBoundaryTest`, `*ClasspathGuardTest`, `CompatibilityIsolationGuardTest`. These must stay green; failures here indicate a real architectural regression, not a test problem.
-
-## Conventions to honour
-
-- Package roots are strict: `eu.exeris.spring.boot.autoconfigure.*`, `eu.exeris.spring.runtime.{web,tx,data,actuator}.*`. Nothing under `eu.exeris.spring.*` may sit inside `eu.exeris.kernel.*`.
-- Constructor injection over field injection. Immutable config objects. Explicit lifecycle sequencing.
-- Don't promote convenience by hiding cost — if compatibility adds heap churn or ownership ambiguity, say so in the code/docs.
-- Don't expand `autoconfigure` into runtime logic; don't dump cross-cutting helpers into one module.
+Claude-specific adapters generated from `.agents/` are in [`.claude/`](.claude), each carrying a do-not-edit marker naming its source.
