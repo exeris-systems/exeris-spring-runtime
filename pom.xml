@@ -59,6 +59,7 @@
              maintains load-bearing verification against current releases. -->
         <spring.boot.sb3.version>3.5.14</spring.boot.sb3.version>
         <spring.boot.sb4.version>4.1.0</spring.boot.sb4.version>
+        <!-- Fallback keeping reactor resolvable if neither matrix profile is active. -->
         <spring.boot.version>${spring.boot.sb3.version}</spring.boot.version>
         <spring.framework.version>6.2.4</spring.framework.version>
 
@@ -73,6 +74,7 @@
              major version 70; kept ahead of baseline so class-file parsing succeeds. -->
         <jacoco.maven.plugin.version>0.8.15</jacoco.maven.plugin.version>
         <jacoco.line.minimum>0.00</jacoco.line.minimum>
+        <!-- Consumed late-bound (@{coverage.argLine}) by surefire/failsafe so jacoco:prepare-agent attaches. -->
         <coverage.argLine/>
 
         <!-- Test tooling. ArchUnit 1.4.2 bundles ASM reading class files up to major version 70;
