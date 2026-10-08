@@ -41,6 +41,8 @@ import eu.exeris.spring.runtime.web.scope.RequestScopeResolver;
 
 /**
  * Auto-configuration for Exeris Pure Mode web routing and dispatcher bridge.
+ *
+ * @since 0.1
  */
 @AutoConfiguration
 @ConditionalOnClass(ExerisHttpDispatcher.class)
@@ -55,15 +57,33 @@ public class ExerisWebAutoConfiguration {
     private static final System.Logger LOGGER = System.getLogger(ExerisWebAutoConfiguration.class.getName());
     private static final String FALLBACK_TELEMETRY_SINKS_BEAN_NAME = "exerisFallbackTelemetrySinks";
 
+    /**
+     * Default constructor for auto-configuration.
+     */
+    public ExerisWebAutoConfiguration() {
+    }
+
     // Resolvers turn specific exceptions into specific statuses before the 500 fallback. Pure Mode
     // needs them too: @PreAuthorize is plain AOP on application beans, so an authorization refusal
     // reaches this dispatcher here exactly as it does on the compat path.
+    /**
+     * Creates the error mapper for unhandled exceptions.
+     *
+     * @param statusResolvers status resolvers provided by the Spring context
+     * @return configured error mapper
+     */
     @Bean
     @ConditionalOnMissingBean
     public ExerisErrorMapper exerisErrorMapper(ObjectProvider<ExerisErrorStatusResolver> statusResolvers) {
         return new ExerisErrorMapper(statusResolvers.orderedStream().toList());
     }
 
+    /**
+     * Creates the route registry populated from {@link ExerisRoute} annotated handler beans.
+     *
+     * @param ctx Spring application context
+     * @return configured route registry
+     */
     @Bean
     @ConditionalOnMissingBean
     public ExerisRouteRegistry exerisRouteRegistry(ApplicationContext ctx) {
@@ -89,7 +109,7 @@ public class ExerisWebAutoConfiguration {
     }
 
     /**
-     * Phase 3B-α (ADR-029): build the {@link RequestScopeBinder} that the dispatcher uses to
+     * Builds the {@link RequestScopeBinder} that the dispatcher uses to
      * optionally bind a request scope around each {@code HttpHandler.handle} invocation.
      *
      * <p>Wiring decision matrix:
@@ -100,6 +120,8 @@ public class ExerisWebAutoConfiguration {
      *       cannot be built without an application-side resolver; logged at INFO once).</li>
      *   <li>Property enabled + resolver bean present → resolving binder.</li>
      * </ul>
+     *
+     * @see "ADR-029: ScopedValue Context Propagation"
      */
     @Bean
     @ConditionalOnMissingBean

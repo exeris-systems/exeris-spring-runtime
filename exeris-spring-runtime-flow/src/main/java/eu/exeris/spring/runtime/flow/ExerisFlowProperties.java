@@ -11,7 +11,7 @@ import org.springframework.boot.context.properties.bind.ConstructorBinding;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
 /**
- * Configuration properties for the Exeris Flow / Saga bridge module (Phase 4B).
+ * Configuration properties for the Exeris Flow / Saga bridge module.
  *
  * <p>The flow module is opt-in via {@link #enabled()}; once enabled, the remaining
  * flags steer behaviour for durable persistence and event-driven choreography.
@@ -21,15 +21,14 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *       {@code ExerisFlowAutoConfiguration} via {@code @ConditionalOnProperty}.
  *       Default {@code false}.</li>
  *   <li>{@link #persistenceEnabled()} — gates durable snapshot persistence via the
- *       kernel's {@code JdbcFlowSnapshotStore}. Default {@code true} from
- *       {@code 0.5.0-preview} (kernel 0.8.0 + ADR-022). Parked flows survive a JVM
- *       restart when a JDBC {@code PersistenceEngine} is bound; the kernel falls back
- *       to the in-memory {@code CommunityFlowSnapshotStore} when no JDBC engine is
- *       available, so setting this to {@code true} is safe even without persistence
- *       wired. Applications that explicitly do NOT want any snapshot writes (pure
- *       fire-and-forget flows) can disable by setting this to {@code false}.</li>
- *   <li>{@link #choreographyEnabled()} — gates event-driven flow triggers via the
- *       choreography bridge (Step 3); additionally requires
+ *       kernel's {@code JdbcFlowSnapshotStore}. Parked flows survive a JVM restart
+ *       when a JDBC {@code PersistenceEngine} is bound; the kernel falls back to the
+ *       in-memory {@code CommunityFlowSnapshotStore} when no JDBC engine is available,
+ *       so setting this to {@code true} is safe even without persistence wired.
+ *       Applications that explicitly do not want any snapshot writes (pure fire-and-forget
+ *       flows) can disable by setting this to {@code false}.</li>
+ *   <li>{@link #choreographyEnabled()} — gates event-driven flow triggers via
+ *       {@link ExerisFlowChoreographyBridge}; additionally requires
  *       {@code FlowEngineCapabilities.choreographySupport()} on the kernel side.
  *       Default {@code false}.</li>
  *   <li>{@link #requireEngine()} — defaults to {@code true}. When {@code ExerisFlowDefinition}
@@ -45,13 +44,11 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * {@code exeris.runtime.flow.persistence-enabled} → {@code flow.persistenceEnabled}
  * (the key the kernel's {@code CommunityFlowSubsystem.buildFlowConfig()} reads).
  *
- * @param enabled              master switch for the flow module — default {@code false}
- * @param persistenceEnabled   gates durable snapshot persistence; default {@code true}
- *                             (kernel falls back to in-memory when no JDBC engine bound)
- * @param choreographyEnabled  gates event-driven flow triggers; default {@code false}
- * @param requireEngine        fail-loud posture when definitions are declared without an
- *                             engine; default {@code true}
- * @since 0.1.0
+ * @param enabled master switch for the flow module — default {@code false}
+ * @param persistenceEnabled gates durable snapshot persistence; default {@code true}
+ * @param choreographyEnabled gates event-driven flow triggers; default {@code false}
+ * @param requireEngine fail-loud posture when definitions are declared without an engine; default {@code true}
+ * @since 0.1
  */
 @ConfigurationProperties(prefix = "exeris.runtime.flow")
 public record ExerisFlowProperties(
@@ -63,6 +60,14 @@ public record ExerisFlowProperties(
 
 ) {
 
+    /**
+     * Creates flow configuration properties with bound values.
+     *
+     * @param enabled master switch for the flow module
+     * @param persistenceEnabled gates durable snapshot persistence
+     * @param choreographyEnabled gates event-driven flow triggers
+     * @param requireEngine fail-loud posture when definitions are declared without an engine
+     */
     @ConstructorBinding
     public ExerisFlowProperties {
     }

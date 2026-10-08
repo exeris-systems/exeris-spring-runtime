@@ -108,9 +108,8 @@ class SpringBootHealthIndicatorFactoryTest {
 
     @Test
     void proxyIdentitySemanticsAreConsistent() {
-        // equals/hashCode must agree. An earlier version answered equals() true for any proxy while
-        // hashing on identity, so two proxies over different sources were "equal" with different
-        // hash codes.
+        // equals and hashCode must agree: two distinct proxy instances over different sources
+        // must not compare equal and each must have stable hashCode.
         Object first = createIndicator(notRunningLifecycle());
         Object second = createIndicator(notRunningLifecycle());
 

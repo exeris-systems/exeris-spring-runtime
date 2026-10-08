@@ -42,7 +42,7 @@ import java.util.Objects;
  * <p>So matching is bounded at the first {@code ?} rather than run over the raw target — and it is
  * bounded by index, because taking the substring would allocate on exactly the path that must not.
  *
- * @since 0.8.0
+ * @since 0.8
  */
 final class RoutePathPattern {
 
@@ -57,15 +57,8 @@ final class RoutePathPattern {
     private final String pattern;
 
     /**
-     * Parallel arrays rather than a segment object per element, and a {@code byte} kind rather than a
-     * sentinel string.
-     *
-     * <p>An earlier version stored the wildcards as interned string constants and compared them with
-     * {@code ==} on the hot path. That was correct — and its correctness rested on an invariant nothing
-     * enforced: that every wildcard entry is the exact constant instance. One future code path putting
-     * an equal-but-distinct string into the array would have made a wildcard silently stop matching,
-     * which for a rule that grants access is a lockout and for one that demands a scope is a hole. The
-     * kind is now data, so there is no invariant left to break.
+     * Parallel segment kinds, held out of band so matching evaluates data tags rather than
+     * string identity on the hot path.
      */
     private final byte[] kinds;
 

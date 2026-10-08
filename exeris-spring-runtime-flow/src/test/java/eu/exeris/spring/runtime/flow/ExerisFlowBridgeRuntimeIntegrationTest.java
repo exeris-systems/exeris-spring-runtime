@@ -46,12 +46,10 @@ import eu.exeris.spring.boot.autoconfigure.KernelProviderScope;
  * <h2>What this proves vs the unit suite</h2>
  * <ul>
  *   <li>{@link ExerisRuntimeLifecycle#getFlowEngine()} is populated after a real kernel
- *       bootstrap and cleared after shutdown — same shape as the events bridge IT, locked
- *       in here as the Step 2 commitment from the PR #17 review.</li>
+ *       bootstrap and cleared after shutdown — same shape as the events bridge IT.</li>
  *   <li>{@link FlowEngineSupplier#requireEngine()} fails loud both before
  *       {@link ExerisRuntimeLifecycle#start()} runs and after {@code stop()} clears the
- *       captured reference. This is the first {@code requireEngine()} consumer call site,
- *       paired with the failure-mode test as the PR #17 review required.</li>
+ *       captured reference.</li>
  *   <li>{@link ExerisFlowTemplate#schedule(String, FlowContext)} reaches the kernel
  *       scheduler against a live community engine, the step action runs, and the seam
  *       works without any Spring auto-configuration glue (direct construction is enough).</li>
@@ -266,10 +264,7 @@ class ExerisFlowBridgeRuntimeIntegrationTest {
      * registry. This re-registration step is the Spring-side contract documented in
      * {@code phase-4-invariants.md}: durable saga recovery requires that applications
      * register the same plan definitions on every lifecycle restart.
-     *
-     * <p>This is the canonical Phase 4B Step 4 deliverable — the IT mentioned in the
-     * master phase doc as the closure gate before {@code 0.5.0-preview} ships durable
-     * saga state by default.
+     * <p>Verifies durable saga state persistence and recovery across lifecycle restart.
      */
     @Test
     void parkedFlowSnapshotsSurviveLifecycleRestartViaJdbcStore() throws InterruptedException, SQLException {

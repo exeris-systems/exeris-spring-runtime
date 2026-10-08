@@ -98,12 +98,10 @@ class ExerisCompatDispatcherTest {
 
     @Test
     void handle_populateContext_runsWithinKernelProviderScope() throws Exception {
-        // Regression guard: a canonical identity-resolution JwtAuthenticationConverter does
+        // A canonical identity-resolution JwtAuthenticationConverter does
         // per-request DB access (ExerisDataSource → KernelProviders.PERSISTENCE_ENGINE). The
         // security filter's populateContext must therefore run INSIDE the KernelProviderBinder
-        // scope. Previously it ran before bind(), so PERSISTENCE_ENGINE was unbound and the
-        // converter's getConnection() failed with "PersistenceEngine is not bound in the current
-        // scope". Assert the slot is bound at conversion time.
+        // scope so PERSISTENCE_ENGINE is bound. Assert the slot is bound at conversion time.
         PersistenceEngine engine = mock(PersistenceEngine.class);
         AtomicBoolean boundDuringConvert = new AtomicBoolean(false);
 
@@ -134,9 +132,8 @@ class ExerisCompatDispatcherTest {
 
     @Test
     void handle_invalidToken_returns401WithChallenge_andNeverReachesTheHandler() throws Exception {
-        // The fail-open this closes: the decoder failure used to be swallowed, the request
-        // continued as anonymous, and the handler ran for a caller whose credential had just been
-        // rejected. Answering 401 is only half of it — the handler must not execute either.
+        // When token decoding fails, answering 401 is required and the downstream handler
+        // must not execute.
         JwtDecoder rejectingDecoder = _ -> {
             throw new org.springframework.security.oauth2.jwt.JwtException("expired");
         };

@@ -24,9 +24,8 @@ import org.springframework.lang.Nullable;
  * Compatibility scaffold auto-configuration for Exeris DataSource adapter.
  *
  * <p>This configuration is intentionally non-default and must be enabled explicitly.
- * Activating it signals intent to use the JDBC compatibility bridge (Level 2 per
- * Phase 3 plan / ADR-017). Level 1 (Exeris-native QueryExecutor) remains the
- * recommended path.
+ * Activating it signals intent to use the JDBC compatibility bridge per ADR-017.
+ * Exeris-native persistence remains the recommended path.
  *
  * <p>When an {@link ExerisPlatformTransactionManager} bean is present, wires it with
  * an {@link eu.exeris.spring.runtime.tx.ExerisJdbcResourceCallback} so that
@@ -43,20 +42,18 @@ import org.springframework.lang.Nullable;
  *       Exeris registers its own and Spring Boot's autoconfig then skips (its own
  *       {@code @ConditionalOnMissingBean(DataSource.class)} sees the Exeris bean).</li>
  *   <li>If the application explicitly provides its own {@link DataSource} bean,
- *       Exeris stands down — Spring's standard precedence rules apply unchanged.</li>
+ *       Exeris stands down &mdash; Spring's standard precedence rules apply unchanged.</li>
  * </ul>
  * <p>The bean is also marked {@link Primary @Primary} as a belt-and-braces guard for
  * unusual wiring orders where two {@link DataSource} beans end up co-resident.
  *
- * <p>This ordering was added after downstream migration review surfaced that the prior
- * configuration could let Spring Boot's default {@code DataSourceAutoConfiguration}
- * win over the Exeris adapter even when the opt-in property was set — which
- * contradicted the Phase 3 / ADR-017 intent that opting in means the Exeris adapter
- * is the runtime-owned bridge. The {@code beforeName} attribute of
- * {@link AutoConfiguration @AutoConfiguration} (Spring Boot 3.x) is used with the FQN
- * string rather than a class literal so this module does not require
- * {@code spring-jdbc} on its compile classpath; the opt-in property remains the only
- * activation switch.
+ * @implSpec The {@code beforeName} attribute of {@link AutoConfiguration @AutoConfiguration}
+ *     is used with the FQN string rather than a class literal so this module does not require
+ *     {@code spring-jdbc} on its compile classpath. Running before Spring Boot's
+ *     {@code DataSourceAutoConfiguration} ensures that the Exeris adapter takes precedence
+ *     whenever explicitly enabled.
+ * @since 0.1
+ * @see "ADR-017: Persistence Seam and Compatibility Mode"
  */
 @AutoConfiguration(beforeName = "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration")
 @ConditionalOnClass(ExerisDataSource.class)
@@ -67,6 +64,18 @@ import org.springframework.lang.Nullable;
 )
 public class ExerisDataAutoConfiguration {
 
+    /**
+     * Default constructor for auto-configuration.
+     */
+    public ExerisDataAutoConfiguration() {
+    }
+
+    /**
+     * Creates and registers the Exeris compatibility {@link DataSource} bean.
+     *
+     * @param ptm optional transaction manager to wire with connection binding callbacks
+     * @return the configured {@link ExerisDataSource}
+     */
     @Bean
     @Primary
     @ConditionalOnMissingBean(DataSource.class)
@@ -88,11 +97,11 @@ public class ExerisDataAutoConfiguration {
      * contributes must reach the environment before {@code JpaProperties} is bound and the
      * {@code EntityManagerFactory} is built.
      *
-     * <p>Not gated on Hibernate being present at the bean level — the class carries no Hibernate or
+     * <p>Not gated on Hibernate being present at the bean level &mdash; the class carries no Hibernate or
      * Spring-Boot-JPA import and checks for Hibernate itself before contributing anything, so the
-     * bean is inert rather than absent when JPA is not in use. Keeping the gate inside the class also
-     * keeps the registered-and-active path testable without pulling {@code hibernate-core} onto this
-     * module's test classpath.
+     * bean is inert rather than absent when JPA is not in use.
+     *
+     * @return the {@link ExerisHibernateBootstrapCustomizer} instance
      */
     @Bean
     @ConditionalOnMissingBean(ExerisHibernateBootstrapCustomizer.class)

@@ -60,17 +60,11 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  *       → callback.run()
  * </pre>
  *
- * <h3>Ingress teardown and drain are kernel-side, not steps of this method</h3>
- * <p>This sequence previously listed {@code transport.closeIngress()} and a drain of
- * in-flight requests as steps of this method. They are not: {@link #stop()} calls
- * {@code KernelBootstrap.shutdown()} and the ingress-close and drain happen inside it,
- * on the kernel side. The old wording also attributed the drain budget to
- * {@code gracefulShutdownTimeoutSeconds} — a name that does not exist in the binder either;
- * the real property is {@code exeris.runtime.shutdown.timeout-seconds} (gated by
- * {@code exeris.runtime.shutdown.graceful}, bound via
- * {@link ExerisRuntimeProperties.ShutdownProperties}). It bounds how long Spring waits to
- * join the kernel boot thread, not the drain, which has its own 60 s deadline inside the
- * kernel and is not configurable from here.
+ * <h3>Shutdown Invariants</h3>
+ * <p>Ingress teardown and stream drain are executed on the kernel side during
+ * {@code KernelBootstrap.shutdown()}. Spring waits up to
+ * {@code exeris.runtime.shutdown.timeout-seconds} (configured via
+ * {@link ExerisRuntimeProperties.ShutdownProperties}) for kernel shutdown to complete.
  *
  * <p>Shutdown executes gracefully in three stages: closes transport ingress to reject new requests,
  * drains in-flight requests while response-writing reactors remain active, and finally executes

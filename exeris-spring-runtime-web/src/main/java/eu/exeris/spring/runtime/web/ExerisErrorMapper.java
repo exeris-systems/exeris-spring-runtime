@@ -20,8 +20,9 @@ import java.util.Optional;
 /**
  * Maps application-layer exceptions to kernel {@link HttpResponse} objects.
  *
- * <p>Phase 1 provides a minimal default mapping. Advanced strategies can be registered
- * as Spring beans and composed into this mapper in later phases.
+ * <p>Provides default HTTP error response mapping. Status resolver beans (such as
+ * {@link ExerisErrorStatusResolver}) can be registered in the Spring context to
+ * customize error status translation.
  *
  * <h2>Resolvers</h2>
  * <p>{@link #mapUnhandled} consults the registered {@link ExerisErrorStatusResolver}s before
@@ -31,7 +32,7 @@ import java.util.Optional;
  * Spring Security types because it is created unconditionally and that dependency is optional;
  * see {@link ExerisErrorStatusResolver} for the full reasoning.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 public final class ExerisErrorMapper {
 
@@ -60,8 +61,9 @@ public final class ExerisErrorMapper {
     /**
      * Maps a {@link HttpException} to an HTTP 500 response.
      *
-     * <p>Phase 1: returns a generic 500. A future phase will expose structured
-     * status metadata on {@code HttpException} to allow specific status mapping.
+     * @param ex      the HTTP exception to map
+     * @param version HTTP protocol version to use for the response
+     * @return 500 internal server error HTTP response
      */
     public HttpResponse map(HttpException ex, HttpVersion version) {
         return mapStatus(HttpStatus.INTERNAL_SERVER_ERROR, version);
@@ -71,8 +73,12 @@ public final class ExerisErrorMapper {
      * Maps an unhandled application exception to a resolved status, or to HTTP 500 when no
      * resolver claims it.
      *
-     * <p>Does NOT include exception details in the response body; callers should
+     * <p>Does not include exception details in the response body; callers should
      * log through the Exeris telemetry pipeline before invoking this method.
+     *
+     * @param ex      the unhandled exception to map
+     * @param version HTTP protocol version to use for the response
+     * @return mapped HTTP response
      */
     public HttpResponse mapUnhandled(Exception ex, HttpVersion version) {
         return resolve(ex)
@@ -105,14 +111,22 @@ public final class ExerisErrorMapper {
     /**
      * Produces a no-body response for the given status, honoring the negotiated
      * protocol version.
+     *
+     * @param status  HTTP status code
+     * @param version HTTP protocol version
+     * @return empty-body HTTP response
      */
     public HttpResponse mapStatus(HttpStatus status, HttpVersion version) {
         return mapStatus(status, version, List.of());
     }
 
     /**
-     * Produces a no-body response for the given status with additional status-mandated headers
-     * (e.g. {@code WWW-Authenticate} on a 401).
+     * Produces a no-body response for the given status with additional status-mandated headers.
+     *
+     * @param status  HTTP status code
+     * @param version HTTP protocol version
+     * @param headers additional headers to include in the response
+     * @return empty-body HTTP response with headers
      */
     public HttpResponse mapStatus(HttpStatus status, HttpVersion version, List<HttpHeader> headers) {
         List<HttpHeader> all = new ArrayList<>(headers.size() + 1);

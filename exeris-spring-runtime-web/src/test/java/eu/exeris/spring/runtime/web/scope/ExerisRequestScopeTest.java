@@ -16,15 +16,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.junit.jupiter.api.Test;
 
 /**
- * Direct coverage of the {@code ExerisRequestScope} facade — the whole of Phase 3B-α after ADR-029
- * obligations 2 and 6 were withdrawn (RFC-2026-08-08).
+ * Direct coverage of the {@code ExerisRequestScope} facade.
  *
- * <p>The unbound-path invariant previously lived in
- * {@code ExerisStructuredScopeIntegrationTest#disabledPathReturnsEmpty} and is restated here without
- * the deleted wrapper. It was always a property of this facade rather than of the fan-out helper.
- *
- * <p>Nothing here asserts {@code ScopedValue} propagation semantics: those belong to the JDK, and
- * mistaking them for our own is precisely what the withdrawal corrected.
+ * <p>Verifies the unbound-path invariant and accessor behavior.
  */
 class ExerisRequestScopeTest {
 

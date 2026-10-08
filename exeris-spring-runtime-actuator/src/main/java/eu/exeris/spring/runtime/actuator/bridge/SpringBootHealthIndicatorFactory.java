@@ -90,10 +90,7 @@ public final class SpringBootHealthIndicatorFactory {
                     // suppressing them would leave a bare status that says nothing.
                     case "health", "getHealth" -> converter.toBootHealth(source.health());
                     case "toString" -> "ExerisRuntimeHealthIndicator(proxy)";
-                    // Identity equality, the standard shape for a dynamic proxy. An earlier version
-                    // returned true for ANY proxy instance, which is both wrong and inconsistent with
-                    // the identity hashCode beside it: two proxies over different sources compared
-                    // equal while hashing differently, breaking the equals/hashCode contract.
+                    // Identity equality, preserving consistency with the identity hashCode beside it.
                     case "hashCode" -> System.identityHashCode(proxyInstance);
                     case "equals" -> args != null && args.length == 1 && proxyInstance == args[0];
                     default -> throw new UnsupportedOperationException(

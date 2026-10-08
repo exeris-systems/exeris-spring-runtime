@@ -26,8 +26,7 @@ import eu.exeris.spring.runtime.events.EventEngineSupplier;
 
 /**
  * Discovers {@link ExerisFlowChoreographyMapper} beans and registers each one with the
- * kernel {@link FlowEngine} via {@link FlowEngine#registerChoreographyMapper} (Phase 4B
- * Step 3).
+ * kernel {@link FlowEngine} via {@link FlowEngine#registerChoreographyMapper}.
  *
  * <h2>Lifecycle</h2>
  * <p>Two-phase, mirroring {@link ExerisFlowDefinitionRegistrar}:
@@ -73,7 +72,7 @@ import eu.exeris.spring.runtime.events.EventEngineSupplier;
  * without a fresh discovery pass. Discovery is re-done from scratch only on the next
  * {@code afterSingletonsInstantiated()} (i.e., context refresh).
  *
- * @since 0.5.0
+ * @since 0.5
  * @see ExerisFlowChoreographyMapper
  * @see FlowEngine#registerChoreographyMapper
  */
@@ -112,6 +111,14 @@ public final class ExerisFlowChoreographyBridge implements SmartInitializingSing
      */
     private record MapperEntry(ExerisFlowChoreographyMapper mapper, Set<String> eventTypeNames) {}
 
+    /**
+     * Creates a flow choreography bridge.
+     *
+     * @param applicationContext  Spring application context for mapper discovery
+     * @param flowEngineSupplier  supplier for the kernel flow engine
+     * @param eventEngineSupplier supplier for the kernel event engine
+     * @param properties          flow module configuration properties
+     */
     public ExerisFlowChoreographyBridge(ApplicationContext applicationContext,
                                         FlowEngineSupplier flowEngineSupplier,
                                         EventEngineSupplier eventEngineSupplier,

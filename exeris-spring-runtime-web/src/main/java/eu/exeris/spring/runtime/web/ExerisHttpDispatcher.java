@@ -178,7 +178,7 @@ public final class ExerisHttpDispatcher implements HttpHandler {
 
     /**
      * Re-bind any unbound kernel provider slots via the configured {@link KernelProviderBinder},
-     * then bind the Phase 3B-α request scope via the configured {@link RequestScopeBinder}, then
+     * then bind the request scope via the configured {@link RequestScopeBinder}, then
      * dispatch. With the default {@link KernelProviderBinder#noop()} / {@link RequestScopeBinder#noop()}
      * this collapses to a direct {@link #dispatch(HttpExchange, ExerisServerRequest)} call (zero
      * overhead). With a capturing provider binder it wraps the dispatch so the persistence engine

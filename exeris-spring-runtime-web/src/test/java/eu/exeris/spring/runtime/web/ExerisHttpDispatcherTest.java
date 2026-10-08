@@ -202,7 +202,7 @@ class ExerisHttpDispatcherTest {
         TestExchange exchange = TestExchange.get(HttpMethod.GET, "/api/v1/user?id=1", anyHttpVersion());
         dispatcher.handle(exchange.proxy());
 
-        // The route resolves despite the query string — previously this fell through to 404.
+        // The route resolves despite the query string.
         assertThat(exchange.response().status()).isEqualTo(HttpStatus.OK);
         // The handler still sees the raw request target, so query parameters remain readable.
         assertThat(observedPath.get()).isEqualTo("/api/v1/user?id=1");

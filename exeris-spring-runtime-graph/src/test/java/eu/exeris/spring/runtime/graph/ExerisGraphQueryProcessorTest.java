@@ -72,11 +72,8 @@ class ExerisGraphQueryProcessorTest {
 
     @Test
     void nonPublicMethod_failsFastAtPostProcessing() {
-        // Previously the processor used Class.getMethods() (returns only public methods), so
-        // the !isPublic() guard in validate() was unreachable — a protected/package-private/
-        // private method annotated with @ExerisGraphQuery would skip validation entirely and
-        // surface UnsupportedOperationException at runtime. This test pins the fail-fast
-        // ADR-030 obligation 4 explicitly requires.
+        // A protected/package-private/private method annotated with @ExerisGraphQuery
+        // must fail fast at post-processing time as ADR-030 obligation 4 requires.
         var template = buildTemplate(mock(GraphSession.class));
         var processor = new ExerisGraphQueryProcessor(template);
 
