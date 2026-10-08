@@ -148,7 +148,7 @@ class ExerisWebAutoConfigurationTest {
         }
     }
 
-    // ---- Phase 3B-α: RequestScopeBinder three-state autoconfig matrix (ADR-029) ----
+    // ---- RequestScopeBinder three-state autoconfig matrix (ADR-029) ----
 
     /**
      * State 1: property disabled (default). Binder bean must be {@link RequestScopeBinder#noop()}'s
@@ -291,7 +291,7 @@ class ExerisWebAutoConfigurationTest {
         }
     }
 
-    // ---- end Phase 3B-α matrix ----
+    // ---- end RequestScopeBinder matrix ----
 
     @SuppressWarnings("null")
     private AnnotationConfigApplicationContext createContext(Map<String, Object> properties, Class<?>... extraConfigs) {

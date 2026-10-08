@@ -23,7 +23,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Phase 4C Step 3 — {@link ExerisGraphQueryProcessor} validation + routing tests.
+ * {@link ExerisGraphQueryProcessor} validation and routing tests.
  *
  * <p>Validation paths (per ADR-030 obligation 4 — fail-fast at post-processing time):
  * non-public method, unsupported return type, wrong parameter shape. Routing paths cover

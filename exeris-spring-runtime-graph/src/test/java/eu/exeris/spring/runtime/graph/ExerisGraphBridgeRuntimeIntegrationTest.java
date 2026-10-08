@@ -35,7 +35,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Phase 4C Step 5 — runtime integration test (per ADR-030 obligation 8).
+ * Runtime integration test for the graph bridge (per ADR-030 obligation 8).
  *
  * <p>This IT validates the spring-side seam wiring end-to-end under a real Spring
  * {@link AnnotationConfigApplicationContext} with the full autoconfig stack — but uses
@@ -221,7 +221,7 @@ class ExerisGraphBridgeRuntimeIntegrationTest {
 
         /**
          * The {@code value} string is a documentation label, not a functional MATCH-DSL query.
-         * For Phase 4C Step 3 / ADR-030 obligation 4, the processor routes by return type
+         * Per ADR-030 obligation 4, the processor routes by return type
          * ({@code List<UUID>} → {@code template.traverseBfs}) and passes the
          * {@link GraphTraversal} parameter straight through. The {@code value} string is
          * reserved for a future kernel-side MATCH-DSL parser; until then, the processor does

@@ -19,7 +19,7 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 /**
- * Architecture guard that enforces Phase 2 Compatibility Mode isolation invariants:
+ * Architecture guard that enforces Compatibility Mode isolation invariants:
  *
  * <ol>
  *   <li>No {@code jakarta.servlet.*} type in any class under

@@ -13,7 +13,7 @@ import org.springframework.mock.env.MockEnvironment;
 
 /**
  * Focused unit coverage for {@link ExerisSpringConfigProvider} — particularly the
- * {@code flow.*} kernel config key alias bridge (Phase 4B Step 4 closure) that lets
+ * {@code flow.*} kernel config key alias bridge (ADR-022) that lets
  * kernel-side {@code configProvider.getBoolean("flow.persistenceEnabled")} resolve
  * to the Spring property {@code exeris.runtime.flow.persistence-enabled}.
  *

@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 /**
- * Architecture guard for Phase 3B-α (per ADR-029 obligation 4): the request scope package
+ * Architecture guard for request scope (per ADR-029 obligation 4): the request scope package
  * uses {@link ScopedValue} as the only carrier and must not introduce {@link ThreadLocal}.
  *
  * <p>The {@code ThreadLocal}-on-hot-path ban is documented in {@code CLAUDE.md} §"Pure Mode vs
@@ -64,7 +64,7 @@ class RequestScopeArchitectureTest {
     /**
      * The scope package must not depend on Spring's legacy web request scopes
      * ({@code @RequestScope}, {@code @SessionScope}) — those are servlet-bound and not part of
-     * Phase 3B-α's affordance set per ADR-029 §"What is NOT in scope".
+     * the affordance set per ADR-029 §"What is NOT in scope".
      */
     @Test
     void scopePackageMustNotDependOnSpringWebContextRequest() {

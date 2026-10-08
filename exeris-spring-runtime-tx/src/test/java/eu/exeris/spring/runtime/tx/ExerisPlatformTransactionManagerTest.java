@@ -103,10 +103,9 @@ class ExerisPlatformTransactionManagerTest {
 
     @Test
     void getTransaction_notSupportedPropagation_runsNonTransactionally() {
-        // PROPAGATION_NOT_SUPPORTED is handled silently by AbstractPlatformTransactionManager
+        // PROPAGATION_NOT_SUPPORTED is handled by AbstractPlatformTransactionManager
         // before doBegin is reached — it returns a non-transactional status without opening
-        // a connection. This is a known Phase 3 enforcement gap: the guard in doBegin fires
-        // only for NOT_SUPPORTED when an existing transaction exists (via doSuspend).
+        // a connection when no existing transaction is active.
         DefaultTransactionDefinition def = new DefaultTransactionDefinition();
         def.setPropagationBehavior(TransactionDefinition.PROPAGATION_NOT_SUPPORTED);
         ScopedValue.where(KernelProviders.PERSISTENCE_ENGINE, engine).run(() -> {

@@ -32,11 +32,11 @@ import eu.exeris.spring.runtime.events.ExerisEventPublisher;
 import eu.exeris.spring.runtime.events.ExerisEventTypeRegistry;
 
 /**
- * End-to-end runtime integration test for the flow choreography bridge (Phase 4B Step 3).
+ * End-to-end runtime integration test for the flow choreography bridge.
  *
  * <p>Boots a real {@link ExerisRuntimeLifecycle} so the kernel community providers bind a
  * real {@code FlowEngine} and {@code EventEngine}. The test verifies the load-bearing
- * Step 3 contract: an {@link ExerisFlowChoreographyMapper} bean discovered by
+ * choreography contract: an {@link ExerisFlowChoreographyMapper} bean discovered by
  * {@link ExerisFlowChoreographyBridge} actually receives event descriptors when matching
  * events are published through the kernel {@code EventBus} via {@link ExerisEventPublisher}.
  *

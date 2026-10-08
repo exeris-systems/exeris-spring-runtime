@@ -23,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
 /**
- * Phase 4C Step 2 autoconfig wiring tests (per ADR-030 Engineering Protocol Deliverable 2).
+ * Autoconfiguration wiring tests for the graph module (per ADR-030 Deliverable 2).
  *
  * <p>Covers the three-state activation matrix from {@link ExerisGraphProperties}:
  *

@@ -79,11 +79,8 @@ class PureModeClasspathGuardTest {
     }
 
     /**
-     * ADR-011's marker must cover this module too. It moved to
-     * {@code eu.exeris.spring.boot.autoconfigure.compat} precisely because {@code actuator}
-     * cannot depend on {@code web}, which is where it used to live — so before the move the compat
-     * actuator controller was structurally unmarkable and the grep the marker exists for
-     * under-reported it. This guard is the reason that cannot silently come back.
+     * Asserts that every compatibility class in the actuator module carries the
+     * {@link CompatibilityMode} annotation per ADR-011.
      */
     @Test
     void everyCompatClass_carriesTheCompatibilityModeMarker() {

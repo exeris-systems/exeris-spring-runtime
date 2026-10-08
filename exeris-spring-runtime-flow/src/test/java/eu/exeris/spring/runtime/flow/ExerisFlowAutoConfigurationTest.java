@@ -16,7 +16,7 @@ import eu.exeris.spring.boot.autoconfigure.KernelProviderScope;
 import eu.exeris.spring.runtime.events.ExerisEventAutoConfiguration;
 
 /**
- * Autoconfiguration tests for the flow module (Phase 4B).
+ * Autoconfiguration tests for the flow module.
  *
  * <p>Verifies the activation contract:
  * <ul>

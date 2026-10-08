@@ -55,7 +55,7 @@ import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeProperties;
 import eu.exeris.spring.runtime.web.autoconfigure.ExerisCompatAutoConfiguration;
 
 /**
- * Module-level integration test for the Phase 2 Compatibility Mode bridge.
+ * Module-level integration test for the Compatibility Mode bridge.
  *
  * <p>Wires a real Spring {@link AnnotationConfigApplicationContext} with
  * {@link ExerisCompatAutoConfiguration} and verifies end-to-end dispatch from

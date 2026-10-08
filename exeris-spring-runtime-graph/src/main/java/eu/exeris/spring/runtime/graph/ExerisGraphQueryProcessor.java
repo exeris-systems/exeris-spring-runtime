@@ -97,14 +97,14 @@ public final class ExerisGraphQueryProcessor implements BeanPostProcessor {
                     "@ExerisGraphQuery method " + beanRef + " returns "
                             + returnType.getName() + "; only List<UUID> "
                             + "(routes to ExerisGraphTemplate.traverseBfs) or LoanedBuffer "
-                            + "(routes to ExerisGraphTemplate.streamBfsJson) are supported "
-                            + "in Phase 4C Step 3. See ADR-030 obligation 4.");
+                            + "(routes to ExerisGraphTemplate.streamBfsJson) are supported. "
+                            + "See ADR-030 obligation 4.");
         }
         if (method.getParameterCount() != 1 || method.getParameterTypes()[0] != GraphTraversal.class) {
             throw new IllegalStateException(
                     "@ExerisGraphQuery method " + beanRef + " must declare exactly one parameter "
                             + "of type eu.exeris.kernel.spi.graph.model.GraphTraversal; method-name-"
-                            + "based parameter binding is not supported in Phase 4C Step 3 "
+                            + "based parameter binding is not supported "
                             + "(deferred until the kernel SPI exposes a MATCH-DSL parser for "
                             + "@ExerisGraphQuery.value()).");
         }
