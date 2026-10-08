@@ -53,7 +53,7 @@ import eu.exeris.spring.runtime.events.ExerisEventTypeRegistry;
  * <h2>Mode</h2>
  * <p>PURE_MODE — choreography is mode-agnostic; this test does not exercise web mode.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 class ExerisFlowChoreographyBridgeRuntimeIntegrationTest {
 

@@ -45,7 +45,7 @@ import eu.exeris.spring.boot.autoconfigure.KernelProviderScope;
  * {@link FlowEngine} reference is captured by the time {@link #start()} fires. This is
  * the same phase as {@code ExerisEventListenerRegistrar} — the two run in the same
  * batch but neither depends on the other (events and flow are independent subsystems
- * at the bridge layer; choreography wiring will couple them in a separate Step 3 bridge).
+ * at the bridge layer; choreography wiring couples them via {@code ExerisFlowChoreographyBridge}).
  *
  * <h2>Posture: fail loud when half-configured</h2>
  * <p>If the application has declared {@code ExerisFlowDefinition} beans but the kernel
@@ -59,7 +59,7 @@ import eu.exeris.spring.boot.autoconfigure.KernelProviderScope;
  * tests with {@code exeris.runtime.auto-start=false}) opt out by setting
  * {@code exeris.runtime.flow.require-engine=false}.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class ExerisFlowDefinitionRegistrar implements SmartInitializingSingleton, SmartLifecycle {
 
@@ -76,6 +76,15 @@ public final class ExerisFlowDefinitionRegistrar implements SmartInitializingSin
     private final List<DefinitionBinding> bindings = new ArrayList<>();
     private volatile boolean running = false;
 
+    /**
+     * Creates a new registrar instance.
+     *
+     * @param applicationContext the application context used to discover definition beans
+     * @param engineSupplier the accessor for the kernel flow engine
+     * @param template the flow template whose plan registry is populated
+     * @param properties flow configuration properties
+     * @param providerScope the kernel provider scope captured from lifecycle
+     */
     public ExerisFlowDefinitionRegistrar(ApplicationContext applicationContext,
                                           FlowEngineSupplier engineSupplier,
                                           ExerisFlowTemplate template,

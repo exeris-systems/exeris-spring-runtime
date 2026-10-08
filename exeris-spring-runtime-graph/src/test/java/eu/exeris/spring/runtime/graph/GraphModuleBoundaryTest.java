@@ -20,7 +20,7 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
  * obligation 6.
  *
  * <p>Each test is merge-blocking — a violation indicates a banned cross-module edge or a
- * forbidden coupling per the module-boundaries entry added in Step 1
+ * forbidden coupling per the module-boundaries specification
  * ({@code docs/architecture/module-boundaries.md} §"exeris-spring-runtime-graph"). The
  * guards collectively enforce the "kernel-independent Spring-side seam" ADR-030 contract:
  * the graph module imports only kernel SPI types and Spring autoconfig/context primitives;

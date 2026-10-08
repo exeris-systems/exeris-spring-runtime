@@ -18,21 +18,15 @@
         Transaction boundary bridge between Exeris runtime resource semantics
         and the Spring transaction abstraction (@Transactional, PlatformTransactionManager).
 
-        Scope (Phase 3):
+        Key capabilities:
           - implements PlatformTransactionManager backed by Exeris StorageContext,
           - bridges @Transactional semantics to Exeris transaction lifecycle,
           - propagates ScopedValue-based transaction context across virtual threads,
           - manages resource cleanup on commit/rollback using Exeris PersistenceConnection,
           - Spring transaction synchronization callbacks → kernel resource release.
 
-        Phase 2 Note:
-          This module is a planned placeholder in Phase 1. It will be activated in
-          Phase 3 once the persistence integration strategy is decided.
-
         ThreadLocal is BANNED as a transaction context carrier. ScopedValue is the
         correct propagation mechanism aligned with the kernel's execution model.
-
-        See docs/phases/phase-3-tx-persistence.md for the full delivery plan.
     </description>
 
     <properties>
@@ -82,7 +76,7 @@
             <artifactId>assertj-core</artifactId>
             <scope>test</scope>
         </dependency>
-        <!-- Phase 1c closure: PureModeClasspathGuardTest uses ArchUnit to enforce that
+        <!-- PureModeClasspathGuardTest uses ArchUnit to enforce that
              this module never picks up servlet/Netty/Reactor/WebFlux on the classpath. -->
         <dependency>
             <groupId>com.tngtech.archunit</groupId>
@@ -91,19 +85,7 @@
         </dependency>
 
         <!-- Runtime integration test only (test scope, never compile).
-
-             Until now every test in this module ran against StubPersistenceEngine /
-             TrackingEngine written in this repository, so the propagation matrix was
-             verified against our reading of the SPI rather than against an engine the
-             kernel actually produces. That is the same structural blind spot that let the
-             shutdown-drain defect through: a stub cannot disagree with us about ordering,
-             lifecycle or isolation.
-
-             These three bring up a real kernel the way the flow and events bridges already
-             do it (see ExerisFlowBridgeRuntimeIntegrationTest): autoconfigure supplies
-             ExerisRuntimeLifecycle + ExerisSpringConfigProvider, kernel-community supplies
-             a real PersistenceProvider via ServiceLoader, H2 backs it in memory.
-
+             Exercises integration against a live kernel engine backed by H2.
              The tx -> autoconfigure edge is test-scope and one-directional; the banned edge
              in the other direction (autoconfigure -> tx) is unaffected and still guarded by
              ModuleBoundaryTest. -->

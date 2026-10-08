@@ -23,7 +23,7 @@ import org.springframework.mock.env.MockEnvironment;
  * {@link String}/{@link Integer}/{@link Long}/{@link Boolean} accessor symmetry, and
  * the {@code camelToKebab} conversion across all hump shapes the kernel might add.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 class ExerisSpringConfigProviderTest {
 

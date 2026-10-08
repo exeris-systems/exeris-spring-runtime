@@ -112,7 +112,7 @@ class FlowModuleBoundaryTest {
     }
 
     /**
-     * Step 2 closure-boundary guard: any class implementing
+     * Flow definition boundary guard: any class implementing
      * {@link ExerisFlowDefinition} (or the lower-level kernel
      * {@link FlowStepAction}) within this module's reach must not couple to HTTP /
      * web / transaction / persistence packages.
@@ -149,7 +149,7 @@ class FlowModuleBoundaryTest {
     }
 
     /**
-     * Step 3 closure-boundary guard: choreography mappers run on the kernel bus
+     * Choreography mapper boundary guard: choreography mappers run on the kernel bus
      * dispatch path, which is event-routing infrastructure. They must not pull
      * HTTP / transport / persistence types — payload-based logic belongs in
      * event-listener methods (events module), and Wake/Start decisions should

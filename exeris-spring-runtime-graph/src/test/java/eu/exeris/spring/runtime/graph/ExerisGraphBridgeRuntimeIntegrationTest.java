@@ -54,8 +54,8 @@ import static org.mockito.Mockito.when;
  * each component in isolation with mocked collaborators. This IT exercises them
  * <em>together</em> in a real Spring context with the autoconfig wired through
  * {@link ExerisRuntimeAutoConfiguration} — proving that the autoconfig ordering
- * ({@code @AutoConfiguration(after = ExerisRuntimeAutoConfiguration.class)} from Step 2
- * review #35) actually places the graph beans correctly relative to the lifecycle
+ * ({@code @AutoConfiguration(after = ExerisRuntimeAutoConfiguration.class)})
+ * places the graph beans correctly relative to the lifecycle
  * bean Spring's topological sort can observe.
  */
 class ExerisGraphBridgeRuntimeIntegrationTest {
@@ -74,7 +74,7 @@ class ExerisGraphBridgeRuntimeIntegrationTest {
     void seamActivates_whenPropertyEnabled_supplierBeanPresentSubscribesEmptyAtBoot() {
         context = bootContext(false);
 
-        // Both Step 2 + Step 3 beans materialised.
+        // Graph integration beans materialised.
         assertThat(context.getBeanNamesForType(GraphEngineSupplier.class)).hasSize(1);
         assertThat(context.getBeanNamesForType(ExerisGraphTemplate.class)).hasSize(1);
         assertThat(context.getBeanNamesForType(ExerisGraphQueryProcessor.class)).hasSize(1);
@@ -226,6 +226,9 @@ class ExerisGraphBridgeRuntimeIntegrationTest {
          * {@link GraphTraversal} parameter straight through. The {@code value} string is
          * reserved for a future kernel-side MATCH-DSL parser; until then, the processor does
          * not interpret it.
+         *
+         * @param traversal the graph traversal specification
+         * @return the list of traversed node UUIDs
          */
         @ExerisGraphQuery(value = "BFS — proxied by ExerisGraphQueryProcessor")
         public List<UUID> findNeighbours(GraphTraversal traversal) {

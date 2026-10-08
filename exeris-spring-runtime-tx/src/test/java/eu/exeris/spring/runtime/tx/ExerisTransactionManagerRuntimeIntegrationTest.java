@@ -40,11 +40,6 @@ import org.springframework.transaction.support.TransactionTemplate;
  * rollback and isolation were therefore asserted against our reading of the SPI rather than
  * against an engine the kernel actually produces.
  *
- * <p>That blind spot is not hypothetical. It is the same shape as the shutdown-drain defect
- * (kernel 0.10.2, see {@code ExerisWireLevelRuntimeIntegrationTest}) and as the compat
- * datasource defects found downstream rather than here — in each case the double modelled
- * the contract as written while the runtime behaved differently.
- *
  * <h2>What this proves that the stub suite cannot</h2>
  * <ul>
  *   <li>A committed write is durable — visible from a connection that did not participate
@@ -68,16 +63,11 @@ import org.springframework.transaction.support.TransactionTemplate;
  * infrastructure only". Using the same seam {@code ExerisDataSource} uses keeps this test
  * on a supported API instead of reaching into internals.
  *
- * <h2>What this deliberately does not assert</h2>
- * <p>That {@code @Transactional} governs Level 1 Exeris-native repositories. It does not,
- * by design: per {@code phase-3-invariants.md} §6 those repositories take the
+ * <h2>Repository transaction boundaries</h2>
+ * <p>{@code @Transactional} does not govern Exeris-native repositories; those repositories take the
  * <em>engine</em> from {@link PersistenceEngineProvider} and drive their own
  * {@code TransactionalExecutor}, which owns its connection and its commit. Connection
- * sharing under {@code @Transactional} (§7) is defined only for the {@code ExerisDataSource}
- * path. A service method that annotates {@code @Transactional} around Level 1 repository
- * calls therefore does not roll those writes back — a composition rule currently stated
- * nowhere the two halves meet. That is a documentation gap worth closing, not a defect in
- * this manager, and it is out of scope here.
+ * sharing under {@code @Transactional} is defined for the {@code ExerisDataSource} path.
  */
 class ExerisTransactionManagerRuntimeIntegrationTest {
 

@@ -58,7 +58,7 @@ import eu.exeris.spring.boot.autoconfigure.KernelProviderScope;
  * <h2>Mode</h2>
  * <p>PURE_MODE — the flow bridge is mode-agnostic; this test does not exercise web mode.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 class ExerisFlowBridgeRuntimeIntegrationTest {
 
@@ -241,8 +241,7 @@ class ExerisFlowBridgeRuntimeIntegrationTest {
     }
 
     /**
-     * Step 4 closure runtime IT — proves the kernel 0.8.0 + ADR-022 wiring is reachable
-     * from the Spring side end-to-end:
+     * Proves the kernel 0.8.0 + ADR-022 wiring is reachable from the Spring side end-to-end:
      * <ol>
      *   <li>Lifecycle A schedules a flow whose first step returns {@code PARK}; the kernel
      *       persists a {@code state = PARKED} row in {@code exeris_saga_state} via
@@ -261,9 +260,8 @@ class ExerisFlowBridgeRuntimeIntegrationTest {
      *
      * <p>The plan is re-registered on lifecycle B under the same name — the kernel matches
      * plans by {@code definitionName}, and a fresh lifecycle starts with an empty plan
-     * registry. This re-registration step is the Spring-side contract documented in
-     * {@code phase-4-invariants.md}: durable saga recovery requires that applications
-     * register the same plan definitions on every lifecycle restart.
+     * registry. Durable saga recovery requires that applications register the same plan definitions
+     * on every lifecycle restart.
      * <p>Verifies durable saga state persistence and recovery across lifecycle restart.
      */
     @Test
@@ -404,9 +402,7 @@ class ExerisFlowBridgeRuntimeIntegrationTest {
     /**
      * Polls the {@code exeris_saga_state} table at 50 ms intervals up to
      * {@code timeoutSeconds} until a {@code PARKED} row for the given instance id
-     * appears. Replaces the blind {@code Thread.sleep(250)} that was racing against
-     * the kernel's async H2 commit thread — bounded wait stays stable under CI load
-     * without inflating happy-path runtime.
+     * appears. Bounded wait stays stable under CI load without inflating happy-path runtime.
      */
     private static void awaitParkedSnapshot(String jdbcUrl, long instanceIdMost, long instanceIdLeast,
                                              long timeoutSeconds) throws InterruptedException, SQLException {
@@ -457,8 +453,7 @@ class ExerisFlowBridgeRuntimeIntegrationTest {
                 .withProperty("exeris.runtime.persistence.username", "sa")
                 .withProperty("exeris.runtime.persistence.password", "")
                 .withProperty("exeris.runtime.persistence.run-migrations", Boolean.toString(runMigrations))
-                // Step 4 closure: flow module is opt-in, persistence default is now true (ADR-022).
-                // Setting it explicitly here in case the test default changes again later.
+                // Flow module is opt-in, persistence default is governed by ADR-022.
                 .withProperty("exeris.runtime.flow.enabled", "true")
                 .withProperty("exeris.runtime.flow.persistence-enabled", Boolean.toString(runMigrations));
         return new ExerisRuntimeLifecycle(

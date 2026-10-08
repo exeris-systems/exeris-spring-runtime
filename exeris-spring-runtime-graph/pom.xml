@@ -15,15 +15,14 @@
 
     <name>Exeris Spring Runtime :: Graph Integration</name>
     <description>
-        Spring-side seam for the kernel Graph SPI per ADR-030 (Phase 4C — 1.0 preview,
-        default-off).
+        Spring-side seam for the kernel Graph SPI per ADR-030 (default-off).
 
-        Scope (Phase 4C — kernel-independent in landing, kernel-gated in graduation):
+        Key capabilities:
           - GraphEngineSupplier: deferred accessor pattern (tryGet + default requireEngine)
             mirroring EventEngineSupplier / FlowEngineSupplier — reads
             KernelProviders.GRAPH_ENGINE captured by ExerisRuntimeLifecycle.
           - ExerisGraphProperties: enabled (default false) + requireEngine (default true)
-            two-property matrix matching Phase 4A/4B autoconfig discipline.
+            two-property configuration matrix.
           - ExerisGraphAutoConfiguration: @ConditionalOnProperty(enabled=true) gating;
             wires the template, supplier, and @ExerisGraphQuery BeanPostProcessor.
           - ExerisGraphTemplate: JdbcTemplate-shaped facade over kernel GraphSession —
@@ -40,26 +39,22 @@
           exeris.runtime.graph.require-engine = false (opt-in for dev/test where the
                                                        kernel graph provider is absent)
 
-        Hard rules (Phase 4C invariants — to be locked in at closure):
+        Hard rules:
           - No Spring Data Neo4j compatibility (org.springframework.data.. banned by
             GraphModuleBoundaryTest).
           - No fluent GraphQueryBuilder DSL (kernel ships GraphTraversal record only).
-          - No GraphCursor / unbounded traversal API (kernel "Planned — not yet
-            implemented" per exeris-kernel/docs/subsystems/graph.md:149).
+          - No GraphCursor / unbounded traversal API.
           - No cross-resource transactions (graph session transactions stay kernel-local;
             ExerisPlatformTransactionManager from -tx is a different resource).
           - No multi-engine fan-out (one GraphEngine per ApplicationContext).
           - LoanedBuffer streamBfsJson caller owns the buffer; template does not retain
             a reference and does not transfer ownership.
 
-        See docs/adr/ADR-030-phase-4c-spring-side-seam-for-kernel-graph-spi.md for the
-        full ADR; GA graduation is kernel-gated on Community GraphChurnRatioTck green
-        in CI (kernel Sprint 7).
+        See ADR-030 for architectural context.
     </description>
 
     <properties>
-        <!-- Coverage ratchet floor (enforced only under -Pcoverage). Measured LINE 97.9% —
-             already past the ~0.85 1.0 GA target; floor guards against regression. -->
+        <!-- Coverage ratchet floor (enforced only under -Pcoverage). -->
         <jacoco.line.minimum>0.97</jacoco.line.minimum>
     </properties>
 
@@ -73,8 +68,7 @@
             <artifactId>exeris-kernel-spi</artifactId>
         </dependency>
 
-        <!-- autoconfigure — for ExerisRuntimeLifecycle.getGraphEngine() seam, mirroring
-             the EventEngine / FlowEngine capture from Phase 4A/4B. -->
+        <!-- autoconfigure — for ExerisRuntimeLifecycle.getGraphEngine() seam. -->
         <dependency>
             <groupId>eu.exeris</groupId>
             <artifactId>exeris-spring-boot-autoconfigure</artifactId>
@@ -116,16 +110,14 @@
         </dependency>
         <!-- Runtime integration test: a real GraphProvider on the test classpath so the
              kernel bootstrap discovers and binds KernelProviders.GRAPH_ENGINE. Production
-             classpath stays clean — community is test-scope only. Per Phase 4C
-             integration tests (Deliverable 5), the Community PGQ driver against an
-             embedded/Testcontainers PostgreSQL with PGQ extension is the test backend. -->
+             classpath stays clean — community is test-scope only. -->
         <dependency>
             <groupId>eu.exeris</groupId>
             <artifactId>exeris-kernel-community</artifactId>
             <scope>test</scope>
         </dependency>
-        <!-- Phase 1c invariant: every Pure Mode module ships PureModeClasspathGuardTest +
-             a module boundary guard via ArchUnit. -->
+        <!-- PureModeClasspathGuardTest uses ArchUnit to enforce pure-mode and
+             module-boundary invariants. -->
         <dependency>
             <groupId>com.tngtech.archunit</groupId>
             <artifactId>archunit-junit5</artifactId>
