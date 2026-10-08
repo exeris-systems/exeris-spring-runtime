@@ -21,16 +21,14 @@ import java.util.Map;
 import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 /**
- * Removes the last piece of Exeris-specific configuration a brownfield JPA application had to write
- * by hand: the Hibernate bootstrap settings that keep {@code EntityManagerFactory} construction from
- * reaching for a JDBC connection before the kernel exists.
+ * Configures Hibernate bootstrap settings to prevent {@code EntityManagerFactory}
+ * construction from attempting JDBC metadata access before the kernel starts.
  *
  * <p><b>Bootstrap Invariant:</b> Bootstrap order is invariant: Spring {@code refresh()} completes,
- * <em>then</em> {@code ExerisRuntimeLifecycle.start()} boots the kernel. {@code EntityManagerFactory} is built
- * during {@code refresh()}. By default Hibernate opens a connection at that point to probe database
- * metadata and infer its dialect — and {@link ExerisDataSource} cannot serve one, because the kernel
- * persistence engine it delegates to has not been created yet. The fix is two Hibernate settings: switch
- * the metadata probe off, and state the dialect that the probe would otherwise have discovered.
+ * then {@code ExerisRuntimeLifecycle.start()} boots the kernel. {@code EntityManagerFactory} is built
+ * during {@code refresh()}. Disabling Hibernate's metadata probe
+ * ({@code hibernate.boot.allow_jdbc_metadata_access=false}) and explicitly setting the dialect
+ * defers database connection acquisition until the kernel persistence engine is active.
  *
  * <p><b>Dialect Resolution:</b> Only PostgreSQL and H2 are derived automatically. For unrecognised URLs,
  * the context startup fails with a message instructing the user to configure {@code spring.jpa.database-platform}.
@@ -111,11 +109,10 @@ public final class ExerisHibernateBootstrapCustomizer implements BeanFactoryPost
     }
 
     /**
-     * Builds the settings to contribute. Package-private and static so the decision can be tested
-     * directly: {@link #postProcessBeanFactory} is gated on Hibernate being on the classpath, and
-     * Hibernate is deliberately absent from this module's test classpath (ADR-017 — JPA is not a
-     * first-class path here), which would otherwise make every assertion about the contribution
-     * vacuous.
+     * Builds the Hibernate bootstrap settings to contribute to the environment.
+     *
+     * @param configurable the environment to inspect
+     * @return map of contributed property key-value pairs
      */
     static Map<String, Object> buildContribution(Environment configurable) {
         Map<String, Object> contributed = new LinkedHashMap<>();
@@ -123,8 +120,7 @@ public final class ExerisHibernateBootstrapCustomizer implements BeanFactoryPost
 
         if (configurable.getProperty(SPRING_DATABASE_PLATFORM) != null
                 || configurable.getProperty(JPA_PROPERTIES_PREFIX + DIALECT_KEY) != null) {
-            // The application stated the dialect. The ordering fix still applies — it is orthogonal
-            // to who supplies the dialect — but we add nothing further.
+            // Explicit dialect already supplied; do not overwrite.
             return contributed;
         }
 

@@ -55,9 +55,7 @@ class ExerisPathVariableArgumentResolverTest {
 
     @Test
     void rejectsMultiValuePathVariableType() throws Exception {
-        // Pins the deliberate Collection/Map/array rejection — the
-        // ExerisCompatTypeConverter rationale documents why we cannot let
-        // StringToCollectionConverter silently accept these.
+        // Multi-value path variable types (Collection, Map, array) are not supported.
         assertThat(resolver.supportsParameter(parameter("listPathVar", 0))).isFalse();
     }
 

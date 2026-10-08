@@ -47,17 +47,10 @@ import eu.exeris.spring.boot.autoconfigure.KernelProviderScope;
  * batch but neither depends on the other (events and flow are independent subsystems
  * at the bridge layer; choreography wiring couples them via {@code ExerisFlowChoreographyBridge}).
  *
- * <h2>Posture: fail loud when half-configured</h2>
- * <p>If the application has declared {@code ExerisFlowDefinition} beans but the kernel
- * did not bind a {@code FlowEngine} at bootstrap (no {@code FlowProvider} on the
- * classpath, kernel flow subsystem disabled, etc.), the registrar fails the lifecycle
- * start when {@code exeris.runtime.flow.require-engine=true} (the default). Operators
- * see the misconfiguration immediately rather than discovering it through silent
- * scheduling failures later.
- *
- * <p>Test harnesses that intentionally skip kernel bootstrap (e.g. autoconfig context
- * tests with {@code exeris.runtime.auto-start=false}) opt out by setting
- * {@code exeris.runtime.flow.require-engine=false}.
+ * <h2>Engine Requirement</h2>
+ * <p>When {@code exeris.runtime.flow.require-engine=true} (the default), lifecycle start fails
+ * if {@code ExerisFlowDefinition} beans are declared but no {@code FlowEngine} is bound.
+ * Setting {@code exeris.runtime.flow.require-engine=false} disables this check.
  *
  * @since 0.5
  */
@@ -128,17 +121,10 @@ public final class ExerisFlowDefinitionRegistrar implements SmartInitializingSin
             if (running) {
                 return;
             }
-            // Two failure modes when the kernel did not bind a FlowEngine:
-            //   - bindings.isEmpty(): no ExerisFlowDefinition beans declared, so the
-            //     missing engine is irrelevant for THIS bean's responsibility. Transition
-            //     to running and let the template fail loud at first use if the
-            //     application actually calls schedule()/wake() etc.
-            //   - bindings.isNotEmpty(): definitions were declared but cannot be compiled.
-            //     If exeris.runtime.flow.require-engine=true (default) this is a real
-            //     misconfiguration and we fail loud at lifecycle start; if explicitly
-            //     opted out (test harness with auto-start=false, dev fallback) we log
-            //     a diagnostic and let the bean transition to running so shutdown
-            //     ordering stays consistent.
+            // Two cases when the kernel did not bind a FlowEngine:
+            //   - bindings.isEmpty(): no definitions declared; transition to running.
+            //   - bindings.isNotEmpty(): definitions declared; fail start when requireEngine is true,
+            //     or log diagnostic if requireEngine is false.
             Optional<FlowEngine> engine = engineSupplier.tryGet();
             if (engine.isEmpty()) {
                 if (!bindings.isEmpty()) {

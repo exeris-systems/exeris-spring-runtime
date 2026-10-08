@@ -277,9 +277,8 @@ public final class ExerisPlatformTransactionManager extends AbstractPlatformTran
             try {
                 connection.close();
             } catch (RuntimeException ex) {
-                // pool return failure must not override original exception (commit/rollback outcome
-                // takes precedence). Surface at DEBUG so a pool-return regression is diagnosable
-                // without changing exception semantics.
+                // Pool return failure must not override original exception (commit/rollback outcome
+                // takes precedence).
                 LOGGER.log(System.Logger.Level.DEBUG,
                         "Failed to close PersistenceConnection during transaction finalize", ex);
             }

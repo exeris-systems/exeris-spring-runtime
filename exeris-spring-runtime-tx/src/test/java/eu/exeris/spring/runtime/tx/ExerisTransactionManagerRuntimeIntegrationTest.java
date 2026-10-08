@@ -29,45 +29,20 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Runtime integration coverage for {@link ExerisPlatformTransactionManager} against a
- * <strong>real kernel {@code PersistenceEngine}</strong>, not a stub.
+ * live kernel {@code PersistenceEngine}.
  *
- * <h2>Why this exists</h2>
- * <p>Every other test in this module drives {@code StubPersistenceEngine} /
- * {@code TrackingEngine} — doubles written in this repository. They prove the manager calls
- * the SPI in the expected order, but they cannot disagree with us: a stub records
- * {@code commit()} without committing anything, and reports that {@code REQUIRES_NEW}
- * opened a second connection without that connection being independent. Durability,
- * rollback and isolation were therefore asserted against our reading of the SPI rather than
- * against an engine the kernel actually produces.
- *
- * <h2>What this proves that the stub suite cannot</h2>
- * <ul>
- *   <li>A committed write is durable — visible from a connection that did not participate
- *       in the transaction.</li>
- *   <li>A rolled-back write leaves nothing behind.</li>
- *   <li>{@code REQUIRES_NEW} is genuinely independent: the inner transaction commits and
- *       survives the outer one rolling back, which requires two real connections with real
- *       isolation between them.</li>
- *   <li>Connections are returned to the pool on both commit and rollback — a leak shows up
- *       as a rising {@code EngineStats.activeConnections}, which no stub tracks.</li>
- * </ul>
+ * <p>Validates durability of committed writes, rollback semantics, independent
+ * {@code REQUIRES_NEW} transaction isolation, and connection pool lifecycle.
  *
  * <h2>Mode</h2>
- * <p>MIXED. The engine is obtained the way the production request path obtains it —
- * captured from the kernel boot scope by {@link ExerisRuntimeLifecycle} and re-bound into
- * {@link KernelProviders#PERSISTENCE_ENGINE} for the calling thread, mirroring
- * {@code KernelProviderBinder} in the web module. The transactional connection is reached
- * through {@link ExerisJdbcResourceCallback}, which is the compatibility-mode seam and the
- * only supported way to obtain it — {@code ExerisTransactionObject} is package-private and
- * the connection, per the manager's own Javadoc, "travels inside Spring's transaction
- * infrastructure only". Using the same seam {@code ExerisDataSource} uses keeps this test
- * on a supported API instead of reaching into internals.
+ * <p>MIXED. The engine is obtained from the kernel boot scope and bound into
+ * {@link KernelProviders#PERSISTENCE_ENGINE} for the calling thread. The transactional
+ * connection is accessed through {@link ExerisJdbcResourceCallback}.
  *
  * <h2>Repository transaction boundaries</h2>
  * <p>{@code @Transactional} does not govern Exeris-native repositories; those repositories take the
- * <em>engine</em> from {@link PersistenceEngineProvider} and drive their own
- * {@code TransactionalExecutor}, which owns its connection and its commit. Connection
- * sharing under {@code @Transactional} is defined for the {@code ExerisDataSource} path.
+ * engine from {@link PersistenceEngineProvider} and drive their own {@code TransactionalExecutor}.
+ * Connection sharing under {@code @Transactional} is defined for the {@code ExerisDataSource} path.
  */
 class ExerisTransactionManagerRuntimeIntegrationTest {
 

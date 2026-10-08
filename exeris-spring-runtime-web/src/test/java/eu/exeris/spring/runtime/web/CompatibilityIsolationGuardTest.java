@@ -144,8 +144,7 @@ class CompatibilityIsolationGuardTest {
 
     /**
      * {@code *.compat.filter.*} must not import {@code jakarta.servlet.*}.
-     * The security filter runs without a servlet container — any servlet contamination
-     * here indicates an invalid dependency was introduced.
+     * The security filter runs without a servlet container.
      */
     @Test
     void compatFilterPackage_mustNotImportServletApi() {
@@ -160,25 +159,12 @@ class CompatibilityIsolationGuardTest {
     }
 
     /**
-     * Every type in a {@code *.compat.*} package must carry {@link CompatibilityMode}.
+     * Every top-level type in a {@code *.compat.*} package must carry {@link CompatibilityMode}
+     * per ADR-011.
      *
-     * <p>ADR-011 requires the marker on compat features and states the benefit it buys: "a grep
-     * for {@code @CompatibilityMode} shows the full surface of compat-only behaviour". The ADR
-     * also calls for "static analysis flags compat-mode features missing the marker" — this is
-     * that check, which had never been written.
+     * <p>Scoped to top-level types. Member, local, and anonymous classes are excluded.
      *
-     * <p>Its absence is why the convention drifted: 3 of 26 compat classes carried the marker,
-     * and the annotation's own Javadoc had grown a carve-out for "inner mechanics" that
-     * contradicted the accepted decision. A grep that under-reports is worse than no grep,
-     * because it reads as authoritative.
-     *
-     * <p>Scoped to top-level types. Member, local and anonymous classes are excluded: they are
-     * not independently greppable surface, they cannot be reached without going through their
-     * enclosing type, and a local class inside a method body cannot carry a meaningful marker.
-     * The marker itself needs no exclusion clause any more: it moved to
- * {@code eu.exeris.spring.boot.autoconfigure.compat} (ADR-011 §"Marker placement amendment"), so it
- * no longer resides in the package this rule scans. It is out of scope incidentally, by location —
- * not by an explicit rule.
+     * @see "ADR-011: Pure and Compatibility Mode Separation"
      */
     @Test
     void everyCompatClass_carriesTheCompatibilityModeMarker() {

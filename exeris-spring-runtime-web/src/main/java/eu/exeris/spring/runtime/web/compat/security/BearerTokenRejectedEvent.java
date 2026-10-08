@@ -34,6 +34,12 @@ import jdk.jfr.StackTrace;
 @CompatibilityMode
 public final class BearerTokenRejectedEvent extends Event {
 
+    /**
+     * Default constructor for flight recorder event allocation.
+     */
+    public BearerTokenRejectedEvent() {
+    }
+
     private static final EventType EVENT_TYPE =
             EventType.getEventType(BearerTokenRejectedEvent.class);
 

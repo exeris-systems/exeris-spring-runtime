@@ -19,22 +19,16 @@ import eu.exeris.spring.runtime.web.compat.security.UnenforcedSecurityFilterChai
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Module-integration tests for the Compatibility Mode fail-fast on an unenforceable
- * {@code SecurityFilterChain}.
+ * Module-integration tests for Compatibility Mode fail-fast when an unenforceable
+ * {@code SecurityFilterChain} is configured.
  *
- * <h2>What was wrong</h2>
- * <p>A brownfield application migrating onto Exeris keeps its {@code SecurityFilterChain}. Under
- * {@code web-application-type=none} there is no {@code FilterChainProxy} to run it, and
- * {@code NoSecurityFilterChainCondition} correctly stood the compatibility fallback filter down
- * because a chain was present. The two together produced a context that started cleanly and served
- * every request with neither authentication nor authorization — the application believing its
- * chain was enforcing rules, and nothing enforcing anything. Startup must fail instead.
+ * <p>Under {@code web-application-type=none}, servlet-based {@code SecurityFilterChain}
+ * beans cannot be executed. Startup fails fast with {@link UnenforcedSecurityFilterChainException}
+ * to prevent silent bypass of security constraints.
  *
  * <h2>Bean naming</h2>
- * <p>The chain is registered under the name Spring Security itself uses,
- * {@code springSecurityFilterChain}. The real type lives in {@code spring-security-web}, which
- * drags in {@code jakarta.servlet} and is therefore absent from this runtime's classpath by design
- * — which is exactly why detection works on names and definition metadata rather than on the type.
+ * <p>Detection targets the {@code springSecurityFilterChain} bean name without classpath
+ * coupling to {@code spring-security-web} or servlet types.
  */
 class UnenforcedSecurityFilterChainCheckTest {
 

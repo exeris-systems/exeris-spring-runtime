@@ -124,10 +124,6 @@ class FlowModuleBoundaryTest {
      * (e.g. an {@code InventoryPort} bean delegating to JDBC) are the supported
      * collaboration shape; the step body must call those collaborators by interface,
      * not import their underlying technology directly.
-     *
-     * <p>The bridge module ships no production flow implementations, so the rule passes
-     * vacuously here today. It serves as a forward-compatibility guard against future
-     * contributors landing example flows that violate the closure-boundary contract.
      */
     @Test
     void flowDefinitionAndStepActionImplementorsDoNotImportRequestPathOrTxPackages() {
@@ -155,9 +151,6 @@ class FlowModuleBoundaryTest {
      * event-listener methods (events module), and Wake/Start decisions should
      * resolve plans through {@link ExerisFlowTemplate}, not by direct persistence
      * access.
-     *
-     * <p>Vacuous today (no production mappers ship in this module); enforced as a
-     * forward-compatibility guard.
      */
     @Test
     void choreographyMapperImplementorsDoNotImportRequestPathOrTxPackages() {

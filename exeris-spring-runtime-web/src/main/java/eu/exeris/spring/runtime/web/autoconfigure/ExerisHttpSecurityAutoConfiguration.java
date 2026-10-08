@@ -36,6 +36,12 @@ import eu.exeris.spring.runtime.web.security.ExerisRoutePolicyCompiler;
 public class ExerisHttpSecurityAutoConfiguration {
 
     /**
+     * Default constructor for auto-configuration.
+     */
+    public ExerisHttpSecurityAutoConfiguration() {
+    }
+
+    /**
      * Compiles the application security declaration into a kernel route policy.
      *
      * @param security the application's declaration

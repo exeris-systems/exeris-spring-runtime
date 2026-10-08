@@ -150,10 +150,7 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
      *
      * <p>Parses system properties safely without propagating {@link NumberFormatException}.
      * Returning empty allows the kernel to apply its own default when an unparseable property is encountered.
-     *
-     * <p>The malformed value is logged rather than swallowed: silently booting on a default port
-     * because a supplied value was unparseable is precisely the kind of hidden cost this repo
-     * refuses to ship.
+     * The malformed value is logged as a warning.
      */
     private static Optional<Integer> parseIntOrWarn(String key, String value) {
         try {
@@ -512,45 +509,12 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
      * {@code clamp(availableProcessors() * 2, 2, 32)}). Populating
      * {@code PersistenceSettings.maxPoolSize()} from {@link #kernelSettings()} therefore has no
      * effect on the pool at all — no kernel code reads that field.
+     * Maps raw kernel persistence configuration keys onto Spring {@code exeris.runtime.persistence.*}
+     * properties.
      *
-     * <p>This provider wins {@code ConfigProvider} selection outright:
-     * {@code KernelBootstrap.resolveConfigProvider()} picks a <em>single</em> winner via
-     * {@code Stream.max(comparingInt(ConfigProvider::priority))}, so at priority 150 it displaces
-     * {@code CommunityConfigProvider} entirely rather than layering on top of it. Every raw key
-     * this class answers with {@link Optional#empty()} is a key the kernel resolves from its own
-     * hardcoded default — the application's Spring configuration is silently discarded, with no
-     * warning on either side. That is why the alias table must mirror the kernel's raw-key surface
-     * rather than the subset we happen to have needed so far, and why the generic
-     * {@code persistence.*} tail below exists.
-     *
-     * <p><b>Regression this closes.</b> Before the generic tail, min-idle was aliased and
-     * max-pool-size was not. An application setting
-     * {@code exeris.runtime.persistence.min-pool-size=16} together with
-     * {@code .max-pool-size=256} had its min honoured and its max dropped, so on a host pinned to
-     * four CPUs the kernel derived {@code maxPoolSize=8} and
-     * {@link eu.exeris.kernel.spi.persistence.PersistenceConfig} rejected the pair at boot:
-     * {@code IllegalArgumentException: minIdleConnections (16) > maxPoolSize (8)}. The asymmetry
-     * was ours — a clean kernel resolves both halves from one source and cannot split them.
-     * Note the two keys are declared as constants in the resolver rather than inline literals,
-     * which is why a grep of the kernel for quoted key names does not surface them.
-     *
-     * <p>Without this alias those raw lookups miss (a {@code MockEnvironment} or a Spring
-     * {@link Environment} has no literal {@code persistence.minIdleConnections} property), the
-     * kernel falls back to its default min-idle (~1), and the shared pool
-     * ({@code exeris-community-shared}) starts cold: a burst of concurrent virtual threads at
-     * startup races pool growth from 1 → max and some acquisitions time out
-     * ({@code PersistenceProviderException.connectionExhausted} → 500) until the pool warms.
-     * Mapping the raw kernel keys onto {@code exeris.runtime.persistence.min-pool-size} and
-     * {@code .pool-warmup-{enabled,connections}} lets an application pre-warm the shared pool the
-     * same way a Spring/Hikari or Quarkus/Agroal target does via its native min-idle knob.
-     *
-     * <p><b>Connection-timeout and fair-leveling.</b> Pre-warm blunts cold-start, but a sustained
-     * error spike can remain under load: the kernel pool fail-fasts on acquisition (a short acquire
-     * timeout {@code ->} {@code connectionExhausted} {@code ->} 500) where a default Spring/Hikari
-     * pool <em>blocks</em> for ~30s (contention surfaces as latency, not errors). Without exposing
-     * {@code connection-timeout-ms}, that asymmetry cannot be levelled from configuration. Mapping
-     * it lets a deployment set the same acquire timeout the JDBC-native targets use, so contention
-     * shows up as latency on both sides rather than 500s on the compat path only.
+     * <p>Because this provider takes priority in kernel configuration provider selection, all
+     * raw persistence configuration keys (pool size bounds, warmup settings, acquisition timeouts)
+     * are resolved against corresponding Spring environment properties.
      *
      * <p>Symmetric with {@link #flowKernelKeyAlias(String, Environment, Class)}.
      */

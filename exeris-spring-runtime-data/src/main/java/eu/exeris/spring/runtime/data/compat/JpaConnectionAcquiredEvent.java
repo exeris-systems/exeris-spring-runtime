@@ -31,6 +31,12 @@ import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 @CompatibilityMode
 public final class JpaConnectionAcquiredEvent extends Event {
 
+    /**
+     * Default constructor for flight recorder event allocation.
+     */
+    public JpaConnectionAcquiredEvent() {
+    }
+
     private static final EventType EVENT_TYPE =
             EventType.getEventType(JpaConnectionAcquiredEvent.class);
 

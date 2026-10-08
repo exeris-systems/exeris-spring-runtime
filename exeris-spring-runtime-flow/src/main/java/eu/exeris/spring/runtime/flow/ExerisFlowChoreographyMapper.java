@@ -43,9 +43,9 @@ public interface ExerisFlowChoreographyMapper extends FlowChoreographyMapper {
      * Returns the kernel event type names this mapper subscribes to.
      *
      * <p>Each name must already be registered in the kernel {@code EventRegistry}
-     * before the bridge runs (i.e., at least one {@link ExerisEventListener}-style
+     * before the bridge runs (i.e., at least one {@code ExerisEventListener}-style
      * registration on the events module side, or kernel-level registration in
-     * {@code ExerisRuntimeLifecycle}). Unknown names will fail loudly when the
+     * {@code ExerisRuntimeLifecycle}). Unknown names cause subscription failure when the
      * kernel attempts to subscribe.
      *
      * <p>Must not be empty; the bridge rejects mappers with no subscribed types

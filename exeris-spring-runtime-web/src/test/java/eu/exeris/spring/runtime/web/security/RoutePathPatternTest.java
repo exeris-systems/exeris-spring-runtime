@@ -45,12 +45,8 @@ class RoutePathPatternTest {
     }
 
     /**
-     * The regression this class exists for.
-     *
-     * <p>{@code HttpRequest.path()} is the raw request target, so it carries the query string. A rule
-     * that stopped matching once a caller appended {@code ?page=2} would hand the request to the
-     * unmatched answer — a refusal of a legitimate request when that answer is fail-closed, and an
-     * authorization bypass reachable by appending a query string when it is not.
+     * Verifies that query strings appended to {@code HttpRequest.path()} are stripped
+     * prior to matching route patterns.
      */
     @ParameterizedTest(name = "query string ignored: {0} vs {1}")
     @CsvSource({

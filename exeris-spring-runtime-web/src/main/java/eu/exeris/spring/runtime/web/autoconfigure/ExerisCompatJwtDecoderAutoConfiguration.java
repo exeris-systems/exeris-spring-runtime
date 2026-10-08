@@ -48,6 +48,12 @@ import eu.exeris.spring.runtime.web.compat.security.ExerisCompatJwtDecoderFactor
 public class ExerisCompatJwtDecoderAutoConfiguration {
 
     /**
+     * Default constructor for auto-configuration.
+     */
+    public ExerisCompatJwtDecoderAutoConfiguration() {
+    }
+
+    /**
      * Re-creates the resource-server decoder absent under {@code web-application-type=none}.
      * {@code @ConditionalOnMissingBean} keeps this inert whenever a decoder already exists
      * (a servlet deployment, or an app-declared {@code JwtDecoder} bean — the app's wins).
@@ -78,10 +84,7 @@ public class ExerisCompatJwtDecoderAutoConfiguration {
 
         @Override
         public boolean matches(ConditionContext context, AnnotatedTypeMetadata metadata) {
-            // Delegates to the same predicate the decoder itself uses, rather than repeating the three
-            // property names here. Two copies of "which keys count as configured" is exactly the kind
-            // of duplication that drifts: the condition would keep matching after a key was added to
-            // the binding, and the decoder would then be built from settings the gate never checked.
+            // Delegates to the shared predicate on the properties record.
             return ExerisResourceServerJwtProperties.bind(context.getEnvironment()).hasKeySource();
         }
     }

@@ -37,18 +37,10 @@ import eu.exeris.spring.runtime.events.ExerisEventTypeRegistry;
  * <p>Boots a real {@link ExerisRuntimeLifecycle} so the kernel community providers bind a
  * real {@code FlowEngine} and {@code EventEngine}. The test verifies the load-bearing
  * choreography contract: an {@link ExerisFlowChoreographyMapper} bean discovered by
- * {@link ExerisFlowChoreographyBridge} actually receives event descriptors when matching
+ * {@link ExerisFlowChoreographyBridge} receives event descriptors when matching
  * events are published through the kernel {@code EventBus} via {@link ExerisEventPublisher}.
  *
- * <h2>What this proves vs the unit suite</h2>
- * <ul>
- *   <li>{@link ExerisFlowChoreographyBridge#start()} successfully calls
- *       {@code FlowEngine.registerChoreographyMapper} against a live community engine.</li>
- *   <li>The kernel routes a real event from the bus through the registered mapper —
- *       not just a Mockito-verified {@code registerChoreographyMapper(...)} call.</li>
- *   <li>The {@code FlowEngineCapabilities.choreographySupport()} gate is exercised
- *       against the actual community kernel (which sets it true).</li>
- * </ul>
+ * <p>Validates mapper registration against the live engine and event-driven choreography execution.
  *
  * <h2>Mode</h2>
  * <p>PURE_MODE — choreography is mode-agnostic; this test does not exercise web mode.

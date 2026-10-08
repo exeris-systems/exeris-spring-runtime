@@ -154,13 +154,9 @@ public final class ExerisFlowTemplate {
      * @param definitionName the flow definition name
      * @return a freshly initialized flow context
      * @throws IllegalArgumentException if no plan is registered under {@code definitionName}
-     * @implNote The kernel SPI defines {@code FlowContext.timeoutNanos()} as an <em>absolute</em>
-     *     monotonic deadline computed as {@code System.nanoTime() + plan.timeoutDurationNanos()},
-     *     not a duration. Passing the plan's duration directly here would be read as a
-     *     deadline already in the past, and the kernel scheduler would time the flow out
-     *     before invoking its first step. The kernel-side {@code RuntimeFlowInstance.fromContext}
-     *     specifically treats {@code timeoutNanos <= 0} as "scheduler please compute the
-     *     deadline from the plan", which is exactly what a freshly seeded context needs.
+     * @implNote {@code FlowContext.timeoutNanos()} is initialized to {@code 0L}. The kernel
+     *     scheduler interprets non-positive values as an instruction to compute the absolute
+     *     monotonic deadline from the plan's timeout duration upon admission.
      */
     public FlowContext newContext(String definitionName) {
         FlowExecutionPlan plan = planFor(definitionName);

@@ -56,10 +56,7 @@ class GraphModuleBoundaryTest {
     }
 
     /**
-     * ADR-030 §"What is NOT in scope" + module-boundaries.md prohibited-edge row:
-     * {@code @ExerisGraphQuery} is a thin declarative wrapper, not a Spring Data repository.
-     * A future PR adding Spring Data Graph repository support is an ADR-030-amendment-worthy
-     * decision, not a silent shim.
+     * Enforces that graph module classes do not depend on Spring Data per ADR-030.
      */
     @Test
     void doesNotImportSpringData() {
@@ -148,10 +145,7 @@ class GraphModuleBoundaryTest {
 
     /**
      * Graph operations are direct calls on the kernel SPI — no Spring async / task-executor
-     * bridging. Split from the {@code ApplicationEventPublisher} check below so each violation
-     * surfaces independently (matches {@code EventModuleBoundaryTest} +
-     * {@code FlowModuleBoundaryTest} precedent — both modules split the two checks
-     * into separate {@code @Test} methods for diagnostic isolation).
+     * bridging.
      */
     @Test
     void doesNotImportSpringAsyncOrSchedulingOrContextEventPackages() {

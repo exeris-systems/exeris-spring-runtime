@@ -56,6 +56,12 @@ import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
 public class ExerisGraphAutoConfiguration {
 
     /**
+     * Default constructor for auto-configuration.
+     */
+    public ExerisGraphAutoConfiguration() {
+    }
+
+    /**
      * Default {@link GraphEngineSupplier} backed by {@link ExerisRuntimeLifecycle}'s
      * captured {@code GraphEngine} reference.
      *

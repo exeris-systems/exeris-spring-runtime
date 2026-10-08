@@ -118,17 +118,9 @@ class DataModuleBoundaryTest {
     }
 
     /**
-     * The {@code data -> autoconfigure} edge exists for exactly one type: ADR-011's
-     * {@code @CompatibilityMode} marker, which {@code data} cannot otherwise reach because
-     * {@code data -> web} is banned. {@code module-boundaries.md} states that widening it — to
-     * {@code compile} scope, or to any other autoconfigure type — is a boundary regression.
-     *
-     * <p>This rule is that statement, enforced. The PR that introduced the edge also introduced
-     * this test, because the defect it was fixing was a claim about module structure that nothing
-     * checked; leaving the replacement claim unchecked would have reproduced it one edge over.
-     *
-     * <p>{@code data} owns no wiring, so a legitimate second use of {@code autoconfigure} here
-     * would itself be the thing to question.
+     * Enforces that {@code data} depends on {@code autoconfigure} exclusively for
+     * {@link CompatibilityMode}. Widening this dependency to any other autoconfigure
+     * type violates module boundaries.
      */
     @Test
     void dataModule_mayUseAutoconfigureOnlyForTheCompatibilityModeMarker() {

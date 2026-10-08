@@ -113,9 +113,7 @@ class ExerisConnectionProxyDelegationTest {
         Object[] arrayElems = {1};
         Object[] structAttrs = {1};
 
-        // Every call below is followed by a verify(...) so a regression in any single
-        // delegation (not just a representative subset) fails the test, not merely a
-        // "method threw" check.
+        // Verify each delegate call on the underlying raw connection.
         p.createStatement();                                          verify(raw).createStatement();
         p.prepareStatement("SELECT 1");                              verify(raw).prepareStatement("SELECT 1");
         p.prepareCall("{call f()}");                                 verify(raw).prepareCall("{call f()}");

@@ -52,7 +52,7 @@ import eu.exeris.kernel.spi.events.SubscriptionToken;
  * {@code void method(EventDescriptor descriptor, EventPayload payload)}. Anything else
  * is rejected with an explicit error at metadata collection time.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 public final class ExerisEventListenerRegistrar implements SmartInitializingSingleton, SmartLifecycle {
 
@@ -70,6 +70,13 @@ public final class ExerisEventListenerRegistrar implements SmartInitializingSing
     private final List<SubscriptionToken> activeSubscriptions = new ArrayList<>();
     private volatile boolean running = false;
 
+    /**
+     * Creates a new listener registrar.
+     *
+     * @param applicationContext the Spring application context
+     * @param engineSupplier     the event engine supplier
+     * @param properties         the event configuration properties
+     */
     public ExerisEventListenerRegistrar(ApplicationContext applicationContext,
                                         EventEngineSupplier engineSupplier,
                                         ExerisEventProperties properties) {
@@ -104,17 +111,10 @@ public final class ExerisEventListenerRegistrar implements SmartInitializingSing
             if (running) {
                 return;
             }
-            // Two failure modes when the kernel did not bind an EventEngine:
-            //   - bindings.isEmpty(): no @ExerisEventListener methods declared, so the
-            //     missing engine is irrelevant for THIS bean's responsibility. Transition
-            //     to running and let publisher/type-registry fail loud at first use if
-            //     the application actually tries to talk to the bus.
-            //   - bindings.isNotEmpty(): listeners were declared but cannot be wired.
-            //     If exeris.runtime.events.require-engine=true (default) this is a real
-            //     misconfiguration and we fail loud at lifecycle start; if explicitly
-            //     opted out (test harness with auto-start=false, dev fallback) we log
-            //     a diagnostic and let the bean transition to running so shutdown
-            //     ordering stays consistent.
+            // Two cases when the kernel did not bind an EventEngine:
+            //   - bindings.isEmpty(): no @ExerisEventListener methods declared; transition to running.
+            //   - bindings.isNotEmpty(): listeners declared; fail start when requireEngine is true,
+            //     or log diagnostic if requireEngine is false.
             Optional<EventEngine> engine = engineSupplier.tryGet();
             if (engine.isEmpty()) {
                 if (!bindings.isEmpty()) {

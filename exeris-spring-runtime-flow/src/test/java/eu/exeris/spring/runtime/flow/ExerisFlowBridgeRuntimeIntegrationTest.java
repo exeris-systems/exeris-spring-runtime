@@ -39,21 +39,11 @@ import eu.exeris.spring.boot.autoconfigure.KernelProviderScope;
  * <p>Boots a real {@link ExerisRuntimeLifecycle} with {@code exeris-kernel-community} on
  * the test classpath, so the kernel bootstrap discovers the community
  * {@code FlowProvider} via {@code ServiceLoader} and binds a real {@link FlowEngine}
- * into {@code KernelProviders.FLOW_ENGINE}. The test verifies the load-bearing
- * assumption of the flow module: that the engine reference can be captured across the
- * {@code ScopedValue} boundary and consumed by Spring beans on a different thread.
+ * into {@code KernelProviders.FLOW_ENGINE}. The test verifies that the engine reference
+ * is captured across the {@code ScopedValue} boundary and consumed by Spring beans.
  *
- * <h2>What this proves vs the unit suite</h2>
- * <ul>
- *   <li>{@link ExerisRuntimeLifecycle#getFlowEngine()} is populated after a real kernel
- *       bootstrap and cleared after shutdown — same shape as the events bridge IT.</li>
- *   <li>{@link FlowEngineSupplier#requireEngine()} fails loud both before
- *       {@link ExerisRuntimeLifecycle#start()} runs and after {@code stop()} clears the
- *       captured reference.</li>
- *   <li>{@link ExerisFlowTemplate#schedule(String, FlowContext)} reaches the kernel
- *       scheduler against a live community engine, the step action runs, and the seam
- *       works without any Spring auto-configuration glue (direct construction is enough).</li>
- * </ul>
+ * <p>Validates lifecycle capture of {@link FlowEngine}, engine availability checks,
+ * and flow plan execution via {@link ExerisFlowTemplate}.
  *
  * <h2>Mode</h2>
  * <p>PURE_MODE — the flow bridge is mode-agnostic; this test does not exercise web mode.
@@ -163,22 +153,8 @@ class ExerisFlowBridgeRuntimeIntegrationTest {
     }
 
     /**
-     * Provider-scope runtime IT — proves, against a live community kernel with a real JDBC
-     * {@code PersistenceEngine}, that:
-     * <ol>
-     *   <li><b>Control:</b> a step registered through the <em>raw</em> kernel builder executes
-     *       on a flow scheduler worker thread with {@code KernelProviders.PERSISTENCE_ENGINE}
-     *       <em>unbound</em> — the exact gap that made every saga step touching the compat
-     *       {@code ExerisDataSource} fail ({@code FAILED_ROLLEDBACK} at step 0) while the
-     *       kernel-owned snapshot store kept working.</li>
-     *   <li><b>Fix:</b> the same step registered through {@link ProviderScopedFlowDefinitionBuilder}
-     *       (the decorator the registrar applies to every {@code ExerisFlowDefinition}) observes
-     *       the slot re-bound from the lifecycle's captured reference.</li>
-     * </ol>
-     *
-     * <p>If the control assertion ever flips — i.e. the kernel starts propagating the bootstrap
-     * scope to flow worker threads — the runtime-side wrap has collapsed to a pass-through and
-     * can be retired; treat that failure as a removal signal, not a regression.
+     * Verifies that flow step actions wrapped by {@link ProviderScopedFlowDefinitionBuilder}
+     * observe kernel provider scope bindings on flow worker threads, whereas unwrapped raw steps do not.
      */
     @Test
     void stepBodiesObserveKernelProviderScopeOnFlowWorkerThreads() throws InterruptedException {
@@ -227,13 +203,10 @@ class ExerisFlowBridgeRuntimeIntegrationTest {
             assertThat(wrappedRan.await(AWAIT_DISPATCH_SECONDS, TimeUnit.SECONDS)).isTrue();
 
             assertThat(controlSawBinding.get())
-                    .as("control: flow worker threads do not inherit the bootstrap ScopedValue "
-                            + "scope — the gap this fix covers (see javadoc: a flip here is a "
-                            + "removal signal for the wrap, not a regression)")
+                    .as("control: unwrapped step does not inherit thread-local provider bindings")
                     .isFalse();
             assertThat(wrappedSawBinding.get())
-                    .as("wrapped: step body must observe PERSISTENCE_ENGINE re-bound from the "
-                            + "lifecycle's captured reference")
+                    .as("wrapped: step body observes PERSISTENCE_ENGINE re-bound from scope")
                     .isTrue();
         } finally {
             lifecycle.stop();

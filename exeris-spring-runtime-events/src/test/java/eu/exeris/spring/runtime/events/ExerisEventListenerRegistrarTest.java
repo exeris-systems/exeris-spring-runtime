@@ -165,9 +165,7 @@ class ExerisEventListenerRegistrarTest {
 
     @Test
     void engineUnavailableWithoutListenersIsAlwaysTolerated() {
-        // No @ExerisEventListener methods declared: the registrar has nothing to wire,
-        // so a missing engine is irrelevant for this bean even in strict mode. Hot
-        // paths (publisher, type registry) still fail loud at first call.
+        // When no @ExerisEventListener methods are declared, start succeeds even if EventEngine is missing.
         AnnotationConfigApplicationContext ctx = new AnnotationConfigApplicationContext();
         ctx.refresh();
 

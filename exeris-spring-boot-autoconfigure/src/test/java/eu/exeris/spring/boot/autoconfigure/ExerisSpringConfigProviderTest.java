@@ -46,11 +46,7 @@ class ExerisSpringConfigProviderTest {
 
     @Test
     void flowKernelAlias_resolvesKebabCaseFormFromSpringProperty() {
-        // This is the Spring-idiomatic property form. MockEnvironment does NOT
-        // automatically attach Spring Boot's ConfigurationPropertySources (which is
-        // what enables relaxed binding via Environment.getProperty), so the alias
-        // must explicitly try the kebab-cased fallback. This case is the regression
-        // guard for that fallback.
+        // Resolves kebab-cased property names when queried via camelCase kernel keys.
         MockEnvironment env = new MockEnvironment()
                 .withProperty("exeris.runtime.flow.persistence-enabled", "true");
 
@@ -243,12 +239,8 @@ class ExerisSpringConfigProviderTest {
     // persistence.pool.maxSize) and persistence.minIdleConnections (alias
     // persistence.pool.minSize), falling back to clamp(availableProcessors()*2,2,32).
     //
-    // Because KernelBootstrap selects a SINGLE highest-priority ConfigProvider, any
-    // raw key this provider answers empty is a key the application cannot configure
-    // at all — the Spring value is silently discarded. These tests pin the raw kernel
-    // key names against the exeris.runtime.persistence.* Spring surface; the
-    // end-to-end effect on the real pool is asserted by
-    // ExerisPersistenceConfigBridgeIntegrationTest.
+    // Pins raw kernel persistence config keys against the exeris.runtime.persistence.*
+    // Spring configuration surface.
     // ===========================================================================
 
     @Test
@@ -366,8 +358,7 @@ class ExerisSpringConfigProviderTest {
 
     @Test
     void persistenceAlias_genericTailCoversKeysWithoutAnExplicitMapping() {
-        // Every remaining key the resolver reads. None had a path before the generic tail,
-        // so each one silently took a kernel default no matter what the application set.
+        // Verifies mapping of persistence properties to kernel configuration keys via the generic tail.
         MockEnvironment env = new MockEnvironment()
                 .withProperty("exeris.runtime.persistence.idle-timeout-ms", "60000")
                 .withProperty("exeris.runtime.persistence.max-lifetime-ms", "1800000")
@@ -457,14 +448,8 @@ class ExerisSpringConfigProviderTest {
     //
     // Kernel 0.10.0 re-based open-core priorities to Community=0 / Enterprise=100
     // (kernel CHANGELOG 0.10.0, #217). CommunityConfigProvider now reports priority 0,
-    // tying with this provider's no-Environment path, and
-    // KernelBootstrap.resolveConfigProvider() resolves ties via Stream.max — which keeps
-    // the FIRST element, i.e. ServiceLoader classpath order. This provider can therefore
-    // be selected while holding no Environment. If it answered empty, kernel config
-    // supplied via system properties would be silently blanked: the kernel testkit's
-    // exeris.http.mode=SERVER would be lost, CommunityHttpSubsystem would build no server
-    // engine, and HTTP_SERVER_ENGINE would never be bound — which is exactly how the
-    // wire-level ingress suite failed under 0.10.2 before this fallback existed.
+    // When no Spring Environment is available, falls back to system properties to preserve
+    // configuration passed via JVM arguments or system properties.
     // ===========================================================================
 
     @Test
@@ -513,10 +498,7 @@ class ExerisSpringConfigProviderTest {
 
     @Test
     void noEnvironment_malformedNumericValue_degradesToEmptyInsteadOfThrowing() {
-        // Before the system-property fallback existed this path could not throw — it answered
-        // empty for everything. Parsing raw system properties must not reintroduce a throwing
-        // path into a kernel SPI method called during bootstrap: a stray unparseable property
-        // would abort the boot instead of letting the kernel apply its own default.
+        // Unparseable numeric system property values degrade to empty without throwing.
         System.setProperty("exeris.test.noenv.bad", "abc");
         try {
             ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider((org.springframework.core.env.Environment) null);

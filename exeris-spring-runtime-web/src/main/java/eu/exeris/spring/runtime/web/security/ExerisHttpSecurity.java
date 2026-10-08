@@ -52,16 +52,11 @@ import eu.exeris.kernel.spi.http.RouteRequirement;
 public final class ExerisHttpSecurity {
 
     /**
-     * Endpoints the kernel's Community HTTP driver serves itself, which no application handler backs.
+     * Kernel driver probe endpoints that require explicit policy matching.
      *
-     * <p>The kernel does not exempt them from a bound policy — ADR-061 is explicit that they are
-     * routes like any other, because a driver-local notion of "public" would be a second answer to
-     * the question the policy contract now owns. So a fail-closed unmatched answer denies them, and
-     * the symptom is a rollout whose pods never become ready while the process is perfectly healthy.
-     *
-     * <p>Spring's idiomatic closing line is {@code anyRequest().authenticated()}, which maps exactly
-     * onto fail-closed. An application that writes the thing it has always written therefore breaks
-     * its own orchestrator probes. {@link #build()} refuses that at startup rather than at 3am.
+     * <p>ADR-061 treats driver probe routes as standard paths subject to bound policy.
+     * When unmatched requests require authentication, probe endpoints must be explicitly
+     * permitted or configured; {@link #build()} validates this invariant at configuration time.
      */
     private static final List<String> PROBE_ROUTES =
             List.of("/health", "/health/live", "/health/ready", "/db/ping", "/db/roundtrip");
@@ -117,15 +112,13 @@ public final class ExerisHttpSecurity {
     /**
      * Compiles the declaration, validating it.
      *
-     * <p>Two failures are raised here rather than left to be discovered in production:
+     * <p>Validates the following configuration invariants:
      *
      * <ol>
-     *   <li><strong>No unmatched answer.</strong> Every other rule describes paths the author thought
-     *       about; the unmatched answer covers the ones they did not, which is where an authorization
-     *       mistake actually lands. Defaulting it either way is a decision made on the author's behalf
-     *       that they never see, so the DSL refuses to guess.</li>
-     *   <li><strong>Fail-closed unmatched with undeclared probe routes.</strong> See
-     *       {@link #PROBE_ROUTES}. The message names the routes that would be denied.</li>
+     *   <li><strong>Unmatched rule:</strong> An explicit fallback rule must be configured
+     *       via {@link #anyRequest()}.</li>
+     *   <li><strong>Driver probe routes:</strong> Probe endpoints ({@link #PROBE_ROUTES}) must
+     *       be explicitly permitted when unmatched requests require authentication.</li>
      * </ol>
      *
      * @return the compiled policy
@@ -194,8 +187,7 @@ public final class ExerisHttpSecurity {
     /**
      * The requirement half of a rule.
      *
-     * <p>Only scope-shaped predicates are offered (ADR-063 obligation 4) — see the class Javadoc for
-     * why {@code hasRole} is absent.
+     * <p>Configures scope-shaped requirements for matched routes per ADR-063.
      */
     public final class Authorization {
 

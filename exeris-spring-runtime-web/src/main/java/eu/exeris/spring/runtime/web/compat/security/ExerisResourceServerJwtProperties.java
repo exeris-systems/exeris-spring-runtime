@@ -27,10 +27,9 @@ import java.util.List;
  * @param audiences accepted {@code aud} claim values; empty means no
  *     audience validation
  * @param jwsAlgorithms accepted signature algorithms; empty means RS256
- * @implSpec ADR-041 built the compatibility decoder on {@code OAuth2ResourceServerProperties}.
- *     Across Spring Boot 3 and 4 lines, property names are stable while package coordinates moved.
- *     Binding property names directly via {@link Binder} ensures cross-line matrix compatibility
- *     without reflection.
+ * @implSpec Binds the {@code spring.security.oauth2.resourceserver.jwt.*} property names
+ *     directly via {@link Binder}. Property names remain stable across Spring Boot 3 and 4
+ *     baselines without reflection.
  * @implNote Only what {@link ExerisCompatJwtDecoderFactory} consumes is bound. Opaque-token properties
  *     are out of scope.
  * @since 0.7

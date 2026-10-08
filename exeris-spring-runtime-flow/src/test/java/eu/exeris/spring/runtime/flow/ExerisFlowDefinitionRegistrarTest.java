@@ -101,9 +101,7 @@ class ExerisFlowDefinitionRegistrarTest {
 
     @Test
     void definitionNameMismatchAgainstBeanNameFailsAtStart() {
-        // Bean reports name()="alpha" but builds a FlowDefinition with a different name —
-        // means the bean ignored the supplied builder's name slot, which would silently
-        // mis-route schedule()/wake() lookups later. Fail loud at boot.
+        // FlowDefinition name must match the name reported by ExerisFlowDefinition#name().
         try (AnnotationConfigApplicationContext ctx = new AnnotationConfigApplicationContext()) {
             ctx.register(NameMismatchConfig.class);
             ctx.refresh();
@@ -164,11 +162,8 @@ class ExerisFlowDefinitionRegistrarTest {
     }
 
     @Test
-    void engineUnavailableInStrictModeFailsLoudWhenDefinitionsDeclared() {
-        // Production posture (default require-engine=true): definitions declared but no
-        // FlowEngine bound is a real misconfiguration. Fail at lifecycle start so the
-        // operator sees it immediately rather than discovering it through silent
-        // schedule()/wake() failures later.
+    void engineUnavailableInStrictModeFailsWhenDefinitionsDeclared() {
+        // When requireEngine is true, start fails if definitions are declared but no FlowEngine is bound.
         try (AnnotationConfigApplicationContext ctx = new AnnotationConfigApplicationContext()) {
             ctx.register(TwoFlowsConfig.class);
             ctx.refresh();
@@ -187,9 +182,7 @@ class ExerisFlowDefinitionRegistrarTest {
 
     @Test
     void engineUnavailableWithoutDefinitionsIsAlwaysTolerated() {
-        // No ExerisFlowDefinition beans declared: the registrar has nothing to compile,
-        // so a missing engine is irrelevant for this bean even in strict mode. Hot-path
-        // template calls (schedule/wake) still fail loud at first invocation.
+        // When no ExerisFlowDefinition beans are declared, start succeeds even if FlowEngine is missing.
         try (AnnotationConfigApplicationContext ctx = new AnnotationConfigApplicationContext()) {
             ctx.refresh();
 

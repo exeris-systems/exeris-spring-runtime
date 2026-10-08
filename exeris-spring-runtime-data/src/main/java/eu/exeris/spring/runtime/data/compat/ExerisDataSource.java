@@ -32,8 +32,8 @@ import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
  * passing all other method calls directly to the real JDBC driver.
  *
  * <h2>Connection Reuse in @Transactional scope</h2>
- * <p>When {@link ExerisPlatformTransactionManager} starts a new transaction, it calls
- * {@link #bindTransactionConnection} via the registered {@link eu.exeris.spring.runtime.tx.ExerisJdbcResourceCallback}.
+ * <p>When {@code ExerisPlatformTransactionManager} starts a new transaction, it calls
+ * {@link #bindTransactionConnection} via the registered {@code ExerisJdbcResourceCallback}.
  * Subsequent calls to {@link #getConnection()} within the same transaction return the
  * already-bound proxy (one connection per transaction).
  *
@@ -53,6 +53,12 @@ import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
  */
 @CompatibilityMode
 public final class ExerisDataSource implements DataSource {
+
+    /**
+     * Default constructor for compatibility DataSource.
+     */
+    public ExerisDataSource() {
+    }
 
     // =========================================================================
     // DataSource implementation

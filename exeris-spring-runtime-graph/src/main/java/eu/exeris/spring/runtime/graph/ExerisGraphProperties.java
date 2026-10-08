@@ -35,14 +35,14 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *   <tr><th>{@code enabled}</th><th>{@code requireEngine}</th><th>{@code GraphEngine} bound?</th><th>State</th></tr>
  *   <tr><td>{@code false}</td><td>—</td><td>—</td><td>Feature unused (default)</td></tr>
  *   <tr><td>{@code true}</td><td>{@code true}</td><td>yes</td><td>Feature active</td></tr>
- *   <tr><td>{@code true}</td><td>{@code true}</td><td>no</td><td>Fail loud at first use (recommended for prod)</td></tr>
+ *   <tr><td>{@code true}</td><td>{@code true}</td><td>no</td><td>Fails at first use (recommended for prod)</td></tr>
  *   <tr><td>{@code true}</td><td>{@code false}</td><td>no</td><td>Template constructed but unusable (dev/test only)</td></tr>
  * </table>
  *
  * @param enabled       whether graph support is enabled
  * @param requireEngine whether to require a kernel graph engine at runtime
  * @since 0.7
- * @see "ADR-030: Phase 4C Spring-Side Seam for Kernel Graph SPI"
+ * @see "ADR-030: Spring-Side Seam for Kernel Graph SPI"
  */
 @ConfigurationProperties(prefix = "exeris.runtime.graph")
 public record ExerisGraphProperties(

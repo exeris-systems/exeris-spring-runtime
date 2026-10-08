@@ -43,12 +43,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>the Compatibility Mode dispatcher ({@link ExerisCompatDispatcher} + {@code @RestController}).</li>
  * </ul>
  *
- * <p>Logs the side-by-side numbers and their delta. <strong>There is no assertion on
- * the magnitude of the compatibility cost itself</strong> — Pure Mode keeps its hard
- * budget in {@code ExerisDispatcherAllocationBaselineTest}; this test exists to satisfy
- * ADR-011's obligation that "compatibility-mode allocation cost is documented, never
- * hidden". The output is the documentation. Sanity assertions only verify both
- * dispatchers actually produced a response.
+ * <p>Logs the side-by-side numbers and their delta to document Compatibility Mode allocation
+ * overhead relative to Pure Mode per ADR-011. Sanity assertions verify response generation.
  *
  * <p>Test scaffolding mirrors {@code ExerisDispatcherAllocationBaselineTest}: a direct
  * {@link HttpExchange} interface implementation (not {@link java.lang.reflect.Proxy})

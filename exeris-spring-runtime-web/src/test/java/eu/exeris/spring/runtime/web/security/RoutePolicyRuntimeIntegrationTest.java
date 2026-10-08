@@ -32,33 +32,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
 
 /**
- * Runtime-integration evidence for ADR-063: an {@link ExerisHttpSecurity} declaration, compiled and
- * bound into the kernel's {@code HTTP_ROUTE_POLICY} slot, is actually enforced by the kernel on the
- * admission path — against a real kernel over a real socket.
+ * Runtime integration verification for route security policy enforcement (ADR-063).
  *
- * <h2>Why this boots through {@code ExerisRuntimeLifecycle} rather than the testkit fixture</h2>
+ * <p>Boots the runtime via {@link ExerisRuntimeLifecycle} to bind {@code HTTP_ROUTE_POLICY}
+ * in the bootstrap thread scope and verify enforcement by the kernel admission engine over
+ * a live socket.
  *
- * <p>Not a stylistic preference — the fixture cannot carry this. {@code EmbeddedHttpEngineFixture}
- * exposes only {@code start(HttpHandler)} and boots the kernel on its own thread, and a
- * {@code ScopedValue} binding does not cross a thread boundary. Binding {@code HTTP_ROUTE_POLICY}
- * around {@code fixture.start(...)} was measured to have no effect: a route declared
- * {@code authenticated()} was served <strong>200 without a token</strong>, because the kernel never
- * saw the policy.
+ * <p>Validates anonymous access for {@code permitAll} routes and 401 unauthenticated
+ * response enforcement for {@code authenticated()} routes.
  *
- * <p>{@code ExerisRuntimeLifecycle} binds the slot on the same thread it calls
- * {@code KernelBootstrap.boot} on, which is both what production does and the only path on which this
- * is observable. So this test exercises the real seam rather than a fixture-shaped approximation.
- *
- * <h2>What is covered here, and what is not</h2>
- *
- * <p>Covered without an identity provider: {@code permitAll} is reachable anonymously, and a route
- * declared {@code authenticated()} is refused with <strong>401</strong> — the kernel's enforcer maps
- * "requirement present, no principal" to {@code UNAUTHENTICATED} regardless of whether any identity
- * provider is bound.
- *
- * <p>Not covered here: the 403 case (a real principal whose scopes are insufficient) needs a bound
- * {@code SecurityProvider} issuing a {@code PrincipalContext}, which is an OIDC/JWKS fixture rather
- * than a route-policy concern. It is stated rather than quietly omitted.
+ * @see "ADR-063: Route Security Policy"
  */
 class RoutePolicyRuntimeIntegrationTest {
 

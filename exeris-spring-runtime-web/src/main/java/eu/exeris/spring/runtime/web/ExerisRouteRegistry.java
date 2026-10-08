@@ -44,11 +44,8 @@ public final class ExerisRouteRegistry {
      * {@code eu.exeris.spring.runtime.web.compat.ExerisHandlerMethodRegistry#resolve}; both
      * arms must agree, or the same request shape resolves in one mode and 404s in the other.
      *
-     * <p><strong>Cost:</strong> query-less requests pay a single {@code indexOf} scan and
-     * allocate nothing. Requests carrying a query string allocate one short-lived substring
-     * per request. This is stated rather than hidden — it is the minimum needed to keep the
-     * lookup key a {@code String} for the {@code O(1)} map, and it is confined to requests
-     * that actually carry a query.
+     * <p><strong>Cost:</strong> Query-less requests allocate nothing. Requests with query
+     * strings perform a substring allocation to isolate the path component for map lookup.
      *
      * @param method        the HTTP method
      * @param requestTarget the raw request target (e.g., {@code "/status"} or
@@ -88,6 +85,12 @@ public final class ExerisRouteRegistry {
     public static final class Builder {
 
         private final Map<HttpMethod, Map<String, ExerisRequestHandler>> routes = new HashMap<>();
+
+        /**
+         * Creates a new empty route registry builder.
+         */
+        public Builder() {
+        }
 
         /**
          * Registers a route handler for the specified HTTP method and path.
