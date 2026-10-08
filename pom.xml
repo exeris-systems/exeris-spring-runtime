@@ -50,10 +50,13 @@
         <maven.compiler.target>25</maven.compiler.target>
         <maven.compiler.release>25</maven.compiler.release>
 
-        <!-- Kernel baseline: 0.12.0 GA (JDK 25 LTS, class-file 69.0). See ADR-068. -->
+        <!-- Pinned to a published kernel release (clean, not -SNAPSHOT): -SNAPSHOT references
+             fail to resolve from GitHub Packages in CI. 0.12.0 is GA (JDK 25 LTS, class-file 69.0).
+             See ADR-068 for the artefact model. -->
         <exeris.kernel.version>0.12.0</exeris.kernel.version>
 
-        <!-- Spring Boot versions per dual matrix (ADR-028). -->
+        <!-- Spring Boot dual matrix per ADR-028. Tracking the active 4.x line (4.1.x)
+             maintains load-bearing verification against current releases. -->
         <spring.boot.sb3.version>3.5.14</spring.boot.sb3.version>
         <spring.boot.sb4.version>4.1.0</spring.boot.sb4.version>
         <spring.boot.version>${spring.boot.sb3.version}</spring.boot.version>
@@ -66,12 +69,14 @@
         <maven.deploy.plugin.version>3.1.4</maven.deploy.plugin.version>
         <maven.javadoc.plugin.version>3.12.0</maven.javadoc.plugin.version>
 
-        <!-- Coverage quality gate (opt-in via -Pcoverage). -->
+        <!-- Coverage quality gate (opt-in via -Pcoverage). JaCoCo 0.8.15 supports class-file
+             major version 70; kept ahead of baseline so class-file parsing succeeds. -->
         <jacoco.maven.plugin.version>0.8.15</jacoco.maven.plugin.version>
         <jacoco.line.minimum>0.00</jacoco.line.minimum>
         <coverage.argLine/>
 
-        <!-- Test tooling -->
+        <!-- Test tooling. ArchUnit 1.4.2 bundles ASM reading class files up to major version 70;
+             keeping the reader ahead of or level with baseline ensures boundary guards do not quietly skip unparsed classes. -->
         <archunit.version>1.4.2</archunit.version>
         <jackson.annotations.version>2.21</jackson.annotations.version>
 
@@ -188,6 +193,7 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
                     <version>${maven.compiler.plugin.version}</version>
+                    <!-- Absence of preview flags enforces preview-clean class files per policy (.agents/policies/jdk-baseline.md). -->
                     <configuration>
                         <release>${maven.compiler.release}</release>
                     </configuration>
@@ -213,6 +219,7 @@
                     <artifactId>maven-deploy-plugin</artifactId>
                     <version>${maven.deploy.plugin.version}</version>
                     <configuration>
+                        <!-- Holds upload until all modules pass, preventing partial releases on GitHub Packages. -->
                         <deployAtEnd>true</deployAtEnd>
                     </configuration>
                 </plugin>
@@ -245,7 +252,9 @@
     </build>
 
     <profiles>
-        <!-- Spring Boot dual matrix per ADR-028: matrix-sb3 (default) and matrix-sb4. -->
+        <!-- Spring Boot dual matrix per ADR-028: matrix-sb3 (default) and matrix-sb4.
+             activeByDefault is disabled when any other profile (e.g. -Pcoverage) is activated,
+             so CI names matrix profiles explicitly. -->
         <profile>
             <id>matrix-sb3</id>
             <activation>

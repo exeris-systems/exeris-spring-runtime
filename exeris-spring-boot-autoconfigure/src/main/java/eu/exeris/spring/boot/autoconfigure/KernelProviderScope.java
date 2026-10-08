@@ -21,7 +21,7 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  * from references captured by {@link ExerisRuntimeLifecycle} at bootstrap — but only the slots
  * that are currently unbound.
  *
- * @implSpec The kernel binds its provider slots once in the bootstrap {@code ScopedValue} scope.
+ * @implNote The kernel binds its provider slots once in the bootstrap {@code ScopedValue} scope.
  *     Application code handed to the kernel as a callback — a {@code FlowStepAction} executing on a
  *     flow scheduler worker virtual thread, for example — runs outside that scope, so slot-reading
  *     consumers (the compat {@code ExerisDataSource} / {@code PersistenceEngineProvider} persistence
@@ -31,8 +31,7 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  *     sibling for non-web bridge modules, colocated with {@link ExerisRuntimeLifecycle} because that
  *     is where the captured references live and because consumer modules (e.g. flow) deliberately ban
  *     direct {@code eu.exeris.kernel.spi.persistence..} imports in their boundary guards.
- *
- * @implNote Ownership: this is re-propagation of references the kernel created and owns — not a host-runtime
+ *     <p>Ownership: this is re-propagation of references the kernel created and owns — not a host-runtime
  *     claim. Exeris remains the runtime owner; the scope fills a context-propagation gap on threads
  *     the bootstrap bindings do not reach. It uses only {@code ScopedValue} (no {@code ThreadLocal})
  *     and is mode-neutral: re-binding happens strictly when a slot is <em>unbound</em>, so when the

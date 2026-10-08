@@ -29,10 +29,10 @@ import java.util.Optional;
  * </table>
  * <p><b>Mode:</b> Mode-neutral &mdash; handles method-security exceptions across both Pure Mode and Compatibility Mode.
  *
- * @implSpec Maps authentication failures to 401 Unauthorized with {@code WWW-Authenticate: Bearer} challenge,
+ * @implNote Maps authentication failures to 401 Unauthorized with {@code WWW-Authenticate: Bearer} challenge,
  *     and access denied failures to 403 Forbidden. The cause chain is walked up to 5 levels to uncover
  *     wrapped security exceptions.
- * @implNote In contrast to servlet deployments where anonymous access-denied is upgraded to 401, this resolver
+ *     <p>In contrast to servlet deployments where anonymous access-denied is upgraded to 401, this resolver
  *     leaves anonymous access-denied as 403 to avoid reading {@code SecurityContextHolder}
  *     ({@code ThreadLocal}) on the mode-neutral path.
  * @since 0.7

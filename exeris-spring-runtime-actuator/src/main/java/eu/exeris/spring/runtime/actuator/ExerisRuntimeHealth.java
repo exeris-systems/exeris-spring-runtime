@@ -12,13 +12,12 @@ import java.util.Map;
 /**
  * Exeris runtime liveness, expressed without naming a Spring Boot type.
  *
- * @implSpec Encapsulates runtime liveness and diagnostic labels in a version-neutral model,
+ * @param up      {@code true} when the Exeris runtime is running
+ * @param details diagnostic labels, rendered as the health component's details; never {@code null}
+ * @implNote Encapsulates runtime liveness and diagnostic labels in a version-neutral model,
  *     decoupling health representation from framework-specific types across Spring Boot versions
  *     per ADR-028. Conversions to Spring Boot health representations are deferred to
  *     {@code SpringBootHealthIndicatorFactory}.
- *
- * @param up      {@code true} when the Exeris runtime is running
- * @param details diagnostic labels, rendered as the health component's details; never {@code null}
  * @since 0.7
  */
 public record ExerisRuntimeHealth(boolean up, Map<String, String> details) {

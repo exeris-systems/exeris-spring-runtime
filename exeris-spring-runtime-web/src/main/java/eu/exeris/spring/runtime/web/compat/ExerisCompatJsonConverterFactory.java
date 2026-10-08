@@ -29,12 +29,12 @@ import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
  *
  * <p><b>Mode:</b> Compatibility Mode only &mdash; the pure-mode path does not use Spring message converters.
  *
- * @implSpec {@code MappingJackson2HttpMessageConverter} still exists in Spring Framework 7 and compiles
+ * @implNote {@code MappingJackson2HttpMessageConverter} still exists in Spring Framework 7 and compiles
  *     on both lines &mdash; what is missing under SB4 is the Jackson 2 <em>databind</em> it delegates to, so
  *     constructing it there fails at runtime with
  *     {@code NoClassDefFoundError: com/fasterxml/jackson/core/util/DefaultPrettyPrinter$Indenter} rather
  *     than at compile time.
- * @implNote {@code MappingJackson2HttpMessageConverter} is nameable at compile time on both lines and is
+ *     <p>{@code MappingJackson2HttpMessageConverter} is nameable at compile time on both lines and is
  *     therefore constructed directly. {@code JacksonJsonHttpMessageConverter} exists only in Spring
  *     Framework 7, so naming it would break the SB3 compile &mdash; it is constructed reflectively.
  *     Jackson 2 is evaluated first, then Jackson 3.

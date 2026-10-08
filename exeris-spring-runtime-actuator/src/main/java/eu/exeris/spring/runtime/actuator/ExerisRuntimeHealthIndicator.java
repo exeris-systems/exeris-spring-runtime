@@ -21,7 +21,7 @@ import java.util.Objects;
  * <p><b>Ownership:</b> Reads Spring lifecycle state only. No {@code ScopedValue} reads.
  * No kernel-path coupling. Safe to call from any thread at any time after Spring context refresh.
  *
- * @implSpec The Spring Boot-facing health indicator shape is produced reflectively by
+ * @implNote The Spring Boot-facing health indicator shape is produced reflectively by
  *     {@link eu.exeris.spring.runtime.actuator.bridge.SpringBootHealthIndicatorFactory} to accommodate
  *     packaging differences across Spring Boot lines per ADR-028. This class remains framework-free
  *     and serves as the single source of truth for runtime health evaluation.

@@ -47,7 +47,7 @@ import org.springframework.lang.Nullable;
  * <p>The bean is also marked {@link Primary @Primary} as a belt-and-braces guard for
  * unusual wiring orders where two {@link DataSource} beans end up co-resident.
  *
- * @implSpec The {@code beforeName} attribute of {@link AutoConfiguration @AutoConfiguration}
+ * @implNote The {@code beforeName} attribute of {@link AutoConfiguration @AutoConfiguration}
  *     is used with the FQN string rather than a class literal so this module does not require
  *     {@code spring-jdbc} on its compile classpath. Running before Spring Boot's
  *     {@code DataSourceAutoConfiguration} ensures that the Exeris adapter takes precedence

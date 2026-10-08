@@ -19,7 +19,7 @@ import eu.exeris.spring.boot.autoconfigure.KernelProviderScope;
  * executes with the kernel provider {@code ScopedValue} slots re-bound from the references
  * captured at bootstrap.
  *
- * @implSpec Step actions execute on kernel flow scheduler worker virtual threads, which do not inherit
+ * @implNote Step actions execute on kernel flow scheduler worker virtual threads, which do not inherit
  *     the bootstrap {@code ScopedValue} scope. The flow <em>bridge</em> classes avoid the gap by
  *     reading captured engine references through {@code FlowEngineSupplier} — but the gap re-opens
  *     inside <em>application</em> step bodies: per the {@code FlowStepAction} contract, cross-cutting
@@ -29,7 +29,7 @@ import eu.exeris.spring.boot.autoconfigure.KernelProviderScope;
  *     touches the compat {@code DataSource} fails with "PersistenceEngine is not bound in the
  *     current scope" and the saga compensates straight from step 0. This mirrors the request-path
  *     behavior in {@code eu.exeris.spring.runtime.web.scope.KernelProviderBinder}.
- * @implNote Cost: one capturing lambda per step <em>execution</em> (the {@code Supplier} handed to the scope
+ *     <p>Cost: one capturing lambda per step <em>execution</em> (the {@code Supplier} handed to the scope
  *     closes over the {@code FlowContext}), plus the carrier allocation only when a slot is actually
  *     unbound. Flow step execution is not the HTTP hot path; the cost is negligible next to the work
  *     a step performs, and the scope collapses to a direct call when the kernel already propagates

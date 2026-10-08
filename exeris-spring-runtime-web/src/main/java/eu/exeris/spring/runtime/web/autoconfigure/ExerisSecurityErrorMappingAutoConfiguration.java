@@ -20,7 +20,7 @@ import eu.exeris.spring.runtime.web.security.SpringSecurityErrorStatusResolver;
  * <p><b>Mode:</b> Mode-neutral. Adds no dependency that either mode's classpath guard forbids &mdash;
  * {@code spring-security-core} carries no servlet, Netty, or Reactor types.
  *
- * @implSpec {@code ExerisWebAutoConfiguration} and {@code ExerisCompatAutoConfiguration} are mutually
+ * @implNote {@code ExerisWebAutoConfiguration} and {@code ExerisCompatAutoConfiguration} are mutually
  *     exclusive &mdash; each is gated on {@code exeris.runtime.web.mode}. The mapping this resolver provides
  *     is needed in both: {@code @PreAuthorize} is plain Spring AOP on application beans and throws
  *     {@code AccessDeniedException} in Pure Mode exactly as it does in Compatibility Mode. Putting the

@@ -37,7 +37,7 @@ import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
  * ({@code exeris.runtime.data.compat-datasource.enabled=true}). Carries no {@code org.hibernate} or
  * Spring-Boot-JPA import, preserving module boundaries.
  *
- * @implSpec Contributes {@code hibernate.boot.allow_jdbc_metadata_access=false} and dialect settings
+ * @implNote Contributes {@code hibernate.boot.allow_jdbc_metadata_access=false} and dialect settings
  *     via {@link BeanFactoryPostProcessor} into environment property sources to avoid compile-time
  *     coupling to relocated Spring Boot 3/4 {@code HibernatePropertiesCustomizer} interfaces per ADR-028.
  * @since 0.7

@@ -29,7 +29,7 @@ import eu.exeris.kernel.spi.events.EventDescriptor;
  * <p><b>Thread Safety:</b> Implementations MUST be safe for concurrent invocation from
  * multiple virtual threads — the kernel dispatches mappers on the bus's dispatch path.
  *
- * @implSpec Implementations are Spring beans extending the kernel SAM interface directly
+ * @apiNote Implementations are Spring beans extending the kernel SAM interface directly
  *     rather than using method-level annotations, ensuring direct integration with the kernel
  *     choreography pipeline and access to {@link ExerisFlowTemplate}.
  * @since 0.5

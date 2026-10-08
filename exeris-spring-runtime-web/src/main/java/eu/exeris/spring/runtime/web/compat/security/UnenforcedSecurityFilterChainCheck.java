@@ -18,10 +18,10 @@ import org.springframework.core.env.Environment;
  * Fails context refresh when Compatibility Mode is active and the application declares a
  * {@code SecurityFilterChain} that this runtime cannot execute.
  *
- * @implSpec Under {@code web-application-type=none} there is no {@code FilterChainProxy} to run a servlet filter chain.
+ * @implNote Under {@code web-application-type=none} there is no {@code FilterChainProxy} to run a servlet filter chain.
  *     This processor runs after bean definitions are registered but before singletons are instantiated,
  *     detecting unenforced chains and failing startup before ports can bind.
- * @implNote Setting {@value #ALLOW_PROPERTY} to {@code true} downgrades the failure to a warning log.
+ *     Setting {@value #ALLOW_PROPERTY} to {@code true} downgrades the failure to a warning log.
  * @since 0.7
  */
 @CompatibilityMode

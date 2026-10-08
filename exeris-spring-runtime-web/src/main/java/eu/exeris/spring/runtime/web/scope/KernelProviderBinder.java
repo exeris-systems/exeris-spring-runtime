@@ -21,10 +21,10 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  * {@link ScopedValue.Carrier} that binds {@link KernelProviders#PERSISTENCE_ENGINE} and/or
  * {@link KernelProviders#MEMORY_ALLOCATOR} &mdash; but only those that are currently unbound.
  *
- * @implSpec An externally supplied {@link eu.exeris.kernel.spi.http.HttpHandler} is invoked on the transport
+ * @implNote An externally supplied {@link eu.exeris.kernel.spi.http.HttpHandler} is invoked on the transport
  *     carrier thread, which does not inherit bootstrap bindings established by the kernel.
  *     The binder fills this context-propagation gap by re-binding captured provider references.
- * @implNote This is re-propagation of references the kernel created and owns &mdash; not a host-runtime claim.
+ *     <p>This is re-propagation of references the kernel created and owns &mdash; not a host-runtime claim.
  *     It uses only {@code ScopedValue} and is therefore mode-neutral.
  *     Re-binding happens strictly when a slot is <em>unbound</em>, collapsing to a zero-overhead
  *     pass-through when already bound.

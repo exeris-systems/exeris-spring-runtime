@@ -35,7 +35,7 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  * (i.e., inside request handlers). Calling {@code get()} outside the kernel scope
  * will result in {@link java.util.NoSuchElementException} from the unbound ScopedValue.
  *
- * @implSpec The {@link PersistenceEngine} is a {@code ScopedValue}-bound resource available
+ * @implNote The {@link PersistenceEngine} is a {@code ScopedValue}-bound resource available
  *     only on kernel-owned Virtual Threads. Exposing it as a raw {@code @Bean} of type
  *     {@code PersistenceEngine} would promote it to a Spring singleton scope, creating
  *     stale-state risk for concurrent requests. Instead, consumer beans constructor-inject

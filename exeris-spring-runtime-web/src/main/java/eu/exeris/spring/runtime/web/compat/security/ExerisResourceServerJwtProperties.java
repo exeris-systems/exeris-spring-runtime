@@ -27,11 +27,10 @@ import java.util.List;
  * @param audiences accepted {@code aud} claim values; empty means no
  *     audience validation
  * @param jwsAlgorithms accepted signature algorithms; empty means RS256
- * @implSpec Binds the {@code spring.security.oauth2.resourceserver.jwt.*} property names
+ * @implNote Binds the {@code spring.security.oauth2.resourceserver.jwt.*} property names
  *     directly via {@link Binder}. Property names remain stable across Spring Boot 3 and 4
- *     baselines without reflection.
- * @implNote Only what {@link ExerisCompatJwtDecoderFactory} consumes is bound. Opaque-token properties
- *     are out of scope.
+ *     baselines without reflection. Only what {@link ExerisCompatJwtDecoderFactory} consumes is bound;
+ *     opaque-token properties are out of scope.
  * @since 0.7
  * @see "ADR-041: Compatibility JWT Decoder"
  * @see "ADR-028: Multi-line Spring Matrix Strategy"

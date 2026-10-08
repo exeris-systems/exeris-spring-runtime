@@ -24,7 +24,7 @@ import java.util.Optional;
  *
  * <p><b>Mode:</b> Mode-neutral. The seam lives on the pure-mode path; individual resolvers declare their own mode.
  *
- * @implSpec Keeps {@link ExerisErrorMapper} decoupled from optional framework dependencies
+ * @implNote Keeps {@link ExerisErrorMapper} decoupled from optional framework dependencies
  *     (such as Spring Security). Resolvers are registered conditionally so the pure-mode
  *     mapper stays free of classes not guaranteed to be present on the classpath.
  * @since 0.7

@@ -61,7 +61,7 @@ import eu.exeris.kernel.spi.flow.model.FlowDefinition;
  * }
  * }
  *
- * @implSpec The interface keeps the contract explicit: callers compose lambdas directly against
+ * @implNote The interface keeps the contract explicit: callers compose lambdas directly against
  *     the kernel {@link FlowDefinitionBuilder} surface without reflective post-processing,
  *     preserving constructor-first and compile-time verification disciplines.
  * @since 0.5

@@ -37,14 +37,14 @@ import java.util.Set;
  *
  * <p><b>Mode:</b> Compatibility Mode only. Lives in {@code *.compat.security.*}; never on a pure-mode path.
  *
- * @implSpec Spring Boot's {@code OAuth2ResourceServerAutoConfiguration} is
+ * @implNote Spring Boot's {@code OAuth2ResourceServerAutoConfiguration} is
  *     {@code @ConditionalOnWebApplication(type = SERVLET)}. When an app is hosted on the Exeris
  *     runtime, Spring sees {@code web-application-type=none} (Exeris owns the transport, not a
  *     servlet container), so no {@link JwtDecoder} bean is created &mdash; and
  *     {@code ExerisSecurityContextFilter} (gated on a {@link JwtDecoder} bean) never activates.
  *     A brownfield JWT resource server therefore loses authentication purely as a side effect of
  *     the migration. This factory closes that gap on the Compatibility path.
- * @implNote The decoder and its validator chain are built with public Spring Security factories
+ *     <p>The decoder and its validator chain are built with public Spring Security factories
  *     ({@link NimbusJwtDecoder}, {@link JwtDecoders#fromIssuerLocation}, {@link JwtValidators}) and
  *     mirror Spring Boot's {@code OAuth2ResourceServerJwtConfiguration.JwtDecoderConfiguration} &mdash;
  *     same key sources (jwk-set-uri / issuer-uri / public-key-location), same default validators

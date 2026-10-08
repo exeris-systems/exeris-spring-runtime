@@ -24,7 +24,7 @@ import java.util.UUID;
  * observes nothing bound. Off the request thread, rebind with
  * {@link #runWith(RequestScope, Runnable)} / {@link #callWith(RequestScope, ScopedValue.CallableOp)}.
  *
- * @implSpec {@code ScopedValue} is the only carrier. Per the runtime ownership model and architecture
+ * @implNote {@code ScopedValue} is the only carrier. Per the runtime ownership model and architecture
  *           guard {@code RequestScopeArchitectureTest#scopePackageMustNotUseThreadLocal}, this package
  *           does not use {@code ThreadLocal} as a carrier.
  * @since 0.6

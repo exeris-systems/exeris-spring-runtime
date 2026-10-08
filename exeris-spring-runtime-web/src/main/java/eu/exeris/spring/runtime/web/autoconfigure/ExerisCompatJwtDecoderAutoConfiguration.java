@@ -33,7 +33,7 @@ import eu.exeris.spring.runtime.web.compat.security.ExerisCompatJwtDecoderFactor
  *
  * <p><b>Mode:</b> Compatibility Mode only — active only when {@code exeris.runtime.web.mode=compatibility}.
  *
- * @implSpec Ordered before {@link ExerisCompatAutoConfiguration} so that the {@code JwtDecoder} bean
+ * @implNote Ordered before {@link ExerisCompatAutoConfiguration} so that the {@code JwtDecoder} bean
  *     is registered before the security filter's {@code @ConditionalOnBean(JwtDecoder)} is evaluated.
  *     Under {@code web-application-type=none}, Spring Boot's servlet-bound decoder auto-configuration
  *     is dormant, so this configuration provides the equivalent bean using public Spring Security factories.

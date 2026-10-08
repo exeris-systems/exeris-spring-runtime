@@ -23,7 +23,7 @@ import eu.exeris.spring.runtime.web.security.ExerisRoutePolicyCompiler;
  * <p><b>Absent Policy Invariant:</b> Per ADR-063 obligation 6, with no {@code ExerisHttpSecurity} bean
  * this contributes nothing, leaving the kernel route policy slot unbound.
  *
- * @implSpec The binding occurs in {@code exeris-spring-boot-autoconfigure}, and
+ * @implNote The binding occurs in {@code exeris-spring-boot-autoconfigure}, and
  *     {@code autoconfigure &rarr; web} is a banned dependency edge per architecture rules.
  *     This configuration publishes the kernel SPI type {@code HttpRoutePolicy}, allowing
  *     {@code ExerisRuntimeLifecycle} to consume an {@code Optional<HttpRoutePolicy>} without
