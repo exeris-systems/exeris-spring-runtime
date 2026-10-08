@@ -19,9 +19,8 @@ import org.junit.jupiter.api.Test;
  * that ship with the other runtime modules: no servlet, no Netty, no Reactor, no
  * WebFlux server abstractions, no DispatcherServlet.
  *
- * <p>Per Phase 1 invariant #10: every Pure Mode module ships its own
- * {@code PureModeClasspathGuardTest}. The flow module is the seventh module to
- * carry it (autoconfigure / web / tx / data / actuator / events / flow).
+ * <p>Per Pure Mode invariants: every Pure Mode module ships its own
+ * {@code PureModeClasspathGuardTest}.
  */
 class PureModeClasspathGuardTest {
 

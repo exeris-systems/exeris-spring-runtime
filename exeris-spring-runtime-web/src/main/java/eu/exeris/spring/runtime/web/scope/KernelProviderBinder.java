@@ -19,34 +19,16 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  * the host runtime did not already bind them there. Inject one instance into the HTTP
  * dispatcher; it calls {@link #bind(Runnable)} once per request, wrapping the dispatch in a
  * {@link ScopedValue.Carrier} that binds {@link KernelProviders#PERSISTENCE_ENGINE} and/or
- * {@link KernelProviders#MEMORY_ALLOCATOR} — but only those that are currently unbound.
+ * {@link KernelProviders#MEMORY_ALLOCATOR} &mdash; but only those that are currently unbound.
  *
- * <h2>Why this exists</h2>
- * <p>The kernel binds its provider slots once in the bootstrap {@code ScopedValue} scope. Its
- * own generated handlers receive those providers through the kernel construction seam or run on
- * per-request dispatch virtual threads that inherit the scope. An <em>externally supplied</em>
- * {@link eu.exeris.kernel.spi.http.HttpHandler} — this runtime's dispatcher, bound via
- * {@code HttpKernelProviders.HTTP_SERVER_HANDLER} — is invoked on the transport carrier thread,
- * which carries no bootstrap bindings. The event/flow/graph bridges already work around this by
- * reading captured engine references instead of the {@code ScopedValue}; the compat persistence
- * path ({@code ExerisDataSource}, {@code PersistenceEngineProvider}) and the response codec
- * ({@code ExerisServerResponse} reading {@code MEMORY_ALLOCATOR}) read the slot directly, so they
- * need the slot re-bound here. The captured references come from
- * {@code ExerisRuntimeLifecycle.getPersistenceEngine()} / {@code getMemoryAllocator()}. The same
- * gap exists for {@code FlowStepAction} bodies on flow scheduler worker threads — covered by the
- * value-returning sibling {@code eu.exeris.spring.boot.autoconfigure.KernelProviderScope}, wired
- * by the flow module.
- *
- * <h2>Ownership</h2>
- * <p>This is re-propagation of references the kernel created and owns — not a host-runtime claim.
- * Exeris remains the runtime owner; the binder fills a context-propagation gap on the externally
- * supplied handler thread. It uses only {@code ScopedValue} (no {@code ThreadLocal}) and is
- * therefore mode-neutral: it is shared by the Pure Mode and Compatibility Mode dispatchers.
- * Re-binding happens strictly when a slot is <em>unbound</em>, so when the kernel does propagate
- * the scope this collapses to a zero-overhead pass-through and never overrides a carrier-affine
- * binding established by the kernel.
- *
- * @since 0.8.1
+ * @implNote An externally supplied {@link eu.exeris.kernel.spi.http.HttpHandler} is invoked on the transport
+ *     carrier thread, which does not inherit bootstrap bindings established by the kernel.
+ *     The binder fills this context-propagation gap by re-binding captured provider references.
+ *     <p>This is re-propagation of references the kernel created and owns &mdash; not a host-runtime claim.
+ *     It uses only {@code ScopedValue} and is therefore mode-neutral.
+ *     Re-binding happens strictly when a slot is <em>unbound</em>, collapsing to a zero-overhead
+ *     pass-through when already bound.
+ * @since 0.8
  */
 @FunctionalInterface
 public interface KernelProviderBinder {
@@ -55,12 +37,16 @@ public interface KernelProviderBinder {
      * Run {@code action} with any unbound kernel provider slots re-bound from their captured
      * references. When all relevant slots are already bound (or no captured reference is
      * available), runs {@code action} directly with no allocation.
+     *
+     * @param action the action to execute; must not be null
      */
     void bind(Runnable action);
 
     /**
      * Pass-through binder: never re-binds anything, zero allocation. The default for the
      * disabled path (no {@code ExerisRuntimeLifecycle} bean) and the test path.
+     *
+     * @return a no-op {@link KernelProviderBinder}
      */
     static KernelProviderBinder noop() {
         return Runnable::run;
@@ -73,6 +59,7 @@ public interface KernelProviderBinder {
      *
      * @param persistenceEngine deferred accessor to the captured kernel persistence engine
      * @param memoryAllocator   deferred accessor to the captured kernel memory allocator
+     * @return a capturing {@link KernelProviderBinder}
      */
     static KernelProviderBinder capturing(Supplier<Optional<PersistenceEngine>> persistenceEngine,
                                           Supplier<Optional<MemoryAllocator>> memoryAllocator) {

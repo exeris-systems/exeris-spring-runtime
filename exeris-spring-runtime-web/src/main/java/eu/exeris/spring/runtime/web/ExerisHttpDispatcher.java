@@ -56,7 +56,7 @@ import eu.exeris.spring.runtime.web.scope.RequestScopeBinder;
  * the expected telemetry availability for test and compatibility paths without touching the
  * production hot path.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 public final class ExerisHttpDispatcher implements HttpHandler {
 
@@ -70,17 +70,37 @@ public final class ExerisHttpDispatcher implements HttpHandler {
     private final RequestScopeBinder scopeBinder;
     private final KernelProviderBinder kernelProviderBinder;
 
+    /**
+     * Creates a dispatcher with route registry and error mapper.
+     *
+     * @param routeRegistry the route registry
+     * @param errorMapper   the error mapper
+     */
     public ExerisHttpDispatcher(ExerisRouteRegistry routeRegistry,
                                  ExerisErrorMapper errorMapper) {
         this(routeRegistry, errorMapper, (Supplier<List<TelemetrySink>>) null, RequestScopeBinder.noop());
     }
 
+    /**
+     * Creates a dispatcher with route registry, error mapper, and fallback telemetry sinks.
+     *
+     * @param routeRegistry the route registry
+     * @param errorMapper   the error mapper
+     * @param fallbackSinks fallback telemetry sinks
+     */
     public ExerisHttpDispatcher(ExerisRouteRegistry routeRegistry,
                                  ExerisErrorMapper errorMapper,
                                  List<TelemetrySink> fallbackSinks) {
         this(routeRegistry, errorMapper, () -> fallbackSinks, RequestScopeBinder.noop());
     }
 
+    /**
+     * Creates a dispatcher with route registry, error mapper, and fallback telemetry sinks supplier.
+     *
+     * @param routeRegistry         the route registry
+     * @param errorMapper           the error mapper
+     * @param fallbackSinksSupplier supplier for fallback telemetry sinks
+     */
     public ExerisHttpDispatcher(ExerisRouteRegistry routeRegistry,
                                  ExerisErrorMapper errorMapper,
                                  Supplier<List<TelemetrySink>> fallbackSinksSupplier) {
@@ -88,10 +108,17 @@ public final class ExerisHttpDispatcher implements HttpHandler {
     }
 
     /**
-     * Phase 3B-α constructor (per ADR-029). Injects a {@link RequestScopeBinder} that the
-     * dispatcher calls around {@link #dispatch(HttpExchange)} to optionally bind a
+     * Creates a dispatcher with request scope binder.
+     *
+     * <p>Injects a {@link RequestScopeBinder} that the dispatcher calls around
+     * {@link #handle(HttpExchange)} to optionally bind a
      * {@link eu.exeris.spring.runtime.web.scope.RequestScope}. When the binder is
      * {@link RequestScopeBinder#noop()} (default and disabled-path) it is a pass-through.
+     *
+     * @param routeRegistry         the route registry
+     * @param errorMapper           the error mapper
+     * @param fallbackSinksSupplier supplier for fallback telemetry sinks
+     * @param scopeBinder           binder for request scope
      */
     public ExerisHttpDispatcher(ExerisRouteRegistry routeRegistry,
                                  ExerisErrorMapper errorMapper,
@@ -101,12 +128,20 @@ public final class ExerisHttpDispatcher implements HttpHandler {
     }
 
     /**
-     * Canonical constructor. Adds the {@link KernelProviderBinder} that re-binds kernel provider
+     * Canonical constructor.
+     *
+     * <p>Adds the {@link KernelProviderBinder} that re-binds kernel provider
      * {@code ScopedValue} slots (persistence engine, memory allocator) around the dispatch when
      * the handler thread did not inherit the kernel bootstrap scope — the externally-supplied
      * {@code HttpHandler} runs on the transport carrier thread, which carries no bootstrap
      * bindings. With {@link KernelProviderBinder#noop()} (default and test path) it is a
      * zero-cost pass-through.
+     *
+     * @param routeRegistry         the route registry
+     * @param errorMapper           the error mapper
+     * @param fallbackSinksSupplier supplier for fallback telemetry sinks
+     * @param scopeBinder           binder for request scope
+     * @param kernelProviderBinder  binder for kernel provider scopes
      */
     public ExerisHttpDispatcher(ExerisRouteRegistry routeRegistry,
                                  ExerisErrorMapper errorMapper,
@@ -143,7 +178,7 @@ public final class ExerisHttpDispatcher implements HttpHandler {
 
     /**
      * Re-bind any unbound kernel provider slots via the configured {@link KernelProviderBinder},
-     * then bind the Phase 3B-α request scope via the configured {@link RequestScopeBinder}, then
+     * then bind the request scope via the configured {@link RequestScopeBinder}, then
      * dispatch. With the default {@link KernelProviderBinder#noop()} / {@link RequestScopeBinder#noop()}
      * this collapses to a direct {@link #dispatch(HttpExchange, ExerisServerRequest)} call (zero
      * overhead). With a capturing provider binder it wraps the dispatch so the persistence engine

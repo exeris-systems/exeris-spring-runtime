@@ -16,7 +16,7 @@ import eu.exeris.spring.boot.autoconfigure.KernelProviderScope;
 import eu.exeris.spring.runtime.events.ExerisEventAutoConfiguration;
 
 /**
- * Autoconfiguration tests for the flow module (Phase 4B).
+ * Autoconfiguration tests for the flow module.
  *
  * <p>Verifies the activation contract:
  * <ul>
@@ -29,7 +29,7 @@ import eu.exeris.spring.runtime.events.ExerisEventAutoConfiguration;
  *   <li>{@link ExerisFlowProperties} optional flags ({@code persistenceEnabled},
  *       {@code choreographyEnabled}) default to {@code false} even when the module
  *       is enabled. {@code requireEngine} defaults to {@code true} (fail-loud posture).</li>
- *   <li>Step 3: {@link ExerisFlowChoreographyBridge} is conditional on
+ *   <li>{@link ExerisFlowChoreographyBridge} is conditional on
  *       {@code exeris.runtime.flow.choreography-enabled=true} AND an
  *       {@code ExerisEventPublisher} bean (events module active). Activation matrix
  *       verified below.</li>
@@ -150,7 +150,7 @@ class ExerisFlowAutoConfigurationTest {
                 });
     }
 
-    // ---- Step 3 — choreography bridge activation matrix ----
+    // ---- Choreography bridge activation matrix ----
 
     @Test
     void choreographyBridgeAbsentWhenChoreographyFlagDefaultFalse() {

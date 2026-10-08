@@ -20,32 +20,30 @@ import eu.exeris.spring.runtime.web.security.ExerisRoutePolicyCompiler;
  * {@code HttpRoutePolicy} bean that {@code ExerisRuntimeLifecycle} binds into
  * {@code HttpKernelProviders.HTTP_ROUTE_POLICY} (ADR-063).
  *
- * <h2>Absent bean means absent policy</h2>
+ * <p><b>Absent Policy Invariant:</b> Per ADR-063 obligation 6, with no {@code ExerisHttpSecurity} bean
+ * this contributes nothing, leaving the kernel route policy slot unbound.
  *
- * <p>ADR-063 obligation 6. With no {@code ExerisHttpSecurity} bean this contributes nothing, no
- * {@code HttpRoutePolicy} bean exists, the slot is left unbound, and the kernel applies no per-route
- * requirement — identical to a kernel with no policy at all. Declaring nothing changes nothing.
- *
- * <h2>Why the bean type crossing the module boundary is a kernel type</h2>
- *
- * <p>The binding happens in {@code exeris-spring-boot-autoconfigure}, and
- * {@code autoconfigure &rarr; web} is a banned dependency edge. So this module publishes the
- * <em>kernel SPI</em> type {@code HttpRoutePolicy}, and the lifecycle injects
- * {@code Optional<HttpRoutePolicy>} without knowing this module exists — the same shape already used
- * for {@code HttpHandler}. The compiler and the DSL stay here; only the compiled kernel contract
- * travels.
- *
- * <p>Compilation runs at bean-creation time, so a declaration that is incomplete or would deny the
- * kernel's probe endpoints fails context refresh — before the kernel boots and long before a request
- * arrives.
- *
- * @since 0.8.0
+ * @implNote The binding occurs in {@code exeris-spring-boot-autoconfigure}, and
+ *     {@code autoconfigure &rarr; web} is a banned dependency edge per architecture rules.
+ *     This configuration publishes the kernel SPI type {@code HttpRoutePolicy}, allowing
+ *     {@code ExerisRuntimeLifecycle} to consume an {@code Optional<HttpRoutePolicy>} without
+ *     depending on this module.
+ * @since 0.8
+ * @see "ADR-063: Exeris HTTP Security Route Policy Binding"
  */
 @AutoConfiguration
 @ConditionalOnBean(ExerisHttpSecurity.class)
 public class ExerisHttpSecurityAutoConfiguration {
 
     /**
+     * Default constructor for auto-configuration.
+     */
+    public ExerisHttpSecurityAutoConfiguration() {
+    }
+
+    /**
+     * Compiles the application security declaration into a kernel route policy.
+     *
      * @param security the application's declaration
      * @return the compiled policy, published as the kernel SPI type
      */

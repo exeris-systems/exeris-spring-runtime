@@ -21,7 +21,7 @@ import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
  * <p>Distinguishable from {@link JpaConnectionAcquiredEvent}, which covers new
  * connection opens. See ADR-017 §6.4 for the observability model.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 @Name("eu.exeris.spring.runtime.data.JpaConnectionBound")
 @Label("JPA Connection Bound")
@@ -29,6 +29,12 @@ import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 @StackTrace(false)
 @CompatibilityMode
 public final class JpaConnectionBoundEvent extends Event {
+
+    /**
+     * Default constructor for flight recorder event allocation.
+     */
+    public JpaConnectionBoundEvent() {
+    }
 
     private static final EventType EVENT_TYPE =
             EventType.getEventType(JpaConnectionBoundEvent.class);

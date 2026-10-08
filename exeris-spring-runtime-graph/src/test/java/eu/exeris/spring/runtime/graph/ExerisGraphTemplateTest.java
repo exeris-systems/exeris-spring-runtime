@@ -27,8 +27,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Phase 4C Step 3 — {@link ExerisGraphTemplate} happy-path + error-path tests (per ADR-030
- * obligation 3). Integration tests against a real Community PGQ driver are Step 5.
+ * {@link ExerisGraphTemplate} happy-path + error-path tests (per ADR-030 obligation 3).
  */
 class ExerisGraphTemplateTest {
 

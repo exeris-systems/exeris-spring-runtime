@@ -18,25 +18,24 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * property is consumed directly from the {@code Environment} and does not appear as a
  * field on this record because the autoconfig already runs before bean construction.
  *
- * <h2>Posture: fail loud when half-configured</h2>
- * <p>{@link #requireEngine()} defaults to {@code true}. When the application has declared
- * {@code @ExerisEventListener} methods but the kernel did not bind an {@code EventEngine}
- * during bootstrap (no {@code EventProvider} on the classpath, kernel events subsystem
- * disabled, etc.), the listener registrar fails the lifecycle start instead of silently
- * leaving listeners unsubscribed. Operators see the misconfiguration immediately rather
- * than discovering it through unfired event handlers in production.
+ * <h2>Engine Requirement</h2>
+ * <p>{@link #requireEngine()} defaults to {@code true}. When enabled, lifecycle start fails
+ * if {@code @ExerisEventListener} methods are declared but no kernel {@code EventEngine}
+ * is bound. Setting {@code exeris.runtime.events.require-engine=false} disables this check.
  *
- * <p>Test harnesses that intentionally skip kernel bootstrap (e.g. Spring Boot test slices
- * with {@code exeris.runtime.auto-start=false}) opt out by setting
- * {@code exeris.runtime.events.require-engine=false}.
- *
- * @since 0.1.0
+ * @param requireEngine whether to require a kernel event engine when listeners are present
+ * @since 0.1
  */
 @ConfigurationProperties(prefix = "exeris.runtime.events")
 public record ExerisEventProperties(
         @DefaultValue("true") boolean requireEngine
 ) {
 
+    /**
+     * Creates a new instance.
+     *
+     * @param requireEngine whether to require a kernel event engine
+     */
     @ConstructorBinding
     public ExerisEventProperties {
     }

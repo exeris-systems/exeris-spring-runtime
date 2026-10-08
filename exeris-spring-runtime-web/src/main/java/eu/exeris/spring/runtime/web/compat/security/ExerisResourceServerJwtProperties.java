@@ -17,50 +17,23 @@ import java.util.List;
 /**
  * The {@code spring.security.oauth2.resourceserver.jwt.*} settings this runtime needs, bound from the
  * {@link Environment} rather than from Spring Boot's own properties type.
+ * <p><b>Mode:</b> Compatibility Mode only.
  *
- * <h2>Why we bind these ourselves</h2>
- * <p>ADR-041 built the compatibility decoder on
- * {@code OAuth2ResourceServerProperties}, deliberately choosing Boot's <em>public</em> API over its
- * package-private internals. Spring Boot 4 then moved that class: from
- * {@code org.springframework.boot.autoconfigure.security.oauth2.resource} in
- * {@code spring-boot-autoconfigure} to
- * {@code org.springframework.boot.security.oauth2.server.resource.autoconfigure} in a new
- * {@code spring-boot-security-oauth2-resource-server} artifact. Same class, same nested types, new
- * coordinates.
- *
- * <p>ADR-028 obligation 1 requires one source tree to compile under both matrix profiles, so naming
- * either package breaks the other line. The available answers were a reflective bridge over the
- * relocated type, or this: notice that the thing which actually did <b>not</b> move is the
- * <em>property names</em>. They are the contract an application writes against, they are identical on
- * both lines, and {@code OnResourceServerJwtConfiguredCondition} in this same feature was already
- * reading them as literals. Binding them directly removes the version-specific type from the compile
- * path entirely — no reflection, no {@code @SbCompat} bridge, nothing to delete when the SB3 line is
- * dropped.
- *
- * <p>The cost is that this record restates five property names Spring Boot also declares. That is a
- * smaller and more visible surface than a reflective shim over a class whose package differs per line,
- * and property names are the more stable half of the pair — Boot moved the class twice while these
- * names stayed put.
- *
- * <h2>What is deliberately not bound</h2>
- * <p>Boot's type carries more than this ({@code authority-prefix}, {@code principal-claim-name},
- * {@code authorities-claim-name}, the whole {@code opaquetoken} branch). Only what
- * {@link ExerisCompatJwtDecoderFactory} consumes is bound. Binding fields nothing reads would imply
- * support this runtime does not provide — opaque-token resource servers are out of scope per ADR-041,
- * and the authority-mapping fields belong to a converter the application supplies.
- *
- * <h2>Mode</h2>
- * <p>Compatibility Mode only.
- *
- * @param jwkSetUri         {@code jwk-set-uri} — JWK Set endpoint; first key source tried
- * @param issuerUri         {@code issuer-uri} — issuer location; used for discovery and validation
- * @param publicKeyLocation {@code public-key-location} — resource location of an RSA public key,
- *                          resolved through a {@code ResourceLoader} rather than bound as a
- *                          {@code Resource}, so binding needs no resource-aware conversion service
- * @param audiences         {@code audiences} — accepted {@code aud} claim values; empty means no
- *                          audience validation
- * @param jwsAlgorithms     {@code jws-algorithms} — accepted signature algorithms; empty means RS256
- * @since 0.7.0
+ * @param jwkSetUri JWK Set endpoint; first key source tried
+ * @param issuerUri issuer location; used for discovery and validation
+ * @param publicKeyLocation resource location of an RSA public key,
+ *     resolved through a {@code ResourceLoader} rather than bound as a
+ *     {@code Resource}, so binding needs no resource-aware conversion service
+ * @param audiences accepted {@code aud} claim values; empty means no
+ *     audience validation
+ * @param jwsAlgorithms accepted signature algorithms; empty means RS256
+ * @implNote Binds the {@code spring.security.oauth2.resourceserver.jwt.*} property names
+ *     directly via {@link Binder}. Property names remain stable across Spring Boot 3 and 4
+ *     baselines without reflection. Only what {@link ExerisCompatJwtDecoderFactory} consumes is bound;
+ *     opaque-token properties are out of scope.
+ * @since 0.7
+ * @see "ADR-041: Compatibility JWT Decoder"
+ * @see "ADR-028: Multi-line Spring Matrix Strategy"
  */
 @CompatibilityMode
 public record ExerisResourceServerJwtProperties(
@@ -73,6 +46,15 @@ public record ExerisResourceServerJwtProperties(
     /** The prefix an application configures, identical on both Spring Boot lines. */
     public static final String PREFIX = "spring.security.oauth2.resourceserver.jwt";
 
+    /**
+     * Compact constructor validating and defensively copying list fields.
+     *
+     * @param jwkSetUri         JWK Set endpoint
+     * @param issuerUri         issuer location
+     * @param publicKeyLocation resource location of public key
+     * @param audiences         accepted audiences
+     * @param jwsAlgorithms     accepted signature algorithms
+     */
     public ExerisResourceServerJwtProperties {
         audiences = audiences == null ? List.of() : List.copyOf(audiences);
         jwsAlgorithms = jwsAlgorithms == null ? List.of() : List.copyOf(jwsAlgorithms);
@@ -100,6 +82,8 @@ public record ExerisResourceServerJwtProperties(
      *
      * <p>Mirrors the gate Spring Boot applies before creating its own decoder, so this runtime never
      * builds an unconfigured one.
+     *
+     * @return {@code true} if any key source is configured, {@code false} otherwise
      */
     public boolean hasKeySource() {
         return notBlank(jwkSetUri) || notBlank(publicKeyLocation) || notBlank(issuerUri);

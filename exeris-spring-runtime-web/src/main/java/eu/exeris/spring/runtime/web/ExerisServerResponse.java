@@ -31,13 +31,10 @@ import eu.exeris.kernel.spi.memory.MemoryAllocator;
  * kernel {@link HttpResponse} and writes it to the wire. Body buffer ownership is
  * transferred to the engine on write.
  *
- * <h2>Body Ownership</h2>
- * <p>When a body is set via {@link #body(String)} or similar methods, the string/bytes
- * are staged in heap for simplicity in Phase 1. Phase 1 targets string/text responses
- * primarily. For zero-copy binary responses (Phase 1+), a {@code LoanedBuffer} overload
- * will be added — the buffer must not be released by the caller after passing it here.
+ * <p><b>Body Ownership:</b> Staged heap bytes are copied to off-heap memory on response conversion.
+ * Callers retain no ownership of internal byte buffers.</p>
  *
- * @since 0.1.0
+ * @since 0.1
  */
 public final class ExerisServerResponse {
 
@@ -63,25 +60,54 @@ public final class ExerisServerResponse {
         this.extraHeaders = sanitizeExtraHeaders(extraHeaders);
     }
 
+    /**
+     * Creates a response builder with HTTP status 200 (OK).
+     *
+     * @return response builder initialized with 200 OK
+     */
     public static ExerisServerResponse ok() {
         return new ExerisServerResponse(HttpStatus.OK, MediaType.TEXT_PLAIN_VALUE, new byte[0]);
     }
 
+    /**
+     * Creates a response builder with the given HTTP status.
+     *
+     * @param status HTTP response status
+     * @return response builder initialized with the given status
+     */
     public static ExerisServerResponse status(HttpStatus status) {
         return new ExerisServerResponse(status, MediaType.TEXT_PLAIN_VALUE, new byte[0]);
     }
 
+    /**
+     * Sets the response Content-Type header value.
+     *
+     * @param mediaType media type to set
+     * @return updated response instance
+     */
     public ExerisServerResponse contentType(MediaType mediaType) {
         return new ExerisServerResponse(this.status, mediaType == null ? null : mediaType.toString(),
                 this.body, this.extraHeaders);
     }
 
+    /**
+     * Sets the response body to the UTF-8 encoded text.
+     *
+     * @param text response body string
+     * @return updated response instance
+     */
     public ExerisServerResponse body(String text) {
         String safeText = text == null ? "" : text;
         return new ExerisServerResponse(this.status, this.contentType,
                 safeText.getBytes(java.nio.charset.StandardCharsets.UTF_8), this.extraHeaders);
     }
 
+    /**
+     * Sets the response body to the given byte array.
+     *
+     * @param bytes response body bytes
+     * @return updated response instance
+     */
     public ExerisServerResponse body(byte[] bytes) {
         return new ExerisServerResponse(this.status, this.contentType,
                 bytes == null ? null : Arrays.copyOf(bytes, bytes.length), this.extraHeaders);
@@ -91,6 +117,9 @@ public final class ExerisServerResponse {
      * Returns a new instance carrying all provided extra headers (compat-mode use only).
      * Pure-mode callers never invoke this method; the default {@code extraHeaders} is an
      * empty immutable list, which costs no extra allocation on the hot path.
+     *
+     * @param headers additional HTTP headers to include
+     * @return response instance carrying extra headers
      */
     public ExerisServerResponse withHeaders(List<HttpHeader> headers) {
         if (headers == null || headers.isEmpty()) {
@@ -106,7 +135,7 @@ public final class ExerisServerResponse {
      * protocol version from the inbound request so the response honours the same
      * negotiated version.
      *
-     * <h2>Body Allocation</h2>
+     * <p><b>Body Allocation:</b></p>
      * <p>When a body is present, this method:
      * <ol>
      *   <li>Acquires the per-request {@link MemoryAllocator} from
@@ -114,8 +143,7 @@ public final class ExerisServerResponse {
      *       before invoking the handler virtual thread).</li>
      *   <li>Allocates a network-tier {@link LoanedBuffer} sized to the body.</li>
      *   <li>Copies the staged heap bytes to the off-heap segment (one copy — the
-     *       unavoidable cost of a String/byte[] API; zero-copy variants using a
-     *       pre-allocated buffer are a Phase 2 addition).</li>
+     *       unavoidable cost of a String/byte[] API).</li>
      *   <li>Transfers buffer ownership to the {@code HttpResponse} record; the
      *       engine takes final ownership when the exchange is responded.</li>
      * </ol>
@@ -159,8 +187,25 @@ public final class ExerisServerResponse {
         return new HttpResponse(status, version, List.copyOf(responseHeaders), buffer);
     }
 
+    /**
+     * Returns the HTTP status of this response.
+     *
+     * @return HTTP status
+     */
     public HttpStatus status() { return status; }
+
+    /**
+     * Returns the Content-Type of this response.
+     *
+     * @return Content-Type header string
+     */
     public String contentType() { return contentType; }
+
+    /**
+     * Returns a defensive copy of the response body bytes.
+     *
+     * @return copy of response body bytes
+     */
     public byte[] body() { return Arrays.copyOf(body, body.length); }
 
     private void addCompatibilityHeaders(List<HttpHeader> responseHeaders) {

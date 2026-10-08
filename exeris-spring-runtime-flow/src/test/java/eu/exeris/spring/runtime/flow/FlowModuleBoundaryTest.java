@@ -112,7 +112,7 @@ class FlowModuleBoundaryTest {
     }
 
     /**
-     * Step 2 closure-boundary guard: any class implementing
+     * Flow definition boundary guard: any class implementing
      * {@link ExerisFlowDefinition} (or the lower-level kernel
      * {@link FlowStepAction}) within this module's reach must not couple to HTTP /
      * web / transaction / persistence packages.
@@ -124,10 +124,6 @@ class FlowModuleBoundaryTest {
      * (e.g. an {@code InventoryPort} bean delegating to JDBC) are the supported
      * collaboration shape; the step body must call those collaborators by interface,
      * not import their underlying technology directly.
-     *
-     * <p>The bridge module ships no production flow implementations, so the rule passes
-     * vacuously here today. It serves as a forward-compatibility guard against future
-     * contributors landing example flows that violate the closure-boundary contract.
      */
     @Test
     void flowDefinitionAndStepActionImplementorsDoNotImportRequestPathOrTxPackages() {
@@ -149,15 +145,12 @@ class FlowModuleBoundaryTest {
     }
 
     /**
-     * Step 3 closure-boundary guard: choreography mappers run on the kernel bus
+     * Choreography mapper boundary guard: choreography mappers run on the kernel bus
      * dispatch path, which is event-routing infrastructure. They must not pull
      * HTTP / transport / persistence types — payload-based logic belongs in
      * event-listener methods (events module), and Wake/Start decisions should
      * resolve plans through {@link ExerisFlowTemplate}, not by direct persistence
      * access.
-     *
-     * <p>Vacuous today (no production mappers ship in this module); enforced as a
-     * forward-compatibility guard.
      */
     @Test
     void choreographyMapperImplementorsDoNotImportRequestPathOrTxPackages() {

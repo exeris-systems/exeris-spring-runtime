@@ -20,9 +20,8 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
  * with the other runtime modules: no servlet, no Netty, no Reactor, no WebFlux server
  * abstractions, no DispatcherServlet.
  *
- * <p>Per Phase 1 invariant #10: every Pure Mode module ships its own
- * {@code PureModeClasspathGuardTest}. The graph module is the eighth module to carry it
- * (autoconfigure / web / tx / data / actuator / events / flow / graph).
+ * <p>Per Pure Mode invariants: every Pure Mode module ships its own
+ * {@code PureModeClasspathGuardTest}.
  */
 class PureModeClasspathGuardTest {
 

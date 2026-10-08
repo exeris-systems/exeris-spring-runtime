@@ -32,8 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * dedicated benchmarking infrastructure (JMH).
  *
  * <p>The companion {@link ExerisDispatcherRepeatedDispatchSmokeTest} stays budget-free
- * and verifies correctness under repeated dispatch. This test is the closure-hardening
- * counterpart referenced in {@code docs/phases/phase-1-web-ingress.md} (Phase 1c, item 10).
+ * and verifies correctness under repeated dispatch. This test validates the hot-path allocation budget.
  *
  * <p>Measurement uses {@link com.sun.management.ThreadMXBean#getThreadAllocatedBytes(long)}
  * (HotSpot extension). On JVMs that do not support it, the test self-skips via

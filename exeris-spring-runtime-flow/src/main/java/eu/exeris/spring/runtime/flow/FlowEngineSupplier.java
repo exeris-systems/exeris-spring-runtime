@@ -22,13 +22,12 @@ import eu.exeris.kernel.spi.flow.FlowEngine;
  * a single place to fail with a clear message when the kernel did not activate a
  * flow subsystem at all.
  *
- * <p>This is the same pattern as {@code EventEngineSupplier} in the events module
- * (Phase 4A) and {@code PersistenceEngineProvider} in the tx module (Phase 3A) —
- * a deferred {@code ScopedValue} accessor preserves the kernel contract that
- * engine references are read from the current scope, not captured once at bean
- * construction.
+ * <p>This mirrors {@code EventEngineSupplier} in the events module and
+ * {@code PersistenceEngineProvider} in the tx module: a deferred accessor preserves
+ * the kernel contract that engine references are read from the runtime lifecycle after
+ * bootstrap rather than captured at bean construction time.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 @FunctionalInterface
 public interface FlowEngineSupplier {
@@ -36,12 +35,17 @@ public interface FlowEngineSupplier {
     /**
      * Returns the captured engine if one is available, or empty if the kernel ran
      * without a flow subsystem. Implementations must not throw.
+     *
+     * @return optional containing the flow engine, or empty if unavailable
      */
     Optional<FlowEngine> tryGet();
 
     /**
      * Returns the captured engine or throws if it is not available. Used on hot paths
      * that cannot proceed without the engine.
+     *
+     * @return the bound flow engine
+     * @throws IllegalStateException if the flow engine is not available
      */
     default FlowEngine requireEngine() {
         return tryGet().orElseThrow(() -> new IllegalStateException(

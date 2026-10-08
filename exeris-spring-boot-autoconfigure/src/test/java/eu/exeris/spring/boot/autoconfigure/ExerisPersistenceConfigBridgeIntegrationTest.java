@@ -20,39 +20,18 @@ import eu.exeris.kernel.spi.persistence.EngineStats;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 
 /**
- * Runtime integration tests for the persistence half of {@link ExerisSpringConfigProvider},
- * asserted against a real kernel rather than against our reading of the SPI.
+ * Runtime integration tests for the persistence configuration bridge of
+ * {@link ExerisSpringConfigProvider} against a live kernel.
  *
- * <h2>Why this class exists</h2>
- * <p>{@link ExerisSpringConfigProviderTest} pins the raw kernel key <em>names</em> against the
- * {@code exeris.runtime.persistence.*} Spring surface. That is necessary but not sufficient: it
- * asserts the mapping we believe the kernel wants, using key strings we also wrote. It cannot
- * catch a key the kernel reads that we never mapped — which is exactly how
- * {@code persistence.maxPoolSize} stayed unplumbed while {@code persistence.minIdleConnections}
- * was plumbed.
+ * <p>Verifies that Spring persistence properties (including pool sizing) are mapped
+ * to kernel configuration keys and applied by the booted {@link PersistenceEngine}.
+ * Odd pool size values ensure configuration mapping verification independently of the
+ * default processor-derived sizing fallback.
  *
- * <p>These tests close that loop by booting a real kernel through
- * {@link ExerisRuntimeLifecycle} and reading the pool sizing back off
- * {@link PersistenceEngine#stats()}. If the alias table drifts from the kernel's raw-key surface
- * again, the configured value simply will not appear in {@link EngineStats#maxConnections()}.
+ * <h2>Mode</h2>
+ * <p>PURE_MODE.
  *
- * <h2>Regression covered</h2>
- * <p>{@code CommunityPersistenceConfigResolver} resolves pool sizing exclusively from raw config
- * keys, falling back to {@code clamp(availableProcessors() * 2, 2, 32)} when the lookup misses.
- * With min-idle aliased and max-pool-size not, an application configuring {@code 16/256} got its
- * min honoured and its max derived from the host's visible CPU count. On a container pinned to
- * four CPUs that produced {@code maxPoolSize=8}, and
- * {@link eu.exeris.kernel.spi.persistence.PersistenceConfig} rejected the pair at boot:
- * {@code IllegalArgumentException: minIdleConnections (16) > maxPoolSize (8)}.
- *
- * <p>The pool sizes below are deliberately <b>odd</b>. The adaptive fallback is
- * {@code cores * 2} clamped to {@code [2, 32]} and is therefore always even, so an odd expected
- * value cannot be produced by accident on any host — the assertions stay non-vacuous whatever the
- * CI machine's core count happens to be.
- *
- * <p>Mode: {@code PURE_MODE}.
- *
- * @since 0.7.0
+ * @since 0.7
  */
 class ExerisPersistenceConfigBridgeIntegrationTest {
 

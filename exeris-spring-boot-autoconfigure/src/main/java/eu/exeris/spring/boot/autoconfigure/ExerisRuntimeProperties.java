@@ -49,16 +49,22 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * and {@code flow}. The Spring layer passes values through verbatim; the kernel
  * fails-fast on unknown names. Names are trimmed and blanks are dropped at
  * binding time; ordering is preserved for predictable startup logging. Example:
- * <pre>{@code
+ * {@snippet lang="properties" :
  *   # Headless batch worker
  *   exeris.runtime.subsystems[0]=memory
  *   exeris.runtime.subsystems[1]=crypto
  *   exeris.runtime.subsystems[2]=persistence
  *   exeris.runtime.subsystems[3]=events
  *   exeris.runtime.subsystems[4]=flow
- * }</pre>
+ * }
  *
- * @since 0.1.0
+ * @param enabled master switch for Exeris runtime integration
+ * @param autoStart whether the runtime boots automatically during context refresh
+ * @param web web-specific configuration properties
+ * @param lifecycle lifecycle-specific configuration properties
+ * @param shutdown shutdown-specific configuration properties
+ * @param subsystems explicit list of kernel subsystems to boot, or empty for defaults
+ * @since 0.1
  */
 @ConfigurationProperties(prefix = "exeris.runtime")
 public record ExerisRuntimeProperties(
@@ -81,6 +87,13 @@ public record ExerisRuntimeProperties(
      * names — preserving caller ordering for predictable logging. An empty list
      * (default) selects the kernel's default subsystem set; a non-empty list selects
      * exactly the named subsystems via {@code BootstrapSelector.forNames(...)}.
+     *
+     * @param enabled master switch for Exeris runtime integration
+     * @param autoStart whether the runtime boots automatically during context refresh
+     * @param web web-specific configuration properties
+     * @param lifecycle lifecycle-specific configuration properties
+     * @param shutdown shutdown-specific configuration properties
+     * @param subsystems explicit list of kernel subsystems to boot, or empty for defaults
      */
     @ConstructorBinding
     public ExerisRuntimeProperties {
@@ -110,9 +123,15 @@ public record ExerisRuntimeProperties(
     }
 
     /**
-     * Backward-compatible positional constructor without the {@code subsystems} component
-     * — defaults to an empty subsystem list, which selects the kernel's full subsystem set.
-     * Kept to avoid churning test code in other modules that construct properties directly.
+     * Backward-compatible positional constructor without the {@code subsystems} component.
+     *
+     * <p>Defaults to an empty subsystem list, which selects the kernel's full subsystem set.
+     *
+     * @param enabled master switch for Exeris runtime integration
+     * @param autoStart whether the runtime boots automatically during context refresh
+     * @param web web-specific configuration properties
+     * @param lifecycle lifecycle-specific configuration properties
+     * @param shutdown shutdown-specific configuration properties
      */
     public ExerisRuntimeProperties(boolean enabled,
                                     boolean autoStart,
@@ -139,50 +158,104 @@ public record ExerisRuntimeProperties(
         return Collections.unmodifiableList(normalised);
     }
 
+    /**
+     * Web configuration properties.
+     *
+     * @param mode web integration mode
+     */
     public record WebProperties(@DefaultValue("pure") Mode mode) {
 
+        /**
+         * Creates web properties with the given mode.
+         *
+         * @param mode web integration mode
+         */
         @ConstructorBinding
         public WebProperties {
         }
 
+        /**
+         * Creates web properties with default pure mode.
+         */
         public WebProperties() {
             this(Mode.PURE);
         }
 
+        /**
+         * Checks whether pure mode is active.
+         *
+         * @return {@code true} if pure mode is configured
+         */
         public boolean isPure() {
             return mode == Mode.PURE;
         }
 
+        /**
+         * Checks whether compatibility mode is active.
+         *
+         * @return {@code true} if compatibility mode is configured
+         */
         public boolean isCompatibility() {
             return mode == Mode.COMPATIBILITY;
         }
     }
 
+    /**
+     * Lifecycle timeout configuration properties.
+     *
+     * @param startupTimeoutSeconds timeout in seconds for kernel startup
+     */
     public record LifecycleProperties(@DefaultValue("30") int startupTimeoutSeconds) {
 
+        /**
+         * Creates lifecycle properties with the given timeout.
+         *
+         * @param startupTimeoutSeconds timeout in seconds for kernel startup
+         */
         @ConstructorBinding
         public LifecycleProperties {
         }
 
+        /**
+         * Creates lifecycle properties with default timeout.
+         */
         public LifecycleProperties() {
             this(30);
         }
     }
 
+    /**
+     * Shutdown configuration properties.
+     *
+     * @param graceful whether to perform graceful shutdown
+     * @param timeoutSeconds timeout in seconds for graceful shutdown
+     */
     public record ShutdownProperties(
             @DefaultValue("true") boolean graceful,
             @DefaultValue("30") int timeoutSeconds
     ) {
 
+        /**
+         * Creates shutdown properties with the given configuration.
+         *
+         * @param graceful whether to perform graceful shutdown
+         * @param timeoutSeconds timeout in seconds for graceful shutdown
+         */
         @ConstructorBinding
         public ShutdownProperties {
         }
 
+        /**
+         * Creates shutdown properties with default configuration.
+         */
         public ShutdownProperties() {
             this(true, 30);
         }
     }
 
+    /**
+     * Web execution mode for the Exeris Spring integration.
+     */
     public enum Mode {
         /**
          * Exeris-native request path. No servlet API. No Spring MVC DispatcherServlet.

@@ -28,13 +28,19 @@ import eu.exeris.kernel.spi.events.EventPayload;
  * along the dispatch path; callers must not reuse the payload after the publish returns.
  * Use {@code try (EventPayload p = ...)} when the payload is a one-shot allocation.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 public final class ExerisEventPublisher {
 
     private final EventEngineSupplier engineSupplier;
     private final ExerisEventTypeRegistry typeRegistry;
 
+    /**
+     * Creates a new event publisher.
+     *
+     * @param engineSupplier the event engine supplier
+     * @param typeRegistry   the event type registry
+     */
     public ExerisEventPublisher(EventEngineSupplier engineSupplier,
                                 ExerisEventTypeRegistry typeRegistry) {
         this.engineSupplier = Objects.requireNonNull(engineSupplier, "engineSupplier");
@@ -43,6 +49,9 @@ public final class ExerisEventPublisher {
 
     /**
      * Publishes an already-built {@link EventDescriptor} with the supplied payload.
+     *
+     * @param descriptor the event descriptor identifying the event type and stream
+     * @param payload    the event payload
      */
     public void publish(EventDescriptor descriptor, EventPayload payload) {
         Objects.requireNonNull(descriptor, "descriptor");
@@ -54,6 +63,10 @@ public final class ExerisEventPublisher {
      * Convenience: builds the descriptor via {@link ExerisEventTypeRegistry#descriptorFor}
      * and publishes with the supplied payload. The descriptor's event UUID is generated
      * fresh on every call.
+     *
+     * @param typeName the event type name
+     * @param streamId the target stream identifier
+     * @param payload  the event payload
      */
     public void publish(String typeName, UUID streamId, EventPayload payload) {
         EventDescriptor descriptor = typeRegistry.descriptorFor(typeName, streamId);
@@ -64,19 +77,14 @@ public final class ExerisEventPublisher {
      * Synchronously publishes and waits until the kernel has fully dispatched the event
      * to all subscribed handlers. Use sparingly — this blocks the calling thread.
      *
-     * <p><strong>Handlers run on the calling thread</strong>, in subscription order, as of
-     * kernel 0.11.0. Their durations therefore <em>sum</em> rather than overlap, and a slow
-     * handler delays its successors — which matters if you call this from a request thread
-     * with several subscribers attached. The method always blocked until every handler had
-     * finished; what changed is that it now does that work rather than delegating it.
+     * <p><strong>Handlers run on the calling thread</strong> in subscription order,
+     * observing {@code ScopedValue} bindings established by the publisher. Calls block until
+     * every handler finishes. Use {@link #publish(EventDescriptor, EventPayload)} for asynchronous fan-out.
      *
-     * <p>This is not a regression the kernel worked around — it is what preserves the
-     * contract. A handler observes every {@code ScopedValue} the publisher had bound,
-     * including bindings the kernel cannot enumerate because the application made them, and
-     * no fork-based mechanism using only GA APIs can carry those. {@link #publish} is
-     * unchanged and is the fan-out path.
-     *
+     * @param descriptor the event descriptor identifying the event type and metadata
+     * @param payload    the event payload
      * @throws InterruptedException if the calling thread is interrupted while waiting
+     * @throws NullPointerException if {@code descriptor} or {@code payload} is null
      */
     public void publishAndAwait(EventDescriptor descriptor, EventPayload payload) throws InterruptedException {
         Objects.requireNonNull(descriptor, "descriptor");

@@ -23,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
 /**
- * Phase 4C Step 2 autoconfig wiring tests (per ADR-030 Engineering Protocol Deliverable 2).
+ * Autoconfiguration wiring tests for the graph module per ADR-030.
  *
  * <p>Covers the three-state activation matrix from {@link ExerisGraphProperties}:
  *
@@ -37,10 +37,8 @@ import static org.mockito.Mockito.mock;
  *       {@code requireEngine()}.</li>
  * </ul>
  *
- * <p>This test exercises only Step 2 surface ({@link ExerisGraphAutoConfiguration},
- * {@link ExerisGraphProperties}, {@link GraphEngineSupplier}). The
- * {@code ExerisGraphTemplate} + {@code @ExerisGraphQuery} surface is Step 3 and is not
- * covered here.
+ * <p>Exercises auto-configuration wiring for {@link ExerisGraphAutoConfiguration},
+ * {@link ExerisGraphProperties}, and {@link GraphEngineSupplier}.
  */
 class ExerisGraphAutoConfigurationTest {
 
@@ -110,10 +108,7 @@ class ExerisGraphAutoConfigurationTest {
     }
 
     /**
-     * Sets the captured GraphEngine via reflection — the field is package-private to
-     * autoconfigure, and tests cross-package; reflection here is acceptable because the
-     * production path (boot thread capturing from ScopedValue) is integration-tested in
-     * Step 5, not this unit test.
+     * Sets the captured GraphEngine via reflection for unit testing.
      */
     private static void setCapturedGraphEngine(ExerisRuntimeLifecycle lifecycle, GraphEngine engine) {
         try {

@@ -35,7 +35,7 @@ import eu.exeris.spring.runtime.web.autoconfigure.ExerisCompatAutoConfiguration;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Compatibility cost report for the Phase 2 MVC bridge — informational only.
+ * Compatibility cost report for the MVC bridge — informational only.
  *
  * <p>Measures mean allocation per dispatch for the same logical empty-body GET through:
  * <ul>
@@ -43,20 +43,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>the Compatibility Mode dispatcher ({@link ExerisCompatDispatcher} + {@code @RestController}).</li>
  * </ul>
  *
- * <p>Logs the side-by-side numbers and their delta. <strong>There is no assertion on
- * the magnitude of the compatibility cost itself</strong> — Pure Mode keeps its hard
- * budget in {@code ExerisDispatcherAllocationBaselineTest}; this test exists to satisfy
- * ADR-011's obligation that "compatibility-mode allocation cost is documented, never
- * hidden". The output is the documentation. Sanity assertions only verify both
- * dispatchers actually produced a response.
- *
- * <p>Phase 2c closure-hardening counterpart referenced in
- * {@code docs/phases/phase-2-spring-compat.md} (Phase 2d, item 21).
+ * <p>Logs the side-by-side numbers and their delta to document Compatibility Mode allocation
+ * overhead relative to Pure Mode per ADR-011. Sanity assertions verify response generation.
  *
  * <p>Test scaffolding mirrors {@code ExerisDispatcherAllocationBaselineTest}: a direct
  * {@link HttpExchange} interface implementation (not {@link java.lang.reflect.Proxy})
  * and the {@link HttpRequest#noBody(HttpMethod, String, HttpVersion, java.util.List)}
- * factory. This keeps the Pure baseline reading consistent with the Phase 1 baseline test.
+ * factory.
  */
 class ExerisCompatAllocationCostReportTest {
 

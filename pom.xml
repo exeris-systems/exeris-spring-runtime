@@ -45,56 +45,21 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
-        <!-- Java version — aligned with the exeris-kernel GA line (kernel ADR-066, ADR-068).
-
-             25, not 26, and this is a widening rather than a restriction: anything that ran on
-             26 still runs, and JDK 25 is an LTS, which is what a brownfield Spring consumer is
-             actually able to deploy. The 26 was never load-bearing — nothing here used a
-             JDK-26-only API. It was inherited from a kernel that was preview-compiled, and
-             preview class files are major-pinned, so the whole chain was nailed to one exact
-             JDK. Kernel 0.11.0 removed that stamp; this removes the pin it forced.
-
-             Consequence worth stating: the published jars are class-file major 69, minor 0 —
-             same as the kernel's. Verified on the built output, not assumed. Raising this back
-             to 26 re-imposes an exact-JDK requirement on every consumer and needs a decision
-             that says why. -->
+        <!-- Java baseline: Java 25 LTS (class-file 69.0). -->
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
         <maven.compiler.release>25</maven.compiler.release>
 
-        <!-- Dependency versions -->
-        <!-- Pinned to a released kernel (clean, not -SNAPSHOT): the datasource SPI-unwrap
-             bridge requires kernel >= 0.8.1, and -SNAPSHOT references fail to resolve
-             (401/absent) from GitHub Packages in CI, so this must always name a published
-             release tag.
-
-             0.12.0 is the GA line of the kernel's two-track model (kernel ADR-066) — JDK 25 LTS,
-             class-file major 69, zero preview-stamped classes. Available on Maven Central.
-             See ADR-068 for the artefact model this repository mirrors. -->
+        <!-- Pinned to a published kernel release (clean, not -SNAPSHOT): -SNAPSHOT references
+             fail to resolve from GitHub Packages in CI. 0.12.0 is GA (JDK 25 LTS, class-file 69.0).
+             See ADR-068 for the artefact model. -->
         <exeris.kernel.version>0.12.0</exeris.kernel.version>
-        <!--
-             Dual matrix per ADR-028. Each line is pinned here; the matrix-sb3 /
-             matrix-sb4 profiles below select which one ${spring.boot.version} resolves
-             to. Bump the line pins here, never the selector.
 
-             The SB4 pin is 4.1.x, not the 4.0.x named in ADR-028's "Matrix at a glance"
-             table: that table was written 2026-05-17 when 4.0 was current, while the
-             decision text itself commits to "Spring Boot 4.x". Tracking the current 4.x
-             release is what makes the matrix invariant load-bearing — pinning a line
-             upstream has moved past would let the CI axis go green against a version no
-             customer is on.
-        -->
-        <!-- 3.5.14 ships fixes for SNYK-JAVA-ORGSPRINGFRAMEWORKBOOT-16191649
-             (CWE-338 Weak PRNG, CVE-2026-40975), -16198880 (CWE-377 Insecure Temp File,
-             CVE-2026-40973), -16201011 (CWE-59 Symlink Attack, CVE-2026-40977),
-             -16191022 + -16200231 (CWE-297 Cert Hostname Mismatch, CVE-2026-40974 / -40971).
-             The same bump pulls spring-web through the BOM to a version that addresses
-             SNYK-JAVA-ORGSPRINGFRAMEWORK-16109615 (CWE-459 Incomplete Cleanup, CVE-2026-22740). -->
+        <!-- Spring Boot dual matrix per ADR-028. Tracking the active 4.x line (4.1.x)
+             maintains load-bearing verification against current releases. -->
         <spring.boot.sb3.version>3.5.14</spring.boot.sb3.version>
         <spring.boot.sb4.version>4.1.0</spring.boot.sb4.version>
-        <!-- Fallback for a build that somehow activates neither matrix profile (e.g. a
-             tool invoking Maven with -P!matrix-sb3). Keeps the reactor resolvable rather
-             than failing with an unhelpful "version is missing" on every module. -->
+        <!-- Fallback keeping reactor resolvable if neither matrix profile is active. -->
         <spring.boot.version>${spring.boot.sb3.version}</spring.boot.version>
         <spring.framework.version>6.2.4</spring.framework.version>
 
@@ -103,53 +68,21 @@
         <maven.surefire.plugin.version>3.2.5</maven.surefire.plugin.version>
         <maven.failsafe.plugin.version>3.2.5</maven.failsafe.plugin.version>
         <maven.deploy.plugin.version>3.1.4</maven.deploy.plugin.version>
+        <maven.javadoc.plugin.version>3.12.0</maven.javadoc.plugin.version>
 
-        <!-- Coverage quality gate (opt-in via -Pcoverage). 0.8.15 is the first
-             JaCoCo with JDK 26 class-file support (major version 70) — see the
-             budgetHQ backend parent pom, which pins it for the same reason.
-             The baseline has since moved to 25 (major 69), which 0.8.15 also reads,
-             so this stays put: a class-file reader that is ahead of the baseline is
-             the safe direction, and a developer building on a newer JDK still needs
-             it. Do not downgrade it to "match" the baseline. -->
+        <!-- Coverage quality gate (opt-in via -Pcoverage). JaCoCo 0.8.15 supports class-file
+             major version 70; kept ahead of baseline so class-file parsing succeeds. -->
         <jacoco.maven.plugin.version>0.8.15</jacoco.maven.plugin.version>
-        <!-- Per-module LINE floor enforced by the -Pcoverage `check` goal. This is
-             a RATCHET, not the target: each module overrides it in its own
-             <properties> at-or-just-below current coverage so regressions fail
-             while the existing baseline passes. The 1.0 GA destination is ~0.85
-             per module; floors ratchet up toward it as modules approach GA.
-             Modules without their own tests produce no jacoco.exec — `check`
-             then no-ops silently (no skip flag needed). -->
         <jacoco.line.minimum>0.00</jacoco.line.minimum>
-        <!-- Set by jacoco:prepare-agent; consumed late-bound (@{...}) by the
-             surefire/failsafe argLine below. A direct ${...} reference would be
-             interpolated before prepare-agent runs, so the agent would never
-             attach (see budgetHQ backend pom §argLine note). -->
+        <!-- Consumed late-bound (@{coverage.argLine}) by surefire/failsafe so jacoco:prepare-agent attaches. -->
         <coverage.argLine/>
 
-        <!-- Test tooling. ArchUnit 1.4.2 bundles an ASM that reads JDK 26
-             class files (major version 70); 1.3.0's older ASM throws
-             "Unsupported class file major version 70" and silently skips
-             those classes — which would let the Wall/boundary guards pass
-             without actually inspecting the bytecode. That failure mode is the
-             reason to keep the reader ahead of the baseline rather than level with
-             it: the guards do not fail when they cannot parse a class, they go
-             quiet. Aligned with the exeris-kernel BOM (archunit 1.4.2). -->
+        <!-- Test tooling. ArchUnit 1.4.2 bundles ASM reading class files up to major version 70;
+             keeping the reader ahead of or level with baseline ensures boundary guards do not quietly skip unparsed classes. -->
         <archunit.version>1.4.2</archunit.version>
-        <!-- Jackson annotations version required by tools.jackson.databind:3.1.1 -->
         <jackson.annotations.version>2.21</jackson.annotations.version>
 
-        <!-- Test JVM args — aligned with kernel conventions.
-
-             The JVM preview flag used to be here as a *runtime* need: exeris-kernel-core was
-             compiled with preview features (class file minor version 65535) and the JVM refused
-             to load those classes without it. Kernel 0.11.0 carries the ADR-066 substitution and
-             is preview-clean, so the flag retired as that comment said it would — this reactor
-             now compiles and runs with no preview anywhere.
-
-             Do not reintroduce it to make something compile. It is whole-compilation and
-             whole-JVM, so it would propagate to every consumer's entire build and pin them to
-             one exact JDK. That is the failure mode ADR-066 and RFC-2026-08-08 exist to prevent;
-             the preview line in ADR-068 is where preview-dependent work belongs. -->
+        <!-- Test JVM arguments aligned with kernel runtime conventions. -->
         <test.jvm.args>-XX:+UnlockExperimentalVMOptions -XX:+UseZGC</test.jvm.args>
     </properties>
 
@@ -212,17 +145,7 @@
                     <scope>test</scope>
                 </dependency>
 
-            <!--
-                Jackson annotations version override.
-                tools.jackson.core:jackson-databind:3.1.1 (Jackson 3.x, used by exeris-kernel-community)
-                requires jackson-annotations:2.21 since that is where JsonSerializeAs was introduced
-                (see Jackson BOM 3.1.1: jackson.version.annotations=2.21).
-                Spring Boot BOM 3.5.13 manages jackson-annotations to 2.18.2, which predates
-                JsonSerializeAs. This direct dependency management entry takes Maven precedence
-                over the BOM-sourced 2.18.2.
-                jackson-annotations is backward-compatible so upgrading from 2.18.2 to 2.21
-                does not affect Spring Boot components.
-            -->
+            <!-- Jackson annotations version override for Jackson 3.x compatibility in kernel-community. -->
             <dependency>
                 <groupId>com.fasterxml.jackson.core</groupId>
                 <artifactId>jackson-annotations</artifactId>
@@ -272,15 +195,7 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
                     <version>${maven.compiler.plugin.version}</version>
-                    <!--
-                        No preview flag here, deliberately. The compiler argument was removed with
-                        ExerisStructuredScope, the only class in the reactor that ever used a
-                        preview feature (ADR-029 obligation 2, withdrawn; RFC-2026-08-08). Its
-                        absence is the enforcement: a preview feature reintroduced anywhere fails
-                        the compile rather than silently stamping minor_version 65535 into a
-                        shipped class and pinning every consumer's whole build to one JDK major.
-                        Add it back only with a decision that says why, per kernel ADR-066.
-                    -->
+                    <!-- Absence of preview flags enforces preview-clean class files per policy (.agents/policies/jdk-baseline.md). -->
                     <configuration>
                         <release>${maven.compiler.release}</release>
                     </configuration>
@@ -301,28 +216,37 @@
                         <argLine>@{coverage.argLine} ${test.jvm.args}</argLine>
                     </configuration>
                 </plugin>
-                <!--
-                    deployAtEnd: hold every module's upload until the whole reactor has
-                    succeeded, instead of publishing each module as it passes.
-
-                    Without this, `mvn deploy` publishes module-by-module, so a failure part
-                    way through the reactor leaves the modules that already passed published
-                    and the rest not. That is tolerable for snapshots (they are mutable and
-                    get overwritten on the next push) but not for a release: release
-                    coordinates on GitHub Packages cannot be overwritten or withdrawn, so a
-                    half-published release version is unrecoverable — the only way forward is
-                    to burn the number and cut the next one.
-
-                    This is not hypothetical. Deploy run 30736662274 attempt 1 (2026-08-02)
-                    failed in `-web` on a flaky test, after parent, BOM, build-config,
-                    autoconfigure and actuator had already uploaded.
-                -->
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-deploy-plugin</artifactId>
                     <version>${maven.deploy.plugin.version}</version>
                     <configuration>
+                        <!-- Holds upload until all modules pass, preventing partial releases on GitHub Packages. -->
                         <deployAtEnd>true</deployAtEnd>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-javadoc-plugin</artifactId>
+                    <version>${maven.javadoc.plugin.version}</version>
+                    <configuration>
+                        <tags>
+                            <tag>
+                                <name>apiNote</name>
+                                <placement>a</placement>
+                                <head>API Note:</head>
+                            </tag>
+                            <tag>
+                                <name>implSpec</name>
+                                <placement>a</placement>
+                                <head>Implementation Requirements:</head>
+                            </tag>
+                            <tag>
+                                <name>implNote</name>
+                                <placement>a</placement>
+                                <head>Implementation Note:</head>
+                            </tag>
+                        </tags>
                     </configuration>
                 </plugin>
             </plugins>
@@ -330,27 +254,9 @@
     </build>
 
     <profiles>
-        <!-- ==========================================================================
-             Spring Boot dual matrix (ADR-028 obligation 1).
-
-             The reactor source tree is IDENTICAL across both profiles. Only the
-             spring-boot-dependencies import differs — no src/sb3, no src/sb4, no
-             source-level fork. That is the whole point: a support statement that
-             says "SB3 and SB4" has to be one codebase, or it is two products.
-
-             matrix-sb3 is the default (activeByDefault) so a bare `mvn install`
-             behaves exactly as before this profile pair existed.
-
-                 mvn -Pmatrix-sb3 ...   (or nothing at all)
-                 mvn -Pmatrix-sb4 ...
-
-             Note on activeByDefault: it is disabled the moment ANY other profile in
-             this POM is activated on the command line — including -Pcoverage. So the
-             SB3 line must be selected explicitly whenever another profile is named:
-             `mvn -Pmatrix-sb3,coverage verify`, never `mvn -Pcoverage verify` alone if
-             the SB3 pin matters. CI names the matrix profile explicitly for exactly
-             this reason.
-             ========================================================================== -->
+        <!-- Spring Boot dual matrix per ADR-028: matrix-sb3 (default) and matrix-sb4.
+             activeByDefault is disabled when any other profile (e.g. -Pcoverage) is activated,
+             so CI names matrix profiles explicitly. -->
         <profile>
             <id>matrix-sb3</id>
             <activation>
@@ -368,11 +274,7 @@
             </properties>
         </profile>
 
-        <!-- Coverage quality gate. Opt-in (CI activates it explicitly, e.g.
-             `mvn -Pcoverage verify`) so the default build stays agent-free:
-             no per-class instrumentation overhead on the hot-path-adjacent
-             integration tests, and the agent never perturbs timing-sensitive
-             wire-level tests. Mirrors the exeris-kernel coverage profile. -->
+        <!-- Opt-in code coverage profile. -->
         <profile>
             <id>coverage</id>
             <build>

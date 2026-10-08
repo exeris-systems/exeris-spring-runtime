@@ -101,11 +101,8 @@ class DataModuleBoundaryTest {
     }
 
     /**
-     * ADR-011's marker must cover this module too. It moved to
-     * {@code eu.exeris.spring.boot.autoconfigure.compat} precisely because {@code data}
-     * cannot depend on {@code web}, which is where it used to live — so before the move these
-     * classes were structurally unmarkable and the grep the marker exists for under-reported them.
-     * This guard is the reason that cannot silently come back.
+     * Asserts that every compatibility class in the data module carries the
+     * {@link CompatibilityMode} annotation per ADR-011.
      */
     @Test
     void everyCompatClass_carriesTheCompatibilityModeMarker() {
@@ -121,17 +118,9 @@ class DataModuleBoundaryTest {
     }
 
     /**
-     * The {@code data -> autoconfigure} edge exists for exactly one type: ADR-011's
-     * {@code @CompatibilityMode} marker, which {@code data} cannot otherwise reach because
-     * {@code data -> web} is banned. {@code module-boundaries.md} states that widening it — to
-     * {@code compile} scope, or to any other autoconfigure type — is a boundary regression.
-     *
-     * <p>This rule is that statement, enforced. The PR that introduced the edge also introduced
-     * this test, because the defect it was fixing was a claim about module structure that nothing
-     * checked; leaving the replacement claim unchecked would have reproduced it one edge over.
-     *
-     * <p>{@code data} owns no wiring, so a legitimate second use of {@code autoconfigure} here
-     * would itself be the thing to question.
+     * Enforces that {@code data} depends on {@code autoconfigure} exclusively for
+     * {@link CompatibilityMode}. Widening this dependency to any other autoconfigure
+     * type violates module boundaries.
      */
     @Test
     void dataModule_mayUseAutoconfigureOnlyForTheCompatibilityModeMarker() {

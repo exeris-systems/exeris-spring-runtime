@@ -96,11 +96,7 @@ class ExerisSecurityContextFilterTest {
 
     @Test
     void populateContext_invalidToken_isRejected() {
-        // Behaviour change in 0.7.0. This previously asserted that an invalid token left the
-        // context empty and the request continued as anonymous — a presented credential that
-        // failed validation was treated identically to no credential at all, silently. That is
-        // fail-open: the caller was not refused, and nothing recorded that a token had been
-        // rejected. A presented-and-invalid credential must fail the request.
+        // A presented-and-invalid credential must fail the request and not continue as anonymous.
         when(jwtDecoder.decode("bad-token")).thenThrow(new JwtException("expired"));
 
         HttpRequest request = stubRequest(Map.of("Authorization", List.of("Bearer bad-token")));

@@ -21,27 +21,23 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  * from references captured by {@link ExerisRuntimeLifecycle} at bootstrap — but only the slots
  * that are currently unbound.
  *
- * <h2>Why this exists</h2>
- * <p>The kernel binds its provider slots once in the bootstrap {@code ScopedValue} scope.
- * Application code handed to the kernel as a callback — a {@code FlowStepAction} executing on a
- * flow scheduler worker virtual thread, for example — runs outside that scope, so slot-reading
- * consumers (the compat {@code ExerisDataSource} / {@code PersistenceEngineProvider} persistence
- * path in particular) fail with "PersistenceEngine is not bound in the current scope". The web
- * module solves the same gap on the request path with
- * {@code eu.exeris.spring.runtime.web.scope.KernelProviderBinder}; this is its value-returning
- * sibling for non-web bridge modules, colocated with {@link ExerisRuntimeLifecycle} because that
- * is where the captured references live and because consumer modules (e.g. flow) deliberately ban
- * direct {@code eu.exeris.kernel.spi.persistence..} imports in their boundary guards.
- *
- * <h2>Ownership</h2>
- * <p>This is re-propagation of references the kernel created and owns — not a host-runtime
- * claim. Exeris remains the runtime owner; the scope fills a context-propagation gap on threads
- * the bootstrap bindings do not reach. It uses only {@code ScopedValue} (no {@code ThreadLocal})
- * and is mode-neutral: re-binding happens strictly when a slot is <em>unbound</em>, so when the
- * kernel does propagate its scope this collapses to a pass-through and never overrides a
- * carrier-affine binding established by the kernel.
- *
- * @since 0.5.0
+ * @implNote The kernel binds its provider slots once in the bootstrap {@code ScopedValue} scope.
+ *     Application code handed to the kernel as a callback — a {@code FlowStepAction} executing on a
+ *     flow scheduler worker virtual thread, for example — runs outside that scope, so slot-reading
+ *     consumers (the compat {@code ExerisDataSource} / {@code PersistenceEngineProvider} persistence
+ *     path in particular) fail with "PersistenceEngine is not bound in the current scope". The web
+ *     module solves the same gap on the request path with
+ *     {@code eu.exeris.spring.runtime.web.scope.KernelProviderBinder}; this is its value-returning
+ *     sibling for non-web bridge modules, colocated with {@link ExerisRuntimeLifecycle} because that
+ *     is where the captured references live and because consumer modules (e.g. flow) deliberately ban
+ *     direct {@code eu.exeris.kernel.spi.persistence..} imports in their boundary guards.
+ *     <p>Ownership: this is re-propagation of references the kernel created and owns — not a host-runtime
+ *     claim. Exeris remains the runtime owner; the scope fills a context-propagation gap on threads
+ *     the bootstrap bindings do not reach. It uses only {@code ScopedValue} (no {@code ThreadLocal})
+ *     and is mode-neutral: re-binding happens strictly when a slot is <em>unbound</em>, so when the
+ *     kernel does propagate its scope this collapses to a pass-through and never overrides a
+ *     carrier-affine binding established by the kernel.
+ * @since 0.5
  */
 public interface KernelProviderScope {
 
@@ -49,12 +45,18 @@ public interface KernelProviderScope {
      * Runs {@code action} with any unbound kernel provider slots re-bound from their captured
      * references and returns its result. When all relevant slots are already bound (or no
      * captured reference is available), invokes {@code action} directly.
+     *
+     * @param <T> result type
+     * @param action the action to execute
+     * @return result of the action
      */
     <T> T call(Supplier<T> action);
 
     /**
      * Pass-through scope: never re-binds anything. The default for the disabled path (no
      * {@link ExerisRuntimeLifecycle} bean) and the test path.
+     *
+     * @return a no-op pass-through scope
      */
     static KernelProviderScope noop() {
         return new KernelProviderScope() {
@@ -73,6 +75,7 @@ public interface KernelProviderScope {
      *
      * @param persistenceEngine deferred accessor to the captured kernel persistence engine
      * @param memoryAllocator   deferred accessor to the captured kernel memory allocator
+     * @return a capturing kernel provider scope
      */
     static KernelProviderScope capturing(Supplier<Optional<PersistenceEngine>> persistenceEngine,
                                          Supplier<Optional<MemoryAllocator>> memoryAllocator) {
@@ -113,6 +116,9 @@ public interface KernelProviderScope {
      * deferred — they read the captured references at call time, so a scope built during bean
      * wiring (before {@link ExerisRuntimeLifecycle#start()} has populated the captures) becomes
      * effective as soon as the kernel has booted.
+     *
+     * @param lifecycle the runtime lifecycle holding captured references
+     * @return a capturing scope wired to the lifecycle
      */
     static KernelProviderScope fromLifecycle(ExerisRuntimeLifecycle lifecycle) {
         Objects.requireNonNull(lifecycle, "lifecycle");

@@ -19,47 +19,15 @@ import java.util.Optional;
 /**
  * Produces a Spring Boot {@code HealthIndicator} without naming it at compile time.
  *
- * <h2>Why this is the one place reflection was unavoidable</h2>
- * <p>Three other Spring Boot 4 relocations were closed in this train by dropping the dependency on the
- * moved type rather than bridging it — the property names behind
- * {@code OAuth2ResourceServerProperties} had not moved, {@code HibernatePropertiesCustomizer} was only
- * a delivery mechanism for two settings, and {@code HttpHeaders} still offered a method common to both
- * lines. That reasoning runs out here.
+ * <p><b>Failure Mode:</b> Resolution failure returns {@link Optional#empty()} rather than throwing.
+ * Spring Boot's health endpoint is operational visibility, not a data path: an actuator that cannot register
+ * its indicator must not prevent the application from serving traffic.
  *
- * <p>{@code HealthIndicator} is not a carrier of data available elsewhere: it is an interface Spring
- * Boot discovers <em>by type</em>, and something must implement it. A class cannot declare
- * {@code implements} against a type whose package differs per matrix line while both lines compile the
- * same source (ADR-028 obligation 1), so the implementation is created at runtime instead — a JDK
- * proxy against whichever interface is present:
- *
- * <table>
- *   <caption>Interface coordinates by line</caption>
- *   <tr><th>Line</th><th>Interface</th><th>Artifact</th></tr>
- *   <tr><td>SB3</td><td>{@code org.springframework.boot.actuate.health.HealthIndicator}</td>
- *       <td>{@code spring-boot-actuator}</td></tr>
- *   <tr><td>SB4</td><td>{@code org.springframework.boot.health.contributor.HealthIndicator}</td>
- *       <td>{@code spring-boot-health}</td></tr>
- * </table>
- *
- * <p>The {@code Health} builder API is identical in shape on both lines ({@code Health.up()} /
- * {@code Health.down()} returning a {@code Builder} with {@code withDetail(String, Object)} and
- * {@code build()}), which is what makes one reflective path sufficient rather than two.
- *
- * <h2>Note on ADR-028's bridge taxonomy</h2>
- * <p>ADR-028 obligation 4 names an actuator health-indicator relocation as the canonical case for a
- * {@code bridge.sb4.*} sub-package. A sub-package cannot solve it: the problem is that the type is
- * unnameable at compile time under one line, and moving the class to another package does not change
- * that. This bridge is therefore version-neutral rather than SB4-specific, and lives in
- * {@code actuator.bridge} — it is equally in play on both lines, so an {@code sb4} label would be
- * misleading about when it runs.
- *
- * <h2>Failure mode</h2>
- * <p>Resolution failure returns {@link Optional#empty()} rather than throwing. Spring Boot's health
- * endpoint is operational visibility, not a data path: an actuator that cannot register its indicator
- * must not prevent the application from serving traffic. The caller logs the stand-down, so the
- * absence is visible rather than silent.
- *
- * @since 0.7.0
+ * @implNote Builds a JDK dynamic proxy implementing {@code HealthIndicator} at runtime
+ *     to bridge differences in Spring Boot packaging across Boot 3 and Boot 4 per ADR-028.
+ *     Method handles for the {@code Health.Builder} API are cached during construction to avoid
+ *     per-invocation reflection overhead on health checks.
+ * @since 0.7
  */
 public final class SpringBootHealthIndicatorFactory {
 
@@ -122,10 +90,7 @@ public final class SpringBootHealthIndicatorFactory {
                     // suppressing them would leave a bare status that says nothing.
                     case "health", "getHealth" -> converter.toBootHealth(source.health());
                     case "toString" -> "ExerisRuntimeHealthIndicator(proxy)";
-                    // Identity equality, the standard shape for a dynamic proxy. An earlier version
-                    // returned true for ANY proxy instance, which is both wrong and inconsistent with
-                    // the identity hashCode beside it: two proxies over different sources compared
-                    // equal while hashing differently, breaking the equals/hashCode contract.
+                    // Identity equality, preserving consistency with the identity hashCode beside it.
                     case "hashCode" -> System.identityHashCode(proxyInstance);
                     case "equals" -> args != null && args.length == 1 && proxyInstance == args[0];
                     default -> throw new UnsupportedOperationException(

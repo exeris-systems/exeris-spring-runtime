@@ -20,19 +20,26 @@ import eu.exeris.kernel.spi.graph.GraphSession;
  * <p>Kernel-side notes:
  * <ul>
  *   <li>{@code GraphSession.beginTransaction()} / {@code commit()} / {@code rollback()} declare
- *       only {@code GraphQueryException} (which extends {@code RuntimeException}), so for the
- *       Step 2/3 SPI surface the {@code throws Exception} on this callback is forward-looking
- *       headroom, not a current necessity.</li>
+ *       only {@code GraphQueryException} (which extends {@code RuntimeException}). The
+ *       {@code throws Exception} on this callback accommodates checked exceptions thrown by callers.</li>
  *   <li>The template's {@code execute(...)} catches application exceptions, closes the session
  *       in a {@code finally} block, and re-throws — see the template's Javadoc for the precise
  *       contract.</li>
  * </ul>
  *
  * @param <T> the result type the callback produces
- * @since 0.7.0
+ * @since 0.7
+ * @see "ADR-030: Phase 4C Spring-Side Seam for Kernel Graph SPI"
  */
 @FunctionalInterface
 public interface ExerisGraphSessionCallback<T> {
 
+    /**
+     * Executes an operation against the given graph session.
+     *
+     * @param session the active graph session
+     * @return the result of the operation
+     * @throws Exception if an error occurs during execution
+     */
     T withSession(GraphSession session) throws Exception;
 }

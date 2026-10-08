@@ -17,13 +17,12 @@ import eu.exeris.kernel.spi.http.HttpRoutePolicy;
 import eu.exeris.kernel.spi.http.RouteRequirement;
 
 /**
- * Spring-shaped per-path authorization rules, compiled onto the kernel's route-policy contract
- * (<a href="../../../../../../../../docs/adr/ADR-063-exeris-http-security-route-policy-binding.md">ADR-063</a>).
+ * Spring-shaped per-path authorization rules, compiled onto the kernel's route-policy contract.
  *
  * <p>Declare one of these as a bean and the runtime compiles it, once at startup, into a
  * {@code HttpRoutePolicy} bound into the kernel's {@code HTTP_ROUTE_POLICY} slot:
  *
- * <pre>{@code
+ * {@snippet lang="java" :
  * @Bean
  * ExerisHttpSecurity httpSecurity() {
  *     return ExerisHttpSecurity.create()
@@ -32,7 +31,7 @@ import eu.exeris.kernel.spi.http.RouteRequirement;
  *             .requestMatchers(HttpMethod.POST, "/api/orders/**").hasAllScopes("orders:write", "orders:read")
  *             .anyRequest().authenticated();
  * }
- * }</pre>
+ * }
  *
  * <p><strong>This is a compiler, not an enforcement mechanism.</strong> Every decision is taken by
  * the kernel on the admission path, before {@code ExerisHttpDispatcher} or
@@ -40,44 +39,24 @@ import eu.exeris.kernel.spi.http.RouteRequirement;
  * handler, no argument resolver, no {@code @Transactional} advice runs for a caller who will be
  * refused. Declaring no bean leaves the slot unbound and changes nothing.
  *
- * <h2>Mode</h2>
+ * <p><b>Mode:</b> Mode-neutral. This governs ingress for Pure Mode and Compatibility Mode alike and is
+ * deliberately not a {@code *.compat.*} type (ADR-063 obligation 5).</p>
  *
- * <p>Mode-neutral. This governs ingress for Pure Mode and Compatibility Mode alike and is
- * deliberately not a {@code *.compat.*} type (ADR-063 obligation 5).
- *
- * <h2>Why there is no {@code hasRole}</h2>
- *
- * <p>The kernel's {@code RouteRequirement} has four kinds — permit-all, authenticated, any-scope,
- * all-scopes — and its enforcer consults {@code PrincipalContext.hasScope} alone. There is no role
- * kind, so {@code hasRole("USER")} cannot be expressed against this contract.
- *
- * <p>It could be <em>simulated</em>, by compiling {@code hasRole("USER")} into a scope named
- * {@code ROLE_USER}. That is rejected: it would look like Spring while installing a second authority
- * model at the edge whose relationship to Spring's own {@code hasRole} is a naming convention nobody
- * agreed to. The moment an application's authorities come from anywhere but a literal {@code scope}
- * claim the two disagree, and the failure is an authorization decision taken on the wrong basis. A
- * DSL that refuses to express something is recoverable; one that expresses it wrongly is not.
- *
- * <p>Role checks stay with {@code @PreAuthorize}, which reads Spring's own {@code Authentication}
- * inside the handler. The two layers answer different questions: the edge decides whether a caller
- * may reach a path at all, method security decides whether this principal may perform this
- * operation.
- *
- * @since 0.8.0
+ * @apiNote There is no {@code hasRole} method: the kernel's {@code RouteRequirement} checks scopes
+ *          alone via {@code PrincipalContext.hasScope}. Simulating roles as {@code ROLE_} scopes is
+ *          rejected to avoid divergence from Spring's authority model. Role-based checks should use
+ *          method-level {@code @PreAuthorize} instead, which evaluates Spring's {@code Authentication}.
+ * @since 0.8
+ * @see "ADR-063: Exeris HTTP Security Route Policy Binding"
  */
 public final class ExerisHttpSecurity {
 
     /**
-     * Endpoints the kernel's Community HTTP driver serves itself, which no application handler backs.
+     * Kernel driver probe endpoints that require explicit policy matching.
      *
-     * <p>The kernel does not exempt them from a bound policy — ADR-061 is explicit that they are
-     * routes like any other, because a driver-local notion of "public" would be a second answer to
-     * the question the policy contract now owns. So a fail-closed unmatched answer denies them, and
-     * the symptom is a rollout whose pods never become ready while the process is perfectly healthy.
-     *
-     * <p>Spring's idiomatic closing line is {@code anyRequest().authenticated()}, which maps exactly
-     * onto fail-closed. An application that writes the thing it has always written therefore breaks
-     * its own orchestrator probes. {@link #build()} refuses that at startup rather than at 3am.
+     * <p>ADR-061 treats driver probe routes as standard paths subject to bound policy.
+     * When unmatched requests require authentication, probe endpoints must be explicitly
+     * permitted or configured; {@link #build()} validates this invariant at configuration time.
      */
     private static final List<String> PROBE_ROUTES =
             List.of("/health", "/health/live", "/health/ready", "/db/ping", "/db/roundtrip");
@@ -88,7 +67,11 @@ public final class ExerisHttpSecurity {
     private ExerisHttpSecurity() {
     }
 
-    /** Starts a declaration. */
+    /**
+     * Starts a declaration.
+     *
+     * @return a new security configuration builder
+     */
     public static ExerisHttpSecurity create() {
         return new ExerisHttpSecurity();
     }
@@ -97,6 +80,7 @@ public final class ExerisHttpSecurity {
      * Begins a rule matching the given path patterns on any method.
      *
      * @param patterns one or more patterns — see {@link RoutePathPattern} for the syntax
+     * @return an authorization builder for the matched route
      */
     public Authorization requestMatchers(String... patterns) {
         return new Authorization(null, patterns);
@@ -107,6 +91,7 @@ public final class ExerisHttpSecurity {
      *
      * @param method   the method this rule applies to
      * @param patterns one or more patterns
+     * @return an authorization builder for the matched route
      */
     public Authorization requestMatchers(HttpMethod method, String... patterns) {
         Objects.requireNonNull(method, "method must not be null");
@@ -117,6 +102,8 @@ public final class ExerisHttpSecurity {
      * Declares the answer for any path no preceding rule matched.
      *
      * <p>Required. There is no default, deliberately — see {@link #build()}.
+     *
+     * @return an authorization builder for unmatched routes
      */
     public Authorization anyRequest() {
         return new Authorization();
@@ -125,15 +112,13 @@ public final class ExerisHttpSecurity {
     /**
      * Compiles the declaration, validating it.
      *
-     * <p>Two failures are raised here rather than left to be discovered in production:
+     * <p>Validates the following configuration invariants:
      *
      * <ol>
-     *   <li><strong>No unmatched answer.</strong> Every other rule describes paths the author thought
-     *       about; the unmatched answer covers the ones they did not, which is where an authorization
-     *       mistake actually lands. Defaulting it either way is a decision made on the author's behalf
-     *       that they never see, so the DSL refuses to guess.</li>
-     *   <li><strong>Fail-closed unmatched with undeclared probe routes.</strong> See
-     *       {@link #PROBE_ROUTES}. The message names the routes that would be denied.</li>
+     *   <li><strong>Unmatched rule:</strong> An explicit fallback rule must be configured
+     *       via {@link #anyRequest()}.</li>
+     *   <li><strong>Driver probe routes:</strong> Probe endpoints ({@link #PROBE_ROUTES}) must
+     *       be explicitly permitted when unmatched requests require authentication.</li>
      * </ol>
      *
      * @return the compiled policy
@@ -202,8 +187,7 @@ public final class ExerisHttpSecurity {
     /**
      * The requirement half of a rule.
      *
-     * <p>Only scope-shaped predicates are offered (ADR-063 obligation 4) — see the class Javadoc for
-     * why {@code hasRole} is absent.
+     * <p>Configures scope-shaped requirements for matched routes per ADR-063.
      */
     public final class Authorization {
 
@@ -223,28 +207,44 @@ public final class ExerisHttpSecurity {
             this.terminal = true;
         }
 
-        /** No identity required. The kernel admits without running its security interceptor. */
+        /**
+         * Requires no identity. The kernel admits without running its security interceptor.
+         *
+         * @return parent security configuration builder
+         */
         public ExerisHttpSecurity permitAll() {
             return apply(RouteRequirement.permitAll());
         }
 
         /**
-         * A verified identity required, with no scope demanded.
+         * Demands a verified identity, with no scope demanded.
          *
          * <p>Distinct from {@link #permitAll()} in a way that matters: {@code permitAll} skips the
          * interceptor entirely, so the handler sees no principal even when the caller presented a
          * valid token. A route that wants identity without demanding a scope declares this.
+         *
+         * @return parent security configuration builder
          */
         public ExerisHttpSecurity authenticated() {
             return apply(RouteRequirement.authenticated());
         }
 
-        /** At least one of the named scopes required. */
+        /**
+         * Demands at least one of the named scopes.
+         *
+         * @param scopes scope names required
+         * @return parent security configuration builder
+         */
         public ExerisHttpSecurity hasAnyScope(String... scopes) {
             return apply(RouteRequirement.requiringAnyScope(setOf(scopes)));
         }
 
-        /** All of the named scopes required. */
+        /**
+         * Demands all of the named scopes.
+         *
+         * @param scopes scope names required
+         * @return parent security configuration builder
+         */
         public ExerisHttpSecurity hasAllScopes(String... scopes) {
             return apply(RouteRequirement.requiringAllScopes(setOf(scopes)));
         }

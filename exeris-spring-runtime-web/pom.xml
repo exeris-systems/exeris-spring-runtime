@@ -31,8 +31,8 @@
           - Servlet API, HttpServletRequest, HttpServletResponse,
           - WebFlux ServerWebExchange or ReactorHttpHandlerAdapter.
 
-        Compatibility mode (Phase 2) will add an opt-in MVC dispatch bridge.
-        It will be clearly labelled and must not activate by default.
+        Compatibility mode adds an opt-in MVC dispatch bridge.
+        It is clearly isolated under compat packages and never activates by default.
 
         See docs/architecture/module-boundaries.md for enforcement rules.
         See docs/architecture/kernel-integration-seams.md for the exact SPI seams.

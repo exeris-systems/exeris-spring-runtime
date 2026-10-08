@@ -21,61 +21,27 @@ import java.util.Map;
 import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 
 /**
- * Removes the last piece of Exeris-specific configuration a brownfield JPA application had to write
- * by hand: the Hibernate bootstrap settings that keep {@code EntityManagerFactory} construction from
- * reaching for a JDBC connection before the kernel exists.
+ * Configures Hibernate bootstrap settings to prevent {@code EntityManagerFactory}
+ * construction from attempting JDBC metadata access before the kernel starts.
  *
- * <h2>The ordering problem this closes</h2>
- * <p>Bootstrap order is invariant: Spring {@code refresh()} completes, <em>then</em>
- * {@code ExerisRuntimeLifecycle.start()} boots the kernel. {@code EntityManagerFactory} is built
- * during {@code refresh()}. By default Hibernate opens a connection at that point to probe database
- * metadata and infer its dialect — and {@link ExerisDataSource} cannot serve one, because the kernel
- * persistence engine it delegates to has not been created yet. The application fails to start, with
- * an error that points at Hibernate and says nothing about runtime ownership.
+ * <p><b>Bootstrap Invariant:</b> Bootstrap order is invariant: Spring {@code refresh()} completes,
+ * then {@code ExerisRuntimeLifecycle.start()} boots the kernel. {@code EntityManagerFactory} is built
+ * during {@code refresh()}. Disabling Hibernate's metadata probe
+ * ({@code hibernate.boot.allow_jdbc_metadata_access=false}) and explicitly setting the dialect
+ * defers database connection acquisition until the kernel persistence engine is active.
  *
- * <p>The fix is two Hibernate settings: switch the metadata probe off, and state the dialect that the
- * probe would otherwise have discovered. Until 0.7.0 the application had to know that, and
- * {@code kernel-integration-seams.md} called it "the canonical compat-datasource configuration".
- * That was accurate but it is the wrong place for the knowledge: the ordering constraint is a
- * property of this runtime, not of the application's persistence code.
+ * <p><b>Dialect Resolution:</b> Only PostgreSQL and H2 are derived automatically. For unrecognised URLs,
+ * the context startup fails with a message instructing the user to configure {@code spring.jpa.database-platform}.
  *
- * <h2>Why it contributes properties instead of implementing {@code HibernatePropertiesCustomizer}</h2>
- * <p>It did implement that interface when it first landed. Spring Boot 4 moved it — from
- * {@code org.springframework.boot.autoconfigure.orm.jpa} in {@code spring-boot-autoconfigure} to
- * {@code org.springframework.boot.hibernate.autoconfigure} in a new {@code spring-boot-hibernate}
- * artifact — and ADR-028 obligation 1 requires one source tree to compile under both matrix profiles,
- * so naming either package breaks the other line.
- *
- * <p>Rather than bridge the relocated interface, this contributes the same two settings as ordinary
- * {@code spring.jpa.properties.*} entries through a {@link BeanFactoryPostProcessor}. Boot binds those
- * into the very map {@code HibernatePropertiesCustomizer} would have handed us, so the effect is
- * identical while nothing version-specific appears on the compile path. It also runs before any
- * singleton — and therefore before {@code JpaProperties} is bound and the {@code EntityManagerFactory}
- * is built — which is the ordering the customizer interface was giving us anyway.
- *
- * <p>A side benefit: "never overrule an application that has already spoken" is now enforced by
- * property-source precedence rather than by an explicit key check. The contributed source is added
- * <em>last</em>, so any {@code spring.jpa.properties.hibernate.*} the application sets — from a
- * properties file, a profile, an environment variable, anywhere — wins automatically.
- *
- * <h2>Unrecognised URLs fail startup</h2>
- * <p>Only PostgreSQL and H2 are derived, because those are what the Community persistence engine
- * actually supports. For anything else this refuses to guess and fails the context with a message
- * naming {@code spring.jpa.database-platform}. Guessing a dialect is worse than not setting one:
- * Hibernate would run against subtly wrong SQL generation rather than failing, and the symptom would
- * surface later as a query defect. Failing here costs a startup and names the fix; the alternative
- * costs a debugging session at a call site that looks correct.
- *
- * <p>The refusal is gated on Hibernate actually being present. Without it there is no dialect to
- * state and no metadata probe to disable, so an application using the compat datasource without JPA
- * is unaffected.
- *
- * <h2>Mode</h2>
- * <p>Compatibility Mode only — registered solely through the opt-in compat datasource
+ * <p><b>Mode:</b> Compatibility Mode only — registered solely through the opt-in compat datasource
  * ({@code exeris.runtime.data.compat-datasource.enabled=true}). Carries no {@code org.hibernate} or
- * Spring-Boot-JPA import, so it does not make JPA a first-class path in this module (ADR-017).
+ * Spring-Boot-JPA import, preserving module boundaries.
  *
- * @since 0.7.0
+ * @implNote Contributes {@code hibernate.boot.allow_jdbc_metadata_access=false} and dialect settings
+ *     via {@link BeanFactoryPostProcessor} into environment property sources to avoid compile-time
+ *     coupling to relocated Spring Boot 3/4 {@code HibernatePropertiesCustomizer} interfaces per ADR-028.
+ * @since 0.7
+ * @see "ADR-017: Persistence Engine Spring Bridge"
  */
 @CompatibilityMode
 public final class ExerisHibernateBootstrapCustomizer implements BeanFactoryPostProcessor, EnvironmentAware {
@@ -106,6 +72,9 @@ public final class ExerisHibernateBootstrapCustomizer implements BeanFactoryPost
     private final String hibernateMarkerClass;
     private Environment environment;
 
+    /**
+     * Default constructor creating a customizer using the standard Hibernate marker class.
+     */
     public ExerisHibernateBootstrapCustomizer() {
         this(HIBERNATE_MARKER_CLASS);
     }
@@ -140,11 +109,10 @@ public final class ExerisHibernateBootstrapCustomizer implements BeanFactoryPost
     }
 
     /**
-     * Builds the settings to contribute. Package-private and static so the decision can be tested
-     * directly: {@link #postProcessBeanFactory} is gated on Hibernate being on the classpath, and
-     * Hibernate is deliberately absent from this module's test classpath (ADR-017 — JPA is not a
-     * first-class path here), which would otherwise make every assertion about the contribution
-     * vacuous.
+     * Builds the Hibernate bootstrap settings to contribute to the environment.
+     *
+     * @param configurable the environment to inspect
+     * @return map of contributed property key-value pairs
      */
     static Map<String, Object> buildContribution(Environment configurable) {
         Map<String, Object> contributed = new LinkedHashMap<>();
@@ -152,8 +120,7 @@ public final class ExerisHibernateBootstrapCustomizer implements BeanFactoryPost
 
         if (configurable.getProperty(SPRING_DATABASE_PLATFORM) != null
                 || configurable.getProperty(JPA_PROPERTIES_PREFIX + DIALECT_KEY) != null) {
-            // The application stated the dialect. The ordering fix still applies — it is orthogonal
-            // to who supplies the dialect — but we add nothing further.
+            // Explicit dialect already supplied; do not overwrite.
             return contributed;
         }
 

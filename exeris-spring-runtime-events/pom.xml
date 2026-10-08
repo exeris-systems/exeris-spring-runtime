@@ -19,7 +19,7 @@
         as publish/subscribe primitives without making the Spring ApplicationContext the
         canonical event owner.
 
-        Scope (Phase 4A — 1.0 preview, default-off):
+        Key capabilities (default-off):
           - ExerisEventPublisher: Spring bean publishing into kernel EventBus,
           - @ExerisEventListener: method-level annotation; scanned by ExerisEventListenerRegistrar
             and registered as kernel EventHandler subscriptions,
@@ -32,13 +32,10 @@
           - Spring ApplicationEventPublisher is NEVER wired into the Exeris EventBus.
           - No Spring event types (org.springframework.context.event.*) on the kernel bus path.
           - No HTTP / transaction / persistence concerns in this module.
-
-        See docs/phases/phase-4-events-flow.md (Section 4A) for the full delivery plan.
     </description>
 
     <properties>
-        <!-- Coverage ratchet floor (enforced only under -Pcoverage). Measured LINE 91.0% —
-             already past the ~0.85 1.0 GA target; floor guards against regression. -->
+        <!-- Coverage ratchet floor (enforced only under -Pcoverage). -->
         <jacoco.line.minimum>0.90</jacoco.line.minimum>
     </properties>
 
@@ -112,8 +109,7 @@
             <scope>test</scope>
         </dependency>
         <!-- H2 in-memory database to satisfy the kernel persistence subsystem during
-             the integration test boot. Phase 4A is event-only; this is the cheapest
-             way to get a clean kernel up without standing up PostgreSQL. -->
+             the integration test boot without external infrastructure. -->
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>

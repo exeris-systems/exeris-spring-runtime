@@ -27,30 +27,14 @@ import eu.exeris.spring.boot.autoconfigure.ExerisSpringConfigProvider;
 
 /**
  * End-to-end runtime integration test for the events bridge.
- *
- * <p>Boots a real {@link ExerisRuntimeLifecycle} with {@code exeris-kernel-community} on
- * the test classpath, so the kernel bootstrap discovers the community {@code EventProvider}
- * via {@code ServiceLoader} and binds a real {@code EventEngine} into
- * {@code KernelProviders.EVENT_ENGINE}. The test verifies the load-bearing assumption of
- * the events module: that the engine reference can be captured across the
- * {@code ScopedValue} boundary and consumed by Spring beans on a different thread.
- *
- * <h2>What this proves vs the unit suite</h2>
- * <ul>
- *   <li>{@link ExerisRuntimeLifecycle#getEventEngine()} is populated after a real kernel
- *       bootstrap and cleared after shutdown.</li>
- *   <li>{@link ExerisEventListenerRegistrar} can subscribe a listener to a real
- *       {@code EventBus} and have it invoked when {@link ExerisEventPublisher} publishes
- *       through the same engine.</li>
- *   <li>The seam works without any Spring auto-configuration glue — direct construction
- *       and lifecycle calls are enough, which keeps the test independent of the Boot
- *       application context machinery.</li>
- * </ul>
+ * <p>Boots {@link ExerisRuntimeLifecycle} with {@code exeris-kernel-community} to
+ * verify capture of {@code EventEngine} across the bootstrap scope, registration
+ * via {@link ExerisEventListenerRegistrar}, and dispatch via {@link ExerisEventPublisher}.
  *
  * <h2>Mode</h2>
  * <p>PURE_MODE — the events bridge is mode-agnostic; this test does not exercise web mode.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 class ExerisEventBridgeRuntimeIntegrationTest {
 

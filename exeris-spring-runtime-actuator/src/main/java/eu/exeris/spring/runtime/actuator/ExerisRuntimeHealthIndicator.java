@@ -18,22 +18,14 @@ import java.util.Objects;
  * <p>Reports up when {@link ExerisRuntimeLifecycle#isRunning()} is {@code true}, and down otherwise —
  * the runtime has not yet started, or has been stopped.
  *
- * <h2>Why it no longer implements Spring Boot's {@code HealthIndicator}</h2>
- * <p>It did until the Spring Boot dual matrix landed. Spring Boot 4 moved that interface to a
- * different package in a different artifact, and a class cannot declare {@code implements} against a
- * type whose name differs per matrix line while both lines compile the same source (ADR-028
- * obligation 1). The Boot-facing shape is produced instead by
- * {@link eu.exeris.spring.runtime.actuator.bridge.SpringBootHealthIndicatorFactory}, which builds a
- * proxy against whichever interface is on the classpath and delegates here.
+ * <p><b>Ownership:</b> Reads Spring lifecycle state only. No {@code ScopedValue} reads.
+ * No kernel-path coupling. Safe to call from any thread at any time after Spring context refresh.
  *
- * <p>This class is therefore the source of truth for the health decision, and stays free of any
- * framework type — which is also what lets the compat actuator controller read it directly.
- *
- * <h2>Ownership</h2>
- * <p>Reads Spring lifecycle state only. No ScopedValue reads. No kernel-path coupling.
- * Safe to call from any thread at any time after Spring context refresh.
- *
- * @since 0.1.0
+ * @implNote The Spring Boot-facing health indicator shape is produced reflectively by
+ *     {@link eu.exeris.spring.runtime.actuator.bridge.SpringBootHealthIndicatorFactory} to accommodate
+ *     packaging differences across Spring Boot lines per ADR-028. This class remains framework-free
+ *     and serves as the single source of truth for runtime health evaluation.
+ * @since 0.1
  */
 public final class ExerisRuntimeHealthIndicator {
 
@@ -42,6 +34,11 @@ public final class ExerisRuntimeHealthIndicator {
 
     private final ExerisRuntimeLifecycle lifecycle;
 
+    /**
+     * Creates an indicator that reads liveness from the given lifecycle.
+     *
+     * @param lifecycle the runtime lifecycle to inspect
+     */
     public ExerisRuntimeHealthIndicator(ExerisRuntimeLifecycle lifecycle) {
         this.lifecycle = Objects.requireNonNull(lifecycle, "lifecycle must not be null");
     }

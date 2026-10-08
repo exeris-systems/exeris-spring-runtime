@@ -11,28 +11,24 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Static facade for {@code ScopedValue<RequestScope>}-backed request-scoped state, per ADR-029
- * (Phase 3B-α — kernel-independent request scope and structured concurrency helpers).
+ * Static facade for {@code ScopedValue<RequestScope>}-backed request-scoped state.
  *
- * <p>The {@code ScopedValue} carrier itself is {@code static final} (package-private exposure
- * via {@link #carrier()} for the structured-concurrency wrapper) — callers bind via
+ * <p>The {@code ScopedValue} carrier itself is managed statically inside this class; callers bind via
  * {@link #runWith(RequestScope, Runnable)} / {@link #callWith(RequestScope, ScopedValue.CallableOp)}
  * and read via the typed accessor methods. The dispatcher binds the scope around
  * {@code HttpHandler.handle} invocations when {@code exeris.runtime.context.scope.enabled=true};
- * the structured-concurrency wrapper rebinds inside each fork.
+ * structured concurrency scopes inherit bindings across forks.
  *
- * <h2>No {@code ThreadLocal}</h2>
- * <p>Per the {@code CLAUDE.md} §"Pure Mode vs Compatibility Mode" narrative ban on
- * {@code ThreadLocal} on hot paths and the architecture guard
- * {@code RequestScopeArchitectureTest#scopePackageMustNotUseThreadLocal}, this package
- * does not use {@code ThreadLocal} as a carrier. {@code ScopedValue} is the only carrier.
- *
- * @since 0.6.0
- * <p><b>Concurrency.</b> This class rebinds explicitly and carries no fan-out helper. Bindings
- * reach a {@code StructuredTaskScope} fork on their own — see ADR-029's withdrawal note — but not
- * a plain virtual thread, which observes nothing bound. Off the request thread, rebind with
+ * <p><b>Concurrency:</b> This class rebinds explicitly and carries no fan-out helper. Bindings
+ * reach a {@code StructuredTaskScope} fork on their own, but not a plain virtual thread, which
+ * observes nothing bound. Off the request thread, rebind with
  * {@link #runWith(RequestScope, Runnable)} / {@link #callWith(RequestScope, ScopedValue.CallableOp)}.
  *
+ * @implNote {@code ScopedValue} is the only carrier. Per the runtime ownership model and architecture
+ *           guard {@code RequestScopeArchitectureTest#scopePackageMustNotUseThreadLocal}, this package
+ *           does not use {@code ThreadLocal} as a carrier.
+ * @since 0.6
+ * @see "ADR-029: Kernel-Independent Request Scope and Structured Concurrency Helpers"
  * @see RequestScope
  * @see RequestScopeResolver
  */
@@ -46,22 +42,51 @@ public final class ExerisRequestScope {
 
     // ---------------------------------------------------------------- read API
 
+    /**
+     * Returns the currently bound {@link RequestScope}, if bound.
+     *
+     * @return current request scope if bound, otherwise empty
+     */
     public static Optional<RequestScope> current() {
         return SCOPE.isBound() ? Optional.of(SCOPE.get()) : Optional.empty();
     }
 
+    /**
+     * Returns the tenant ID of the currently bound request scope, if present.
+     *
+     * @return tenant ID if a scope is bound and has a tenant, otherwise empty
+     */
     public static Optional<UUID> tenantId() {
         return current().map(RequestScope::tenantId);
     }
 
+    /**
+     * Returns the correlation ID of the currently bound request scope, if present.
+     *
+     * @return correlation ID if a scope is bound, otherwise empty
+     */
     public static Optional<String> correlationId() {
         return current().map(RequestScope::correlationId);
     }
 
+    /**
+     * Returns a typed attribute from the currently bound request scope, if present.
+     *
+     * @param <T> attribute type
+     * @param key attribute key
+     * @param type expected attribute type class
+     * @return attribute value if present and matching type, otherwise empty
+     */
     public static <T> Optional<T> attribute(String key, Class<T> type) {
         return current().flatMap(scope -> scope.attribute(key, type));
     }
 
+    /**
+     * Returns the tenant ID of the currently bound request scope, throwing if absent.
+     *
+     * @return bound tenant ID
+     * @throws IllegalStateException if called outside a bound scope or with no tenant
+     */
     public static UUID requireTenantId() {
         return tenantId().orElseThrow(() -> new IllegalStateException(
                 "ExerisRequestScope.requireTenantId() called outside a bound request scope or "
@@ -70,6 +95,12 @@ public final class ExerisRequestScope {
                         + "or use tenantId() for the Optional-returning variant."));
     }
 
+    /**
+     * Returns the correlation ID of the currently bound request scope, throwing if absent.
+     *
+     * @return bound correlation ID
+     * @throws IllegalStateException if called outside a bound scope or with no correlation ID
+     */
     public static String requireCorrelationId() {
         return correlationId().orElseThrow(() -> new IllegalStateException(
                 "ExerisRequestScope.requireCorrelationId() called outside a bound request scope "
@@ -79,8 +110,10 @@ public final class ExerisRequestScope {
     // ---------------------------------------------------------------- bind API
 
     /**
-     * Run {@code action} with {@code scope} bound as the current {@link RequestScope}. Used by
-     * the dispatcher around {@code HttpHandler.handle} invocations.
+     * Runs {@code action} with {@code scope} bound as the current {@link RequestScope}.
+     *
+     * @param scope the request scope to bind
+     * @param action the action to execute
      */
     public static void runWith(RequestScope scope, Runnable action) {
         Objects.requireNonNull(scope, "scope");
@@ -89,9 +122,15 @@ public final class ExerisRequestScope {
     }
 
     /**
-     * Call {@code action} with {@code scope} bound as the current {@link RequestScope}. Uses the
-     * JDK 26 {@link ScopedValue.CallableOp} type (the {@code Callable} overload was removed in
-     * the JEP 525 finalisation).
+     * Calls {@code action} with {@code scope} bound as the current {@link RequestScope}.
+     *
+     * @param <T> the return type
+     * @param <X> the exception type
+     * @param scope the request scope to bind
+     * @param action the action to execute
+     * @return the result of executing {@code action}
+     * @throws X if the action throws an exception
+     * @implNote Uses the JDK 25 GA LTS {@link ScopedValue.CallableOp} type (JEP 525).
      */
     public static <T, X extends Throwable> T callWith(RequestScope scope,
                                                        ScopedValue.CallableOp<T, X> action) throws X {

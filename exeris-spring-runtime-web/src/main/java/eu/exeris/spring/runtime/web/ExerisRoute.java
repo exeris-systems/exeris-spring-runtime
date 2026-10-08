@@ -26,7 +26,7 @@ import java.lang.annotation.Target;
  * {@code exeris.runtime.web.mode=pure} (the default).
  *
  * <h2>Usage on the Implementing Class</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * @Component
  * @ExerisRoute(method = HttpMethod.GET, path = "/status")
  * public class StatusHandler implements ExerisRequestHandler {
@@ -35,18 +35,28 @@ import java.lang.annotation.Target;
  *         return ExerisServerResponse.ok().body("UP");
  *     }
  * }
- * }</pre>
+ * }
  *
  * <p>The bean must implement {@link ExerisRequestHandler}. Multiple routes on the same
- * bean are not supported in Phase 1 — declare separate beans for separate routes.
+ * bean are not supported; declare separate beans for separate routes.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 public @interface ExerisRoute {
 
+    /**
+     * HTTP method to match.
+     *
+     * @return matched HTTP method, defaults to GET
+     */
     HttpMethod method() default HttpMethod.GET;
 
+    /**
+     * URI path pattern to match.
+     *
+     * @return URI path pattern
+     */
     String path();
 }

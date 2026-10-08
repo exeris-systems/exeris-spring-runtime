@@ -24,7 +24,7 @@ import eu.exeris.spring.runtime.web.ExerisServerRequest;
  * touches {@code ScopedValue} directly. The disabled-path implementation is the JIT-friendly
  * {@link #noop()} which inlines to a direct {@code action.run()} call.
  *
- * @since 0.6.0
+ * @since 0.6
  */
 @FunctionalInterface
 public interface RequestScopeBinder {
@@ -32,12 +32,17 @@ public interface RequestScopeBinder {
     /**
      * Run {@code action} either inside an active {@link RequestScope} binding (when enabled
      * and a resolver is available) or directly (the disabled path).
+     *
+     * @param request the current server request
+     * @param action  the action to run within the request scope
      */
     void bind(ExerisServerRequest request, Runnable action);
 
     /**
      * Pass-through binder: no scope binding, zero allocation. The default for the disabled
      * property path and the test path.
+     *
+     * @return a no-op request scope binder
      */
     static RequestScopeBinder noop() {
         return (request, action) -> action.run();
@@ -46,9 +51,11 @@ public interface RequestScopeBinder {
     /**
      * Resolving binder: builds a {@link RequestScope} from the request via {@code resolver},
      * then runs {@code action} inside {@link ExerisRequestScope#runWith(RequestScope, Runnable)}.
-     * If the resolver returns {@code null} (its contract forbids this), falls back to
-     * {@link RequestScope#empty()} and logs a WARN exactly once so the bug surfaces in operator
-     * logs without flooding them.
+     * If the resolver returns {@code null}, falls back to {@link RequestScope#empty()} and logs
+     * a warning once.
+     *
+     * @param resolver the request scope resolver
+     * @return a resolving request scope binder
      */
     static RequestScopeBinder resolving(RequestScopeResolver resolver) {
         Objects.requireNonNull(resolver, "resolver");

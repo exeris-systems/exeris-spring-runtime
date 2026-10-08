@@ -26,8 +26,7 @@ import eu.exeris.spring.runtime.events.EventEngineSupplier;
 
 /**
  * Discovers {@link ExerisFlowChoreographyMapper} beans and registers each one with the
- * kernel {@link FlowEngine} via {@link FlowEngine#registerChoreographyMapper} (Phase 4B
- * Step 3).
+ * kernel {@link FlowEngine} via {@link FlowEngine#registerChoreographyMapper}.
  *
  * <h2>Lifecycle</h2>
  * <p>Two-phase, mirroring {@link ExerisFlowDefinitionRegistrar}:
@@ -50,18 +49,15 @@ import eu.exeris.spring.runtime.events.EventEngineSupplier;
  * <h2>Tolerant / strict posture</h2>
  * <p>Mirrors {@link ExerisFlowDefinitionRegistrar}:
  * <ul>
- *   <li>No mapper beans declared: silent no-op even if the engine is missing — the
- *       module has nothing to do.</li>
- *   <li>Mapper beans declared but {@link FlowEngine} unavailable: fail loud at
+ *   <li>No mapper beans declared: silent no-op even if the engine is missing.</li>
+ *   <li>Mapper beans declared but {@link FlowEngine} unavailable: fails at
  *       {@link #start()} when {@code exeris.runtime.flow.require-engine=true} (default);
- *       log a diagnostic and continue when explicitly opted out (test/dev only).</li>
+ *       logs a diagnostic when explicitly disabled.</li>
  *   <li>Mapper beans declared but {@link EventEngine} (and therefore {@link EventBus})
- *       unavailable: same posture as above. The choreography bridge cannot register
- *       without a bus, so a missing bus is treated identically to a missing engine.</li>
+ *       unavailable: fails at {@link #start()} when {@code requireEngine} is enabled.</li>
  *   <li>Mapper beans declared but the bound engine reports
- *       {@code choreographySupport() = false}: always fail loud — the user explicitly
- *       opted into choreography via {@code exeris.runtime.flow.choreography-enabled=true}
- *       and a tier without that capability cannot honour the contract.</li>
+ *       {@code choreographySupport() = false}: throws {@link IllegalStateException} because
+ *       the bound engine does not support choreography.</li>
  * </ul>
  *
  * <h2>Subscription teardown</h2>
@@ -73,7 +69,7 @@ import eu.exeris.spring.runtime.events.EventEngineSupplier;
  * without a fresh discovery pass. Discovery is re-done from scratch only on the next
  * {@code afterSingletonsInstantiated()} (i.e., context refresh).
  *
- * @since 0.5.0
+ * @since 0.5
  * @see ExerisFlowChoreographyMapper
  * @see FlowEngine#registerChoreographyMapper
  */
@@ -112,6 +108,14 @@ public final class ExerisFlowChoreographyBridge implements SmartInitializingSing
      */
     private record MapperEntry(ExerisFlowChoreographyMapper mapper, Set<String> eventTypeNames) {}
 
+    /**
+     * Creates a flow choreography bridge.
+     *
+     * @param applicationContext  Spring application context for mapper discovery
+     * @param flowEngineSupplier  supplier for the kernel flow engine
+     * @param eventEngineSupplier supplier for the kernel event engine
+     * @param properties          flow module configuration properties
+     */
     public ExerisFlowChoreographyBridge(ApplicationContext applicationContext,
                                         FlowEngineSupplier flowEngineSupplier,
                                         EventEngineSupplier eventEngineSupplier,

@@ -20,7 +20,7 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
  * obligation 6.
  *
  * <p>Each test is merge-blocking — a violation indicates a banned cross-module edge or a
- * forbidden coupling per the module-boundaries entry added in Step 1
+ * forbidden coupling per the module-boundaries specification
  * ({@code docs/architecture/module-boundaries.md} §"exeris-spring-runtime-graph"). The
  * guards collectively enforce the "kernel-independent Spring-side seam" ADR-030 contract:
  * the graph module imports only kernel SPI types and Spring autoconfig/context primitives;
@@ -37,9 +37,8 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
  *       request-context coupling.</li>
  *   <li>Kernel community drivers ({@code eu.exeris.kernel.community..}) on production scope
  *       — concrete PGQ/Bolt drivers stay test-scope only per the module-boundaries entry.</li>
- *   <li>HTTP / transport / persistence packages — same rationale as Phase 4B
- *       {@code FlowModuleBoundaryTest}; graph is structured-data machinery, not a request
- *       handler, not a transaction manager, not a persistence layer.</li>
+ *   <li>HTTP / transport / persistence packages — graph is structured-data machinery,
+ *       not a request handler, not a transaction manager, not a persistence layer.</li>
  *   <li>Spring's {@code ApplicationEventPublisher} / {@code @Async} machinery — graph
  *       operations are direct calls into the kernel SPI; there is no event bridging or
  *       async fan-out from this module.</li>
@@ -57,10 +56,7 @@ class GraphModuleBoundaryTest {
     }
 
     /**
-     * ADR-030 §"What is NOT in scope" + module-boundaries.md prohibited-edge row:
-     * {@code @ExerisGraphQuery} is a thin declarative wrapper, not a Spring Data repository.
-     * A future PR adding Spring Data Graph repository support is an ADR-030-amendment-worthy
-     * decision, not a silent shim.
+     * Enforces that graph module classes do not depend on Spring Data per ADR-030.
      */
     @Test
     void doesNotImportSpringData() {
@@ -116,7 +112,7 @@ class GraphModuleBoundaryTest {
 
     /**
      * Graph session transactions are kernel-local (per ADR-030 §"What is NOT in scope" —
-     * cross-resource transactions are not bridged at Phase 4C). The graph module must not
+     * cross-resource transactions are not bridged). The graph module must not
      * pull in Spring's transaction package or direct JDBC types.
      */
     @Test
@@ -149,10 +145,7 @@ class GraphModuleBoundaryTest {
 
     /**
      * Graph operations are direct calls on the kernel SPI — no Spring async / task-executor
-     * bridging. Split from the {@code ApplicationEventPublisher} check below so each violation
-     * surfaces independently (matches Phase 4A {@code EventModuleBoundaryTest} +
-     * Phase 4B {@code FlowModuleBoundaryTest} precedent — both modules split the two checks
-     * into separate {@code @Test} methods for diagnostic isolation).
+     * bridging.
      */
     @Test
     void doesNotImportSpringAsyncOrSchedulingOrContextEventPackages() {
@@ -169,9 +162,9 @@ class GraphModuleBoundaryTest {
     /**
      * {@code org.springframework.context.ApplicationEventPublisher} lives in the
      * {@code context} root package (not the {@code context.event} sub-package), so the
-     * package guard above does not subsume this FQN check. Matches the Phase 4A
+     * package guard above does not subsume this FQN check. Matches the
      * {@code EventModuleBoundaryTest#doesNotDependOnSpringApplicationEventPublisher} +
-     * Phase 4B {@code FlowModuleBoundaryTest#doesNotDependOnSpringApplicationEventPublisher}
+     * {@code FlowModuleBoundaryTest#doesNotDependOnSpringApplicationEventPublisher}
      * shape.
      */
     @Test

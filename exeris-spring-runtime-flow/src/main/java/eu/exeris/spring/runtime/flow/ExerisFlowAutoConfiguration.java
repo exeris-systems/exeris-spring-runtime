@@ -23,14 +23,14 @@ import eu.exeris.spring.runtime.events.ExerisEventAutoConfiguration;
 import eu.exeris.spring.runtime.events.ExerisEventPublisher;
 
 /**
- * Autoconfiguration for the Exeris Flow / Saga bridge module (Phase 4B).
+ * Autoconfiguration for the Exeris Flow / Saga bridge module.
  *
  * <p>Activates only when {@code exeris.runtime.flow.enabled=true} is set explicitly
  * ({@code matchIfMissing = false}); the conditional is also gated on
  * {@link FlowEngine} being on the classpath and an {@link ExerisRuntimeLifecycle}
  * bean being available to wire the {@link FlowEngineSupplier}.
  *
- * <h2>Step 2 (current) — declarative + imperative surface</h2>
+ * <h2>Declarative and Imperative Components</h2>
  * <ul>
  *   <li>{@link FlowEngineSupplier} — deferred {@code ScopedValue} accessor wired to
  *       {@link ExerisRuntimeLifecycle#getFlowEngine()}.</li>
@@ -42,7 +42,7 @@ import eu.exeris.spring.runtime.events.ExerisEventPublisher;
  *       {@code exeris.runtime.flow.require-engine=false} (test/dev only).</li>
  * </ul>
  *
- * <h2>Step 3 — choreography bridge (opt-in)</h2>
+ * <h2>Choreography Bridge</h2>
  * <ul>
  *   <li>{@link ExerisFlowChoreographyBridge} — discovers
  *       {@link ExerisFlowChoreographyMapper} beans and registers each one with the kernel
@@ -54,12 +54,11 @@ import eu.exeris.spring.runtime.events.ExerisEventPublisher;
  *
  * <h2>What This Does NOT Do</h2>
  * <p>Does not own transport, web handling, transactions, or persistence. Does not wire
- * Spring {@code ApplicationEventPublisher} into the kernel — flow choreography (Step 3)
+ * Spring {@code ApplicationEventPublisher} into the kernel — flow choreography
  * reads from the kernel {@code EventBus} via the events module bridge. Does not provide
- * {@code @Async} compatibility — {@code @Async} is explicitly NOT a workaround for
- * missing flow capability.
+ * {@code @Async} compatibility — asynchronous execution is managed by the kernel flow engine.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 @AutoConfiguration(after = ExerisEventAutoConfiguration.class)
 @ConditionalOnClass(FlowEngine.class)
@@ -68,12 +67,30 @@ import eu.exeris.spring.runtime.events.ExerisEventPublisher;
 @EnableConfigurationProperties(ExerisFlowProperties.class)
 public class ExerisFlowAutoConfiguration {
 
+    /**
+     * Default constructor for auto-configuration.
+     */
+    public ExerisFlowAutoConfiguration() {
+    }
+
+    /**
+     * Creates the supplier for accessing the kernel flow engine.
+     *
+     * @param lifecycle the runtime lifecycle owner
+     * @return the {@link FlowEngineSupplier}
+     */
     @Bean
     @ConditionalOnMissingBean
     public FlowEngineSupplier exerisFlowEngineSupplier(ExerisRuntimeLifecycle lifecycle) {
         return lifecycle::getFlowEngine;
     }
 
+    /**
+     * Creates the imperative flow execution template.
+     *
+     * @param engineSupplier supplier for the kernel flow engine
+     * @return the {@link ExerisFlowTemplate}
+     */
     @Bean
     @ConditionalOnMissingBean
     public ExerisFlowTemplate exerisFlowTemplate(FlowEngineSupplier engineSupplier) {
@@ -84,13 +101,16 @@ public class ExerisFlowAutoConfiguration {
      * Kernel provider scope used to re-bind {@code KernelProviders} {@code ScopedValue} slots
      * (persistence engine, memory allocator) around each {@code FlowStepAction} execution. Flow
      * steps run on kernel flow scheduler worker virtual threads, which do not inherit the
-     * bootstrap scope — without this, application step bodies that reach the kernel persistence
+     * bootstrap scope &mdash; without this, application step bodies that reach the kernel persistence
      * engine through slot readers (the compat {@code ExerisDataSource} path in particular) fail
      * with "PersistenceEngine is not bound in the current scope". Mirrors the request-path
      * {@code KernelProviderBinder} wiring in the web module.
      *
      * <p>The accessors read the lifecycle's captured references lazily at step execution time,
      * so wiring order relative to kernel boot does not matter.
+     *
+     * @param lifecycle the runtime lifecycle owner
+     * @return the {@link KernelProviderScope}
      */
     @Bean
     @ConditionalOnMissingBean
@@ -98,6 +118,16 @@ public class ExerisFlowAutoConfiguration {
         return KernelProviderScope.fromLifecycle(lifecycle);
     }
 
+    /**
+     * Creates the flow definition registrar lifecycle bean.
+     *
+     * @param applicationContext the application context
+     * @param engineSupplier supplier for the kernel flow engine
+     * @param template the flow template
+     * @param properties configuration properties
+     * @param providerScope provider scope for context propagation
+     * @return the {@link ExerisFlowDefinitionRegistrar}
+     */
     @Bean
     @ConditionalOnMissingBean
     public ExerisFlowDefinitionRegistrar exerisFlowDefinitionRegistrar(ApplicationContext applicationContext,
@@ -110,7 +140,7 @@ public class ExerisFlowAutoConfiguration {
     }
 
     /**
-     * Choreography bridge bean (Step 3). Activated only when:
+     * Choreography bridge bean. Activated only when:
      * <ul>
      *   <li>{@code exeris.runtime.flow.choreography-enabled=true} (opt-in; default {@code false}),</li>
      *   <li>an {@link ExerisEventPublisher} bean is present (the events module is active and
@@ -121,6 +151,12 @@ public class ExerisFlowAutoConfiguration {
      * <p>The kernel-side capability ({@code FlowEngineCapabilities.choreographySupport()}) is
      * checked at lifecycle {@code start()} rather than as a bean condition: capabilities
      * cannot be probed until the kernel has booted, but bean wiring runs during refresh.
+     *
+     * @param applicationContext the application context
+     * @param flowEngineSupplier supplier for the kernel flow engine
+     * @param eventEngineSupplier supplier for the kernel event engine
+     * @param properties configuration properties
+     * @return the {@link ExerisFlowChoreographyBridge}
      */
     @Bean
     @ConditionalOnMissingBean

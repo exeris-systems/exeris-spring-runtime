@@ -58,18 +58,9 @@ import java.util.Objects;
  * {@code 401} and a {@code WWW-Authenticate: Bearer} challenge. Every rejection also emits a
  * {@link BearerTokenRejectedEvent} JFR event.
  *
- * <p>This was previously silent: the decoder failure was swallowed and the request continued as
- * anonymous, with no log line, no metric and no response difference. A caller presenting an expired
- * or forged token was treated exactly like a caller presenting none, so a token that stopped
- * validating — rotated key, clock skew, wrong issuer — surfaced only as unexplained authorization
- * failures deeper in the application, if at all. Silently downgrading a rejected credential to
- * anonymous is a fail-open shape, and it is the caller's request that has to fail, not the operator's
- * ability to notice.
- *
- * <p>Rejection can be turned off with
- * {@code exeris.runtime.web.compat.security.reject-invalid-token=false}, restoring the previous
- * continue-as-anonymous behaviour for a migration that depends on it. The JFR event is emitted on
- * both paths, so the escape hatch silences the response, never the telemetry.
+ * <p>Rejection can be disabled by setting
+ * {@code exeris.runtime.web.compat.security.reject-invalid-token=false}, allowing requests with
+ * invalid tokens to continue as anonymous. The JFR event is emitted in both configurations.
  *
  * <h2>ThreadLocal Rule</h2>
  * <p>{@code SecurityContextHolder.MODE_THREADLOCAL} (default) is VT-scoped: non-inherited,
@@ -79,7 +70,7 @@ import java.util.Objects;
  * <h2>Mode</h2>
  * <p>Compatibility Mode only. Not active in pure-mode request paths.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 @CompatibilityMode
 public final class ExerisSecurityContextFilter {
@@ -97,6 +88,8 @@ public final class ExerisSecurityContextFilter {
      * Creates a filter with the default {@link JwtAuthenticationConverter} (scope-based
      * authorities only). Retained for backward compatibility; prefer the converter-aware
      * constructor so an application's custom claim-to-authority mapping is honoured.
+     *
+     * @param jwtDecoder the JWT decoder to validate bearer tokens
      */
     public ExerisSecurityContextFilter(JwtDecoder jwtDecoder) {
         this(jwtDecoder, new JwtAuthenticationConverter());
@@ -111,6 +104,9 @@ public final class ExerisSecurityContextFilter {
      *
      * <p>Rejects invalid tokens. Use
      * {@link #ExerisSecurityContextFilter(JwtDecoder, Converter, boolean)} to opt out.
+     *
+     * @param jwtDecoder the JWT decoder to validate bearer tokens
+     * @param jwtAuthenticationConverter converter to produce authentication tokens from JWTs
      */
     public ExerisSecurityContextFilter(
             JwtDecoder jwtDecoder,
@@ -121,10 +117,11 @@ public final class ExerisSecurityContextFilter {
     /**
      * Creates a filter with explicit control over invalid-token handling.
      *
+     * @param jwtDecoder the JWT decoder to validate bearer tokens
+     * @param jwtAuthenticationConverter converter to produce authentication tokens from JWTs
      * @param rejectInvalidToken {@code true} (the default) to answer a presented-but-invalid token
-     *                           with 401; {@code false} to continue the request anonymously, which
-     *                           is the pre-0.7.0 behaviour and is fail-open — see the class Javadoc
-     *                           before choosing it
+     *     with 401; {@code false} to continue the request anonymously, which
+     *     is fail-open — see the class Javadoc before choosing it
      */
     public ExerisSecurityContextFilter(
             JwtDecoder jwtDecoder,

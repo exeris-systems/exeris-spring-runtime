@@ -14,12 +14,9 @@ import eu.exeris.kernel.spi.graph.GraphEngine;
  * Deferred accessor seam for the kernel-captured {@link GraphEngine}, per ADR-030
  * obligation 5.
  *
- * <p>Mirrors the {@code EventEngineSupplier} (Phase 4A) and {@code FlowEngineSupplier}
- * (Phase 4B) interface pattern: the supplier is a Spring bean, the engine itself is read
- * per call from {@code ExerisRuntimeLifecycle}'s captured {@code AtomicReference}.
- * Per Phase 4A invariant §7, the kernel engine is "resolved per call, never captured at
- * bean construction or autoconfiguration time" — the supplier is the resolution layer
- * over the lifecycle's storage layer.
+ * <p>The supplier is a Spring bean; the engine itself is read per call from
+ * {@code ExerisRuntimeLifecycle}'s captured reference. The engine is resolved per call,
+ * never permanently captured at bean construction time.
  *
  * <p>Two methods:
  *
@@ -33,7 +30,8 @@ import eu.exeris.kernel.spi.graph.GraphEngine;
  *       throwing; concrete suppliers do not override it.</li>
  * </ul>
  *
- * @since 0.7.0
+ * @since 0.7
+ * @see "ADR-030: Phase 4C Spring-Side Seam for Kernel Graph SPI"
  */
 @FunctionalInterface
 public interface GraphEngineSupplier {
@@ -41,6 +39,8 @@ public interface GraphEngineSupplier {
     /**
      * Returns the captured engine if one is available, or empty if the kernel ran
      * without a graph subsystem. Implementations must not throw.
+     *
+     * @return the optional graph engine
      */
     Optional<GraphEngine> tryGet();
 
@@ -50,6 +50,9 @@ public interface GraphEngineSupplier {
      * ({@code exeris.runtime.graph.enabled=true}) with {@code require-engine=true}
      * (default) and the absence of a kernel engine is a configuration error rather
      * than a tolerable dev-environment state.
+     *
+     * @return the resolved graph engine
+     * @throws IllegalStateException if no graph engine is available
      */
     default GraphEngine requireEngine() {
         return tryGet().orElseThrow(() -> new IllegalStateException(

@@ -175,8 +175,7 @@ class RoutePolicySeamBindingTest {
 
         void assertObserved() {
             assertThat(ran)
-                    .as("the observation point never ran, so every assertion below would pass "
-                            + "vacuously — the test would be green and blind")
+                    .as("observation point must execute")
                     .isTrue();
         }
     }

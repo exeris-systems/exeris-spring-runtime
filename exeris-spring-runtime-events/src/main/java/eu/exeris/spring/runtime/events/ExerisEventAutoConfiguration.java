@@ -23,8 +23,8 @@ import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
  *
  * <h2>Activation</h2>
  * <ul>
- *   <li>{@code exeris.runtime.events.enabled = true} (default-off; per Phase 4A scope this
- *       must remain explicit and never silently enabled).</li>
+ *   <li>{@code exeris.runtime.events.enabled = true} (default-off; must remain explicit and
+ *       never silently enabled).</li>
  *   <li>The kernel events SPI must be on the classpath (guarded by
  *       {@code @ConditionalOnClass(EventEngine.class)}).</li>
  *   <li>Runs after {@link ExerisRuntimeAutoConfiguration} so the lifecycle bean is
@@ -40,7 +40,7 @@ import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
  *       kernel produced.</li>
  * </ul>
  *
- * @since 0.1.0
+ * @since 0.1
  */
 @AutoConfiguration(after = ExerisRuntimeAutoConfiguration.class)
 @ConditionalOnClass(EventEngine.class)
@@ -48,18 +48,43 @@ import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
 @EnableConfigurationProperties(ExerisEventProperties.class)
 public class ExerisEventAutoConfiguration {
 
+    /**
+     * Default constructor for auto-configuration.
+     */
+    public ExerisEventAutoConfiguration() {
+    }
+
+    /**
+     * Creates the supplier for accessing the kernel event engine.
+     *
+     * @param lifecycle the runtime lifecycle owner
+     * @return the {@link EventEngineSupplier}
+     */
     @Bean
     @ConditionalOnMissingBean
     public EventEngineSupplier exerisEventEngineSupplier(ExerisRuntimeLifecycle lifecycle) {
         return lifecycle::getEventEngine;
     }
 
+    /**
+     * Creates the event type registry.
+     *
+     * @param engineSupplier supplier for the kernel event engine
+     * @return the {@link ExerisEventTypeRegistry}
+     */
     @Bean
     @ConditionalOnMissingBean
     public ExerisEventTypeRegistry exerisEventTypeRegistry(EventEngineSupplier engineSupplier) {
         return new ExerisEventTypeRegistry(engineSupplier);
     }
 
+    /**
+     * Creates the event publisher.
+     *
+     * @param engineSupplier supplier for the kernel event engine
+     * @param typeRegistry the event type registry
+     * @return the {@link ExerisEventPublisher}
+     */
     @Bean
     @ConditionalOnMissingBean
     public ExerisEventPublisher exerisEventPublisher(EventEngineSupplier engineSupplier,
@@ -67,6 +92,14 @@ public class ExerisEventAutoConfiguration {
         return new ExerisEventPublisher(engineSupplier, typeRegistry);
     }
 
+    /**
+     * Creates the event listener registrar lifecycle bean.
+     *
+     * @param applicationContext the application context
+     * @param engineSupplier supplier for the kernel event engine
+     * @param properties configuration properties
+     * @return the {@link ExerisEventListenerRegistrar}
+     */
     @Bean
     @ConditionalOnMissingBean
     public ExerisEventListenerRegistrar exerisEventListenerRegistrar(ApplicationContext applicationContext,

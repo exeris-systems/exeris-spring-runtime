@@ -23,7 +23,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Phase 4C Step 3 — {@link ExerisGraphQueryProcessor} validation + routing tests.
+ * {@link ExerisGraphQueryProcessor} validation and routing tests.
  *
  * <p>Validation paths (per ADR-030 obligation 4 — fail-fast at post-processing time):
  * non-public method, unsupported return type, wrong parameter shape. Routing paths cover
@@ -72,11 +72,8 @@ class ExerisGraphQueryProcessorTest {
 
     @Test
     void nonPublicMethod_failsFastAtPostProcessing() {
-        // Previously the processor used Class.getMethods() (returns only public methods), so
-        // the !isPublic() guard in validate() was unreachable — a protected/package-private/
-        // private method annotated with @ExerisGraphQuery would skip validation entirely and
-        // surface UnsupportedOperationException at runtime. This test pins the fail-fast
-        // ADR-030 obligation 4 explicitly requires.
+        // A protected/package-private/private method annotated with @ExerisGraphQuery
+        // must fail fast at post-processing time as ADR-030 obligation 4 requires.
         var template = buildTemplate(mock(GraphSession.class));
         var processor = new ExerisGraphQueryProcessor(template);
 

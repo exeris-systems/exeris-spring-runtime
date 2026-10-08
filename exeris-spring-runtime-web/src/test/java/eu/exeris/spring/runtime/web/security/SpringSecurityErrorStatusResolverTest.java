@@ -23,9 +23,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Unit tests for {@link SpringSecurityErrorStatusResolver}.
  *
- * <p>Before this resolver existed both exception families fell through to
- * {@code ExerisErrorMapper}'s 500 fallback, so an authorization outcome was reported as a server
- * fault. These assertions pin the statuses and the mandatory 401 challenge.
+ * <p>Verifies mapping of Spring Security exceptions to HTTP error status codes
+ * and WWW-Authenticate headers.
  */
 class SpringSecurityErrorStatusResolverTest {
 
@@ -92,7 +91,7 @@ class SpringSecurityErrorStatusResolverTest {
 
     @Test
     void selfReferencingCauseDoesNotLoop() {
-        // Defensive: a cause pointing at itself must terminate the walk rather than spin.
+        // A circular cause must terminate traversal without infinite loop.
         Exception selfCaused = new IllegalStateException("boom") {
             @Override
             public synchronized Throwable getCause() {

@@ -19,30 +19,20 @@ import eu.exeris.kernel.spi.flow.model.FlowDefinition;
  * {@code FlowExecutionPlanFactory.compile} and stored in {@link ExerisFlowTemplate}
  * keyed by {@link #name()}.
  *
- * <h2>Why an interface, not an annotation</h2>
- * <p>Annotation-driven step discovery (e.g. {@code @FlowStep} on methods) would require
- * a reflective post-processor to assemble lambdas at runtime. That is incompatible with
- * the constructor-first discipline applied across the rest of the integration layer and
- * would silently couple the kernel SPI to Spring's reflection machinery. The interface
- * keeps the contract explicit: callers compose lambdas directly against the kernel
- * {@link FlowDefinitionBuilder} surface.
- *
- * <h2>Step body discipline</h2>
- * <p>Step actions and compensations are {@code FlowStepAction} lambdas. They receive a
- * {@code FlowContext} (kernel SPI type) and return a {@code FlowOutcome}. Spring beans
+ * <p><b>Step Body Discipline:</b> Step actions and compensations are {@code FlowStepAction} lambdas.
+ * They receive a {@code FlowContext} (kernel SPI type) and return a {@code FlowOutcome}. Spring beans
  * collaborate via constructor injection on the implementing class — they MUST NOT appear
  * in the lambda parameter list, since the lambda runs inside an Exeris-owned virtual
  * thread under a {@code ScopedValue} scope that is independent of the Spring request /
  * application thread context.
  *
- * <h2>Lifecycle coupling</h2>
- * <p>A step lambda capturing a Spring bean creates a soft lifecycle coupling: the Spring
- * bean MUST outlive the in-flight flow. {@code ExerisRuntimeLifecycle} drains the flow
- * engine before Spring shuts down, but stale state (closed pools, evicted singletons) on
- * the captured bean side is the application's responsibility.
+ * <p><b>Lifecycle Coupling:</b> A step lambda capturing a Spring bean creates a soft lifecycle
+ * coupling: the Spring bean MUST outlive the in-flight flow. {@code ExerisRuntimeLifecycle} drains the
+ * flow engine before Spring shuts down, but stale state on the captured bean side is the application's
+ * responsibility.
  *
- * <h2>Example</h2>
- * <pre>{@code
+ * <p>Example:
+ * {@snippet lang="java" :
  * @Component
  * public class OrderFulfillmentFlow implements ExerisFlowDefinition {
  *
@@ -69,9 +59,12 @@ import eu.exeris.kernel.spi.flow.model.FlowDefinition;
  *             .build();
  *     }
  * }
- * }</pre>
+ * }
  *
- * @since 0.5.0
+ * @apiNote Callers compose lambdas directly against the kernel {@link FlowDefinitionBuilder}
+ *     surface without reflective post-processing, preserving constructor-first and
+ *     compile-time verification disciplines.
+ * @since 0.5
  */
 public interface ExerisFlowDefinition {
 
@@ -80,6 +73,8 @@ public interface ExerisFlowDefinition {
      *
      * <p>Must be unique across all {@code ExerisFlowDefinition} beans in the same
      * application context. Discovery fails fast if duplicates are detected.
+     *
+     * @return unique flow definition name
      */
     String name();
 
@@ -90,6 +85,9 @@ public interface ExerisFlowDefinition {
      * <p>Implementations MUST return the result of {@code builder.build()}; they MUST NOT
      * cache the builder beyond the call. {@code FlowDefinition} is the durable artefact —
      * the builder is single-use per definition.
+     *
+     * @param builder builder for defining the flow steps and transitions
+     * @return the compiled flow definition
      */
     FlowDefinition define(FlowDefinitionBuilder builder);
 }

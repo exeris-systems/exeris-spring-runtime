@@ -19,15 +19,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * Unit tests for {@link ExerisHibernateBootstrapCustomizer}.
  *
- * <p>The behaviour under test is what a brownfield JPA application no longer has to write by hand.
- * The two things that matter most are that it fills the gap, and that it never overrules an
- * application that has already stated an answer.
- *
- * <p>Most assertions drive {@code buildContribution} directly rather than
- * {@code postProcessBeanFactory}: the latter is gated on Hibernate being on the classpath, and
- * Hibernate is deliberately absent here (ADR-017 keeps JPA off this module's test classpath). The
- * gate itself is covered by {@link #contributesNothing_whenHibernateIsAbsent()}, which is
- * non-vacuous precisely because of that absence.
+ * <p>Verifies dialect resolution for supported database URLs, metadata probe suppression,
+ * precedence of user-configured dialect settings, and presence checks for Hibernate on the classpath.
  */
 class ExerisHibernateBootstrapCustomizerTest {
 
@@ -161,9 +154,7 @@ class ExerisHibernateBootstrapCustomizerTest {
 
     @Test
     void contributesThePropertySource_whenHibernateIsPresent() {
-        // The success path — the property-source mutation this class exists for. Driven through the
-        // classloader seam because Hibernate is deliberately absent from this module's test classpath
-        // (ADR-017), which would otherwise leave the only reachable branch the stand-down.
+        // Verifies environment property source contribution when Hibernate is present.
         MockEnvironment environment = new MockEnvironment()
                 .withProperty("exeris.runtime.persistence.jdbc-url", PG_URL);
 

@@ -50,7 +50,7 @@ import eu.exeris.kernel.spi.config.KernelProfile;
  * caching by the kernel. The {@code Environment} reference is safe to read from any
  * thread after context refresh.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 public final class ExerisSpringConfigProvider implements ConfigProvider {
 
@@ -85,6 +85,11 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
         this(BOOTSTRAP_ENVIRONMENT.get());
     }
 
+    /**
+     * Creates a config provider backed by the given Spring {@link Environment}.
+     *
+     * @param environment Spring environment backing configuration lookups, may be {@code null}
+     */
     public ExerisSpringConfigProvider(Environment environment) {
         this.environment = environment;
     }
@@ -115,18 +120,9 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
     @Override
     public int priority() {
         // Prefer this provider only when a Spring Environment is actually available.
-        // In fixture-only bootstrap paths (no prepared Environment), defer to kernel/community providers.
-        //
-        // NOTE: "defer" is no longer expressible by priority alone. Kernel 0.10.0 re-based the
-        // open-core priorities to Community=0 / Enterprise=100 (kernel CHANGELOG 0.10.0, #217).
-        // CommunityConfigProvider therefore now reports 0 — the same value this provider reports
-        // in the no-Environment path — and KernelBootstrap.resolveConfigProvider() selects via
-        // Stream.max, which keeps the FIRST element on a tie, i.e. ServiceLoader classpath order.
-        // The SPI contracts priority as ">= 0", so there is no value meaning "abstain".
-        // Consequence: this provider can win the tie while holding no Environment, so the
-        // no-Environment path must still answer lookups rather than returning empty — see
-        // systemPropertyFallback(...). Do not "fix" that by returning a negative priority; it
-        // would violate the SPI contract.
+        // In fixture-only bootstrap paths (no prepared Environment), report base priority (0).
+        // Since kernel SPI contracts priority as >= 0 and tie-breakers retain ServiceLoader order,
+        // this provider may win a tie even without an Environment; see systemPropertyFallback(...).
         return environment == null ? 0 : 150;
     }
 
@@ -152,16 +148,9 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
      * Parses a system-property fallback value as an {@link Integer}, degrading to
      * {@link Optional#empty()} rather than propagating {@link NumberFormatException}.
      *
-     * <p>Before the fallback existed, the no-{@link Environment} path answered every lookup with
-     * {@code Optional.empty()} and could not throw. Parsing raw system properties reintroduces a
-     * throwing path into a kernel SPI method called during bootstrap, where an unrelated stray
-     * property (e.g. {@code -Dexeris.runtime.network.port=abc}) would abort the boot instead of
-     * letting the kernel apply its own default. Returning empty restores the previous
-     * non-throwing contract.
-     *
-     * <p>The malformed value is logged rather than swallowed: silently booting on a default port
-     * because a supplied value was unparseable is precisely the kind of hidden cost this repo
-     * refuses to ship.
+     * <p>Parses system properties safely without propagating {@link NumberFormatException}.
+     * Returning empty allows the kernel to apply its own default when an unparseable property is encountered.
+     * The malformed value is logged as a warning.
      */
     private static Optional<Integer> parseIntOrWarn(String key, String value) {
         try {
@@ -348,7 +337,7 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
     @Override
     public void watch(String namespace, String key, Consumer<Object> listener) {
         // Spring Environment does not expose a standard cross-source watch API.
-        // Phase 0 behavior: no-op callback registration.
+        // No-op callback registration.
     }
 
     private static void publishLegacyHttpAliases(Environment environment) {
@@ -451,8 +440,9 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
      * <p>Without this bridge, setting {@code exeris.runtime.flow.persistence-enabled=true}
      * in Spring config has no effect on the kernel's flow subsystem (the lookup misses,
      * the kernel falls back to {@code FlowEngineConfig.defaults()}, and saga state stays
-     * in-memory). This is the second half of the Phase 4B Step 4 closure pair with
-     * kernel ADR-022 (which fixed the kernel-side wiring of {@code JdbcFlowSnapshotStore}).
+     * in-memory).
+     *
+     * @see "ADR-022: Durable Flow Snapshots"
      */
     private static <T> Optional<T> flowKernelKeyAlias(String key, Environment environment, Class<T> type) {
         return namespaceAlias(key, "flow.", environment, type);
@@ -519,47 +509,14 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
      * {@code clamp(availableProcessors() * 2, 2, 32)}). Populating
      * {@code PersistenceSettings.maxPoolSize()} from {@link #kernelSettings()} therefore has no
      * effect on the pool at all — no kernel code reads that field.
+     * Maps raw kernel persistence configuration keys onto Spring {@code exeris.runtime.persistence.*}
+     * properties.
      *
-     * <p>This provider wins {@code ConfigProvider} selection outright:
-     * {@code KernelBootstrap.resolveConfigProvider()} picks a <em>single</em> winner via
-     * {@code Stream.max(comparingInt(ConfigProvider::priority))}, so at priority 150 it displaces
-     * {@code CommunityConfigProvider} entirely rather than layering on top of it. Every raw key
-     * this class answers with {@link Optional#empty()} is a key the kernel resolves from its own
-     * hardcoded default — the application's Spring configuration is silently discarded, with no
-     * warning on either side. That is why the alias table must mirror the kernel's raw-key surface
-     * rather than the subset we happen to have needed so far, and why the generic
-     * {@code persistence.*} tail below exists.
+     * <p>Because this provider takes priority in kernel configuration provider selection, all
+     * raw persistence configuration keys (pool size bounds, warmup settings, acquisition timeouts)
+     * are resolved against corresponding Spring environment properties.
      *
-     * <p><b>Regression this closes.</b> Before the generic tail, min-idle was aliased and
-     * max-pool-size was not. An application setting
-     * {@code exeris.runtime.persistence.min-pool-size=16} together with
-     * {@code .max-pool-size=256} had its min honoured and its max dropped, so on a host pinned to
-     * four CPUs the kernel derived {@code maxPoolSize=8} and
-     * {@link eu.exeris.kernel.spi.persistence.PersistenceConfig} rejected the pair at boot:
-     * {@code IllegalArgumentException: minIdleConnections (16) > maxPoolSize (8)}. The asymmetry
-     * was ours — a clean kernel resolves both halves from one source and cannot split them.
-     * Note the two keys are declared as constants in the resolver rather than inline literals,
-     * which is why a grep of the kernel for quoted key names does not surface them.
-     *
-     * <p>Without this alias those raw lookups miss (a {@code MockEnvironment} or a Spring
-     * {@link Environment} has no literal {@code persistence.minIdleConnections} property), the
-     * kernel falls back to its default min-idle (~1), and the shared pool
-     * ({@code exeris-community-shared}) starts cold: a burst of concurrent virtual threads at
-     * startup races pool growth from 1 → max and some acquisitions time out
-     * ({@code PersistenceProviderException.connectionExhausted} → 500) until the pool warms.
-     * Mapping the raw kernel keys onto {@code exeris.runtime.persistence.min-pool-size} and
-     * {@code .pool-warmup-{enabled,connections}} lets an application pre-warm the shared pool the
-     * same way a Spring/Hikari or Quarkus/Agroal target does via its native min-idle knob.
-     *
-     * <p><b>Connection-timeout and fair-leveling.</b> Pre-warm blunts cold-start, but a sustained
-     * error spike can remain under load: the kernel pool fail-fasts on acquisition (a short acquire
-     * timeout {@code ->} {@code connectionExhausted} {@code ->} 500) where a default Spring/Hikari
-     * pool <em>blocks</em> for ~30s (contention surfaces as latency, not errors). Without exposing
-     * {@code connection-timeout-ms}, that asymmetry cannot be levelled from configuration. Mapping
-     * it lets a deployment set the same acquire timeout the JDBC-native targets use, so contention
-     * shows up as latency on both sides rather than 500s on the compat path only.
-     *
-     * <p>Symmetric with {@link #flowKernelKeyAlias(String, Environment, Class)} (Phase 4B Step 4).
+     * <p>Symmetric with {@link #flowKernelKeyAlias(String, Environment, Class)}.
      */
     private static <T> Optional<T> persistenceKernelKeyAlias(String key, Environment environment, Class<T> type) {
         String springKey = switch (key) {
