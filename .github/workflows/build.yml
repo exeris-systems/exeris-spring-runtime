@@ -142,7 +142,7 @@ jobs:
 
       - name: Upload Surefire/Failsafe reports on failure
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: test-reports-${{ matrix.spring-boot-line }}-${{ github.run_number }}
           path: '**/target/*-reports/'
