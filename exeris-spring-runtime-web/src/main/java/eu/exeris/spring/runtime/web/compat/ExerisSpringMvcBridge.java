@@ -36,9 +36,20 @@ import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 @CompatibilityMode
 public final class ExerisSpringMvcBridge {
 
+    /**
+     * Outcome of {@link #dispatch(HttpExchange)}: either a response produced by a matched handler, or
+     * the absence of a matching route.
+     */
     public sealed interface DispatchResult permits DispatchResult.Handled, DispatchResult.NotHandled {
+        /**
+         * A matched handler ran and produced a response.
+         *
+         * @param response the response to send
+         */
         record Handled(ExerisServerResponse response) implements DispatchResult {}
+        /** No registered route matched the request. */
         record NotHandled() implements DispatchResult {}
+        /** The shared {@link NotHandled} instance. */
         DispatchResult NOT_HANDLED = new NotHandled();
     }
 
@@ -48,6 +59,15 @@ public final class ExerisSpringMvcBridge {
     private final ExerisExceptionHandlerResolver exceptionHandlerResolver;
     private final ExerisThreadLocalBridge threadLocalBridge;
 
+    /**
+     * Creates a bridge over the given Spring infrastructure.
+     *
+     * @param registry resolves a request to a controller method
+     * @param argumentResolvers resolves controller method arguments
+     * @param returnValueHandlers writes controller return values to the response
+     * @param exceptionHandlerResolver handles failures raised by the controller method
+     * @param threadLocalBridge binds and clears the per-request locale
+     */
     public ExerisSpringMvcBridge(ExerisHandlerMethodRegistry registry,
                                   HandlerMethodArgumentResolverComposite argumentResolvers,
                                   HandlerMethodReturnValueHandlerComposite returnValueHandlers,
@@ -63,8 +83,15 @@ public final class ExerisSpringMvcBridge {
     /**
      * Dispatches an {@link HttpExchange} through the Spring handler invocation model.
      *
+     * <p>A failure raised by the handler is passed to the exception handler resolver; when that
+     * resolver handles it, the result is {@link DispatchResult.Handled} with the handler's response.
+     * The per-request locale is bound for the duration of the handler and always cleared afterwards.
+     *
+     * @param exchange the kernel exchange whose request is dispatched
      * @return {@link DispatchResult.Handled} with the response, or
      *         {@link DispatchResult.NotHandled} if no route matched.
+     * @throws Exception when the handler fails and no exception handler matches (see
+     *         {@link ExerisExceptionHandlerResolver#resolve}), or when an exception handler itself fails
      */
     public DispatchResult dispatch(HttpExchange exchange) throws Exception {
         var kernelRequest = exchange.request();

@@ -20,13 +20,19 @@ import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
  * <p>Compatibility Mode only. Thrown by {@code ExerisSecurityContextFilter} and translated to a
  * 401 by {@code ExerisCompatDispatcher}.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 @CompatibilityMode
 public final class InvalidBearerTokenException extends RuntimeException {
 
     private static final long serialVersionUID = 1L;
 
+    /**
+     * Creates the exception for a token the decoder rejected.
+     *
+     * @param cause the decoder's failure, kept as the cause and never rendered into a response
+     * @throws NullPointerException if {@code cause} is {@code null}
+     */
     public InvalidBearerTokenException(Throwable cause) {
         super("Bearer token rejected: " + cause.getClass().getSimpleName(), cause);
     }

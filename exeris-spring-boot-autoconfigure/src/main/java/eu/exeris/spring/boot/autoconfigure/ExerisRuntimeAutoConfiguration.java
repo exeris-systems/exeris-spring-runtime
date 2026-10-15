@@ -38,7 +38,7 @@ import java.util.Optional;
  * management, or compatibility mode logic. Those belong in
  * {@code exeris-spring-runtime-web}, {@code exeris-spring-runtime-tx}, etc.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 @AutoConfiguration
 @EnableConfigurationProperties(ExerisRuntimeProperties.class)
@@ -46,12 +46,37 @@ import java.util.Optional;
 @ConditionalOnProperty(prefix = "exeris.runtime", name = "enabled", matchIfMissing = true)
 public class ExerisRuntimeAutoConfiguration {
 
+    /**
+     * Creates the auto-configuration.
+     *
+     * <p>Holds no state; Spring instantiates it once and invokes its {@code @Bean} methods.
+     */
+    public ExerisRuntimeAutoConfiguration() {
+    }
+
+    /**
+     * Registers the {@link ExerisSpringConfigProvider} that exposes Spring's {@link Environment} to the
+     * kernel as its configuration source. Backs off when the application declares its own provider bean.
+     *
+     * @param environment the Spring environment the provider reads configuration from
+     * @return the provider backed by {@code environment}
+     */
     @Bean
     @ConditionalOnMissingBean
     public ExerisSpringConfigProvider exerisSpringConfigProvider(Environment environment) {
         return new ExerisSpringConfigProvider(environment);
     }
 
+    /**
+     * Registers the {@link ExerisRuntimeLifecycle} that starts the kernel after the Spring context has
+     * refreshed and stops it on shutdown. Backs off when the application declares its own lifecycle bean.
+     *
+     * @param properties the bound {@code exeris.runtime.*} properties
+     * @param configProvider the configuration provider handed to the kernel at bootstrap
+     * @param httpHandler the application's kernel HTTP handler, empty when none is declared
+     * @param httpRoutePolicy the compiled per-route authorization policy, empty when none is declared
+     * @return the lifecycle bean
+     */
     @Bean
     @ConditionalOnMissingBean
     public ExerisRuntimeLifecycle exerisRuntimeLifecycle(

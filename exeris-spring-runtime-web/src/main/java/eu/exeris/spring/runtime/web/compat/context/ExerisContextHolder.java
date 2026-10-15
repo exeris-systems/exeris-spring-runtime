@@ -36,7 +36,7 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * This type is not a shared Pure Mode API and should remain confined to the
  * compatibility layer.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 @CompatibilityMode
 public final class ExerisContextHolder {
@@ -52,6 +52,8 @@ public final class ExerisContextHolder {
     /**
      * Returns {@code true} if {@link KernelProviders#PERSISTENCE_ENGINE} is bound
      * in the current ScopedValue scope.
+     *
+     * @return {@code true} if a persistence engine is bound on the calling thread's scope
      */
     public static boolean isPersistenceBound() {
         return KernelProviders.PERSISTENCE_ENGINE.isBound();
@@ -60,6 +62,8 @@ public final class ExerisContextHolder {
     /**
      * Returns the active {@link PersistenceEngine}, or {@link Optional#empty()} if
      * the kernel persistence slot is not bound in the current scope.
+     *
+     * @return the bound engine, or empty when none is bound
      */
     public static Optional<PersistenceEngine> persistenceEngine() {
         return KernelProviders.PERSISTENCE_ENGINE.isBound()
@@ -74,6 +78,8 @@ public final class ExerisContextHolder {
     /**
      * Returns {@code true} if {@link KernelProviders#STORAGE_CONTEXT} is bound
      * in the current ScopedValue scope.
+     *
+     * @return {@code true} if a storage context is bound on the calling thread's scope
      */
     public static boolean isStorageContextBound() {
         return KernelProviders.STORAGE_CONTEXT.isBound();
@@ -82,6 +88,8 @@ public final class ExerisContextHolder {
     /**
      * Returns the active {@link StorageContext}, or {@link Optional#empty()} if
      * the storage context slot is not bound in the current scope.
+     *
+     * @return the bound storage context, or empty when none is bound
      */
     public static Optional<StorageContext> storageContext() {
         return KernelProviders.STORAGE_CONTEXT.isBound()
@@ -96,6 +104,8 @@ public final class ExerisContextHolder {
     /**
      * Returns {@code true} if {@link KernelProviders#PRINCIPAL_CONTEXT} is bound
      * in the current ScopedValue scope.
+     *
+     * @return {@code true} if a principal context is bound on the calling thread's scope
      */
     public static boolean isPrincipalBound() {
         return KernelProviders.PRINCIPAL_CONTEXT.isBound();
@@ -104,6 +114,8 @@ public final class ExerisContextHolder {
     /**
      * Returns the active {@link PrincipalContext}, or {@link Optional#empty()} if
      * the principal context slot is not bound in the current scope.
+     *
+     * @return the bound principal context, or empty when none is bound
      */
     public static Optional<PrincipalContext> principal() {
         return KernelProviders.PRINCIPAL_CONTEXT.isBound()

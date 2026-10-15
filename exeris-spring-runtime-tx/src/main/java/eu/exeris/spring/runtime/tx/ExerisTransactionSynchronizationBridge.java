@@ -27,7 +27,7 @@ import java.util.Objects;
  * <p>Compatibility Mode — registered only for Spring-AOP-driven {@code @Transactional}
  * transactions. Not used in pure-mode request paths.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 final class ExerisTransactionSynchronizationBridge implements TransactionSynchronization {
 

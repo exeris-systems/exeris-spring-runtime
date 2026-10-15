@@ -33,7 +33,7 @@ import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
  * is an approved integration bridge usage per the updated Javadoc contract.
  * See ADR-017 §6.4.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 @CompatibilityMode
 final class ExerisConnectionProxy implements Connection {

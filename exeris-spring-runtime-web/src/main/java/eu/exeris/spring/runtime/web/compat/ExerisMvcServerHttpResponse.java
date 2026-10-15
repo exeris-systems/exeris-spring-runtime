@@ -29,6 +29,12 @@ import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 @CompatibilityMode
 public final class ExerisMvcServerHttpResponse implements ServerHttpResponse {
 
+    /**
+     * Creates a collector with status 200, no headers and an empty body.
+     */
+    public ExerisMvcServerHttpResponse() {
+    }
+
     private HttpStatusCode statusCode = HttpStatusCode.valueOf(200);
     private final HttpHeaders headers = new HttpHeaders();
     private final ByteArrayOutputStream body = new ByteArrayOutputStream();
@@ -60,10 +66,20 @@ public final class ExerisMvcServerHttpResponse implements ServerHttpResponse {
         // no-op for scaffold collector
     }
 
+    /**
+     * Returns the status the handler set, or 200 if it set none.
+     *
+     * @return the status code collected so far
+     */
     public HttpStatusCode capturedStatusCode() {
         return statusCode;
     }
 
+    /**
+     * Returns a copy of the bytes written to {@link #getBody()} so far.
+     *
+     * @return the collected body; empty if nothing was written
+     */
     public byte[] capturedBody() {
         return body.toByteArray();
     }
@@ -73,6 +89,8 @@ public final class ExerisMvcServerHttpResponse implements ServerHttpResponse {
      * All headers written by the handler are propagated; Content-Type drives the
      * {@link ExerisServerResponse#contentType(MediaType)} field while remaining
      * headers are carried as extra headers via {@link ExerisServerResponse#withHeaders}.
+     *
+     * @return the response carrying the collected status, headers and body
      */
     public ExerisServerResponse toExerisServerResponse() {
         ExerisServerResponse exeris = ExerisServerResponse.status(toKernelStatus(statusCode.value()));

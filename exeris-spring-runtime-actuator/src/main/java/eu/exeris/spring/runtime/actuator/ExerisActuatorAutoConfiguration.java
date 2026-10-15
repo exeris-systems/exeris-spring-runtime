@@ -46,13 +46,28 @@ import eu.exeris.spring.runtime.actuator.compat.ExerisCompatibilityActuatorContr
  * processing, or transaction management. It is limited to operational visibility:
  * health, info, and metrics exposure.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 @AutoConfiguration(after = ExerisRuntimeAutoConfiguration.class)
 @ConditionalOnClass(name = "org.springframework.boot.actuate.endpoint.annotation.Endpoint")
 @ConditionalOnProperty(prefix = "exeris.runtime", name = "enabled", matchIfMissing = true)
 public class ExerisActuatorAutoConfiguration {
 
+    /**
+     * Creates the auto-configuration.
+     *
+     * <p>Holds no state; Spring instantiates it once and invokes its {@code @Bean} methods.
+     */
+    public ExerisActuatorAutoConfiguration() {
+    }
+
+    /**
+     * Registers the {@link ExerisRuntimeHealthIndicator} that reports the kernel lifecycle's liveness.
+     * Backs off when the application declares its own indicator bean.
+     *
+     * @param lifecycle the runtime lifecycle whose running state the indicator reports
+     * @return the health indicator
+     */
     @Bean
     @ConditionalOnMissingBean
     public ExerisRuntimeHealthIndicator exerisRuntimeHealthIndicator(
@@ -71,6 +86,9 @@ public class ExerisActuatorAutoConfiguration {
      * type <em>before</em> instantiating it — so an {@code Object}-typed definition would never match
      * and the indicator would silently never appear. Setting the definition's target type explicitly
      * is what makes the proxy discoverable.
+     *
+     * @return the post-processor that registers the indicator definition; {@code static} so Spring can
+     *         instantiate it before this configuration class
      */
     @Bean
     public static ExerisHealthIndicatorRegistrar exerisHealthIndicatorRegistrar() {

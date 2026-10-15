@@ -22,11 +22,16 @@ import java.util.Objects;
  *
  * @param status  the status to respond with; never {@code null}
  * @param headers status-mandated headers, possibly empty; never {@code null}
+ * @since 0.7
  * @see ExerisErrorStatusResolver
- * @since 0.7.0
  */
 public record ExerisErrorStatus(HttpStatus status, List<HttpHeader> headers) {
 
+    /**
+     * Validates the components and takes an immutable copy of the headers.
+     *
+     * @throws NullPointerException if {@code status} or {@code headers} is {@code null}
+     */
     public ExerisErrorStatus {
         Objects.requireNonNull(status, "status must not be null");
         headers = List.copyOf(Objects.requireNonNull(headers, "headers must not be null"));
@@ -34,6 +39,10 @@ public record ExerisErrorStatus(HttpStatus status, List<HttpHeader> headers) {
 
     /**
      * Creates an outcome carrying only a status.
+     *
+     * @param status the status to respond with; must not be {@code null}
+     * @return an outcome with that status and no headers
+     * @throws NullPointerException if {@code status} is {@code null}
      */
     public static ExerisErrorStatus of(HttpStatus status) {
         return new ExerisErrorStatus(status, List.of());

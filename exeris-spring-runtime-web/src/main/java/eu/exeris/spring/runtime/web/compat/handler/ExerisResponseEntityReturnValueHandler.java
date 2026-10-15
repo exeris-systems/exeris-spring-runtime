@@ -34,6 +34,11 @@ public final class ExerisResponseEntityReturnValueHandler implements HandlerMeth
 
     private final List<HttpMessageConverter<?>> converters;
 
+    /**
+     * Creates a handler that writes through the given converters.
+     *
+     * @param converters the message converters tried when writing a value; copied
+     */
     public ExerisResponseEntityReturnValueHandler(List<HttpMessageConverter<?>> converters) {
         this.converters = List.copyOf(converters);
     }

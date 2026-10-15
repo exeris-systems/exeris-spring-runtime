@@ -32,7 +32,7 @@ import java.lang.annotation.Target;
  * Exeris kernel events are two separate buses by design — wiring them together would
  * invert ownership of the kernel event path.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)
@@ -42,6 +42,9 @@ public @interface ExerisEventListener {
      * Event type names the annotated method subscribes to. Each name must be registered
      * in the kernel {@code EventRegistry} before the listener registrar runs; unknown
      * names fail fast at startup.
+     *
+     * @return the subscribed event type names; each is resolved against the kernel registry when the
+     *         listener is registered
      */
     String[] eventTypes();
 }

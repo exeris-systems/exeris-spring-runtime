@@ -38,9 +38,17 @@ import java.util.concurrent.atomic.AtomicLong;
  * Micrometer. Those methods are reserved for a future dynamic counter/gauge bridge
  * that will require explicit registration of known Exeris metric name constants.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 public final class ExerisActuatorTelemetryBridge implements MeterBinder, TelemetrySink {
+
+    /**
+     * Creates a bridge whose four event-level counters (INFO, WARN, ERROR, FATAL) start at zero.
+     *
+     * <p>Nothing is registered with Micrometer until {@link #bindTo(MeterRegistry)} is called.
+     */
+    public ExerisActuatorTelemetryBridge() {
+    }
 
     static final String METRIC_EVENTS_INFO  = "exeris.events.info";
     static final String METRIC_EVENTS_WARN  = "exeris.events.warn";

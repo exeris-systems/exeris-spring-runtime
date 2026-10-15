@@ -33,7 +33,7 @@ import eu.exeris.kernel.spi.http.RouteRequirement;
  * <p>{@code requirementFor} allocates nothing (ADR-063 obligation 2, ADR-061's contract): the rules
  * are a flat array, the requirements are built at startup, and matching walks the path by index.
  *
- * @since 0.8.0
+ * @since 0.8
  */
 final class CompiledHttpRoutePolicy implements HttpRoutePolicy {
 

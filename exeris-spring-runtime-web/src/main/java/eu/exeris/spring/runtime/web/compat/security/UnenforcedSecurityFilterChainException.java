@@ -17,13 +17,18 @@ import org.springframework.beans.factory.BeanDefinitionStoreException;
  * <p>Extends {@link BeanDefinitionStoreException} so it surfaces as a normal startup failure with
  * the rest of the context diagnostics, rather than as an unrelated runtime exception.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 @CompatibilityMode
 public final class UnenforcedSecurityFilterChainException extends BeanDefinitionStoreException {
 
     private static final long serialVersionUID = 1L;
 
+    /**
+     * Creates the exception naming the offending bean.
+     *
+     * @param beanName the name of the {@code SecurityFilterChain} bean that cannot be executed
+     */
     public UnenforcedSecurityFilterChainException(String beanName) {
         super(buildMessage(beanName));
     }
