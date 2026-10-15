@@ -29,6 +29,8 @@ public final class ExerisThreadLocalBridge {
      * calling thread.
      */
     public ExerisThreadLocalBridge() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
     }
 
     /**

@@ -33,6 +33,8 @@ public final class ExerisMvcServerHttpResponse implements ServerHttpResponse {
      * Creates a collector with status 200, no headers and an empty body.
      */
     public ExerisMvcServerHttpResponse() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
     }
 
     private HttpStatusCode statusCode = HttpStatusCode.valueOf(200);
