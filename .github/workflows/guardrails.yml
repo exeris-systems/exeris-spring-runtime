@@ -62,10 +62,10 @@ jobs:
       diff-modules: exeris-spring-boot-autoconfigure,exeris-spring-runtime-web,exeris-spring-runtime-tx,exeris-spring-runtime-data,exeris-spring-runtime-actuator,exeris-spring-runtime-events,exeris-spring-runtime-flow,exeris-spring-runtime-graph
 
   # The review of ADR-085 §J.33, published under the organisation's identity by ADR-087 §B.
-  docs-review:
+  review:
     needs: [docs, commits, pr-body, javadoc]
     if: ${{ github.event.action != 'closed' && always() }}
-    uses: exeris-systems/.github/.github/workflows/docs-review.yml@main
+    uses: exeris-systems/.github/.github/workflows/review.yml@main
     with:
       publish: true
       l1-results: >-
