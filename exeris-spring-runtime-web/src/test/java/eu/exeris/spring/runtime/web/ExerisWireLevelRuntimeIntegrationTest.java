@@ -1,8 +1,6 @@
 /*
  * Copyright (C) 2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * Commercial resale of this software as a competing product is prohibited.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.spring.runtime.web;
 
