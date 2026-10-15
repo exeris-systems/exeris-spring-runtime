@@ -28,6 +28,19 @@
     <name>Exeris Spring Runtime :: Parent</name>
     <description>Host-runtime integration layer enabling Spring applications to run on top of the Exeris execution model.</description>
 
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+            <comments>
+                Distributed under the unmodified Apache License, Version 2.0 — SPDX identifier
+                "Apache-2.0". See LICENSE in the repository root for the full text and
+                LICENSING.md for the map. Apache-2.0 section 6 grants no trademark rights.
+            </comments>
+        </license>
+    </licenses>
+
     <modules>
         <module>exeris-spring-runtime-bom</module>
         <module>exeris-spring-runtime-build-config</module>

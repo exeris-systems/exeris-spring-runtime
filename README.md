@@ -117,6 +117,12 @@ mvn -s .github/maven-settings.xml clean deploy
 
 Consumers should either include the required GitHub Packages repository URLs in their project configuration or import this parent POM where repositories are already defined.
 
+## License
+
+Licensed under the Apache License, Version 2.0 (`Apache-2.0`) — the same licence as the
+Exeris kernel this repository bridges to. See [`LICENSE`](LICENSE), [`NOTICE`](NOTICE) and
+[`LICENSING.md`](LICENSING.md).
+
 ## Contributing
 
 Please use `CONTRIBUTING.md` for contribution rules, architecture guardrails, testing scope, and docs/ADR update requirements.
