@@ -26,10 +26,6 @@ Published Maven coordinates under the `eu.exeris` namespace that originate from 
 repository carry the same licence, declared once in the root `pom.xml`
 (`eu.exeris:exeris-spring-runtime-parent`) and inherited by every module.
 
-Earlier source headers in this repository stated "Apache License, Version 2.0 with
-Commons Clause". That wording was never accompanied by a licence file and no longer
-applies; the licence is Apache-2.0 without the Commons Clause.
-
 ## Relationship to the kernel
 
 This repository bridges Spring applications onto the Exeris kernel, which is licensed
@@ -43,8 +39,9 @@ product names. See `NOTICE`.
 
 ## Third-party dependencies
 
-No third-party source is vendored in this repository. Dependencies resolve through
-Maven; consult the dependency tree of the artifact you consume.
+The only vendored tree is `.agents/vendor/exeris-agents-2.1.0`, the organisation's agent
+bundle, licensed Apache-2.0 and not part of any published artifact. Dependencies resolve
+through Maven; consult the dependency tree of the artifact you consume.
 
 ## Inquiries
 
