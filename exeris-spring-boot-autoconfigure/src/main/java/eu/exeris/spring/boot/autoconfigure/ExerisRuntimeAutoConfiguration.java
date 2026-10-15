@@ -52,7 +52,7 @@ public class ExerisRuntimeAutoConfiguration {
      * <p>Holds no state; Spring instantiates it once and invokes its {@code @Bean} methods.
      */
     public ExerisRuntimeAutoConfiguration() {
-        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        // No construction logic beyond the superclass constructor.
         super();
     }
 

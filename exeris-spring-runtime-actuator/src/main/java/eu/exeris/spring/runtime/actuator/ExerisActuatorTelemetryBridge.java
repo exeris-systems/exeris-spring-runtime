@@ -48,7 +48,7 @@ public final class ExerisActuatorTelemetryBridge implements MeterBinder, Telemet
      * <p>Nothing is registered with Micrometer until {@link #bindTo(MeterRegistry)} is called.
      */
     public ExerisActuatorTelemetryBridge() {
-        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        // No construction logic beyond the superclass constructor.
         super();
     }
 

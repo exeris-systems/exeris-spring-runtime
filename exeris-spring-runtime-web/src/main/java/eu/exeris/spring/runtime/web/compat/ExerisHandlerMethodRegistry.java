@@ -48,7 +48,7 @@ public final class ExerisHandlerMethodRegistry implements ApplicationContextAwar
      * Creates an empty registry. Controller routes are discovered in {@link #afterPropertiesSet()}.
      */
     public ExerisHandlerMethodRegistry() {
-        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        // No construction logic beyond the superclass constructor.
         super();
     }
 
