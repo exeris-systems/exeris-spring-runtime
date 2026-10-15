@@ -23,7 +23,7 @@ import java.util.Objects;
  * {@link #connection()} is used by commit/rollback to drive the underlying
  * persistence connection.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 final class ExerisTransactionObject {
 

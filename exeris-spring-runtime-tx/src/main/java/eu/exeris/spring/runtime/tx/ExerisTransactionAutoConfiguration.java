@@ -33,6 +33,23 @@ import org.springframework.transaction.PlatformTransactionManager;
 @ConditionalOnProperty(prefix = "exeris.runtime.tx", name = "enabled", havingValue = "true")
 public class ExerisTransactionAutoConfiguration {
 
+    /**
+     * Creates the auto-configuration.
+     *
+     * <p>Holds no state; Spring instantiates it once and invokes its {@code @Bean} methods.
+     */
+    public ExerisTransactionAutoConfiguration() {
+        // No construction logic beyond the superclass constructor.
+        super();
+    }
+
+    /**
+     * Registers the {@link ExerisPlatformTransactionManager} that bridges Spring's transaction
+     * abstraction to the kernel's persistence transactions. Backs off when the application declares its own
+     * bean of that type.
+     *
+     * @return a new transaction manager
+     */
     @Bean
     @ConditionalOnMissingBean(ExerisPlatformTransactionManager.class)
     public ExerisPlatformTransactionManager exerisPlatformTransactionManager() {
@@ -46,6 +63,8 @@ public class ExerisTransactionAutoConfiguration {
      * never at bean construction time. This preserves the ScopedValue contract:
      * the engine is always read from the current kernel VT scope, not captured once
      * as a static singleton reference.
+     *
+     * @return a provider that resolves the persistence engine on every call
      */
     @Bean
     @ConditionalOnMissingBean

@@ -55,6 +55,13 @@ public final class ExerisExceptionHandlerResolver implements ApplicationContextA
     private List<ExceptionHandlerMethod> adviceHandlers = List.of();
     private ApplicationContext applicationContext;
 
+    /**
+     * Creates a resolver. {@code @ControllerAdvice} handlers are discovered in
+     * {@link #afterPropertiesSet()}, not here.
+     *
+     * @param argumentResolvers resolves the arguments of the exception handler methods
+     * @param converters message converters for writing a handler's return value; copied
+     */
     public ExerisExceptionHandlerResolver(HandlerMethodArgumentResolverComposite argumentResolvers,
                                           List<HttpMessageConverter<?>> converters) {
         this.argumentResolvers = argumentResolvers;
@@ -96,7 +103,19 @@ public final class ExerisExceptionHandlerResolver implements ApplicationContextA
      *   <li>Controller-local {@code @ExceptionHandler} on {@code originalHandler}'s bean type.</li>
      *   <li>{@code @ControllerAdvice} beans registered at startup.</li>
      * </ol>
-     * If nothing matches, rethrows as {@link RuntimeException}.
+     * When nothing matches, {@code ex} is rethrown: as itself if it is a {@link RuntimeException},
+     * otherwise wrapped in an {@link java.lang.reflect.UndeclaredThrowableException} so its type stays
+     * inspectable.
+     *
+     * @param ex the failure raised by the controller handler
+     * @param originalHandler the handler that raised {@code ex}; its bean type is searched for local
+     *        {@code @ExceptionHandler} methods
+     * @param webRequest the current request, passed to the exception handler's arguments
+     * @param springResponse collects the response the exception handler writes
+     * @throws RuntimeException {@code ex} itself, when no handler matches and it is unchecked
+     * @throws java.lang.reflect.UndeclaredThrowableException wrapping {@code ex}, when no handler matches
+     *         and it is checked
+     * @throws Exception when the matched exception handler itself fails
      */
     public void resolve(Exception ex,
                         HandlerMethod originalHandler,

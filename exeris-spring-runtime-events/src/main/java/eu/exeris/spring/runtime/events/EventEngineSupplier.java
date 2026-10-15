@@ -22,7 +22,7 @@ import eu.exeris.kernel.spi.events.EventEngine;
  * a single place to fail with a clear message when the kernel did not activate an
  * event subsystem at all.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 @FunctionalInterface
 public interface EventEngineSupplier {
@@ -30,12 +30,18 @@ public interface EventEngineSupplier {
     /**
      * Returns the captured engine if one is available, or empty if the kernel ran
      * without an event subsystem. Implementations must not throw.
+     *
+     * @return the event engine, or empty when none is available
      */
     Optional<EventEngine> tryGet();
 
     /**
      * Returns the captured engine or throws if it is not available. Used on hot paths
      * that cannot proceed without the engine.
+     *
+     * @return the event engine, never {@code null}
+     * @throws IllegalStateException if {@link #tryGet()} is empty, meaning the kernel has not booted or
+     *         no event provider was active during bootstrap
      */
     default EventEngine requireEngine() {
         return tryGet().orElseThrow(() -> new IllegalStateException(

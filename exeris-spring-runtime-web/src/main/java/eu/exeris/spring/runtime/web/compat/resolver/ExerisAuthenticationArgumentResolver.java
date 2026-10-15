@@ -31,6 +31,14 @@ import org.springframework.web.method.support.ModelAndViewContainer;
 @CompatibilityMode
 public final class ExerisAuthenticationArgumentResolver implements HandlerMethodArgumentResolver {
 
+    /**
+     * Creates a stateless resolver; the authentication is read from the security context on each call.
+     */
+    public ExerisAuthenticationArgumentResolver() {
+        // No construction logic beyond the superclass constructor.
+        super();
+    }
+
     @Override
     public boolean supportsParameter(MethodParameter parameter) {
         return Authentication.class.isAssignableFrom(parameter.getParameterType());

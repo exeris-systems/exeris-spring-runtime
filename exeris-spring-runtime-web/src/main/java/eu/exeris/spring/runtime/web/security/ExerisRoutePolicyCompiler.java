@@ -21,7 +21,7 @@ import eu.exeris.kernel.spi.http.HttpRoutePolicy;
  * layer ran. ADR-061 put the enforcer in kernel Core precisely so a Spring-side DSL would translate
  * onto it instead of growing a rival mechanism.
  *
- * @since 0.8.0
+ * @since 0.8
  */
 public final class ExerisRoutePolicyCompiler {
 

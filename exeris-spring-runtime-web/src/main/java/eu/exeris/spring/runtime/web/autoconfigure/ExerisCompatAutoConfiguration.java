@@ -66,6 +66,16 @@ import eu.exeris.spring.runtime.web.compat.resolver.ExerisRequestParamArgumentRe
 @CompatibilityMode
 public class ExerisCompatAutoConfiguration {
 
+    /**
+     * Creates the auto-configuration.
+     *
+     * <p>Holds no state; Spring instantiates it once and invokes its {@code @Bean} methods.
+     */
+    public ExerisCompatAutoConfiguration() {
+        // No construction logic beyond the superclass constructor.
+        super();
+    }
+
     // 1. Message converter.
     //
     // Declared as HttpMessageConverter<?> rather than MappingJackson2HttpMessageConverter because the
@@ -83,6 +93,13 @@ public class ExerisCompatAutoConfiguration {
     // Object-typed (MappingJackson2HttpMessageConverter extends AbstractGenericHttpMessageConverter
     // <Object>; JacksonJsonHttpMessageConverter extends AbstractSmartHttpMessageConverter<Object>),
     // and HttpMessageConverter<Object> still satisfies the List<HttpMessageConverter<?>> consumers.
+    /**
+     * Registers the JSON message converter for whichever Jackson major is on the classpath. Backs off
+     * when the application declares its own {@code MappingJackson2HttpMessageConverter}.
+     *
+     * @return the JSON converter
+     * @throws IllegalStateException if Jackson is present but no matching converter can be constructed
+     */
     @Bean
     @Conditional(OnAnyJacksonPresentCondition.class)
     @ConditionalOnMissingBean(MappingJackson2HttpMessageConverter.class)
@@ -112,6 +129,11 @@ public class ExerisCompatAutoConfiguration {
     }
 
     // 2. Handler registry
+    /**
+     * Registers the registry that maps requests to controller methods.
+     *
+     * @return the handler method registry
+     */
     @Bean
     @ConditionalOnMissingBean
     public ExerisHandlerMethodRegistry exerisHandlerMethodRegistry() {
@@ -119,6 +141,13 @@ public class ExerisCompatAutoConfiguration {
     }
 
     // 3-6. Argument resolvers
+    /**
+     * Registers the {@code @RequestBody} argument resolver.
+     *
+     * @param converters the message converters available for reading bodies
+     * @param validator validates annotated bodies; {@code null} when no validator bean exists
+     * @return the resolver
+     */
     @Bean
     @ConditionalOnMissingBean
     public ExerisRequestBodyArgumentResolver exerisRequestBodyArgumentResolver(
@@ -127,6 +156,12 @@ public class ExerisCompatAutoConfiguration {
         return new ExerisRequestBodyArgumentResolver(converters, validator);
     }
 
+    /**
+     * Registers the {@code @RequestParam} argument resolver.
+     *
+     * @param conversionServiceProvider supplies the application's {@link ConversionService}, if unique
+     * @return the resolver
+     */
     @Bean
     @ConditionalOnMissingBean
     public ExerisRequestParamArgumentResolver exerisRequestParamArgumentResolver(
@@ -134,6 +169,12 @@ public class ExerisCompatAutoConfiguration {
         return new ExerisRequestParamArgumentResolver(resolveConversionService(conversionServiceProvider));
     }
 
+    /**
+     * Registers the {@code @PathVariable} argument resolver.
+     *
+     * @param conversionServiceProvider supplies the application's {@link ConversionService}, if unique
+     * @return the resolver
+     */
     @Bean
     @ConditionalOnMissingBean
     public ExerisPathVariableArgumentResolver exerisPathVariableArgumentResolver(
@@ -141,6 +182,12 @@ public class ExerisCompatAutoConfiguration {
         return new ExerisPathVariableArgumentResolver(resolveConversionService(conversionServiceProvider));
     }
 
+    /**
+     * Registers the {@code @RequestHeader} argument resolver.
+     *
+     * @param conversionServiceProvider supplies the application's {@link ConversionService}, if unique
+     * @return the resolver
+     */
     @Bean
     @ConditionalOnMissingBean
     public ExerisRequestHeaderArgumentResolver exerisRequestHeaderArgumentResolver(
@@ -167,6 +214,18 @@ public class ExerisCompatAutoConfiguration {
     }
 
     // 7. Composite argument resolver
+    /**
+     * Registers the composite that consults the body, parameter, path-variable and header resolvers,
+     * and the authentication resolver when one is present.
+     *
+     * @param bodyResolver resolver for {@code @RequestBody}
+     * @param paramResolver resolver for {@code @RequestParam}
+     * @param pathVarResolver resolver for {@code @PathVariable}
+     * @param headerResolver resolver for {@code @RequestHeader}
+     * @param authResolver resolver for {@code Authentication} parameters; {@code null} when Spring
+     *        Security is absent
+     * @return the composite resolver
+     */
     @Bean
     @ConditionalOnMissingBean
     public HandlerMethodArgumentResolverComposite exerisArgumentResolverComposite(
@@ -184,6 +243,12 @@ public class ExerisCompatAutoConfiguration {
     }
 
     // 8-9. Return value handlers
+    /**
+     * Registers the handler that writes {@code @ResponseBody} return values.
+     *
+     * @param converters the message converters available for writing values
+     * @return the handler
+     */
     @Bean
     @ConditionalOnMissingBean
     public ExerisResponseBodyReturnValueHandler exerisResponseBodyReturnValueHandler(
@@ -191,6 +256,12 @@ public class ExerisCompatAutoConfiguration {
         return new ExerisResponseBodyReturnValueHandler(converters);
     }
 
+    /**
+     * Registers the handler that writes {@code ResponseEntity} return values.
+     *
+     * @param converters the message converters available for writing values
+     * @return the handler
+     */
     @Bean
     @ConditionalOnMissingBean
     public ExerisResponseEntityReturnValueHandler exerisResponseEntityReturnValueHandler(
@@ -199,6 +270,14 @@ public class ExerisCompatAutoConfiguration {
     }
 
     // 10. Composite return value handler (entity first, then body)
+    /**
+     * Registers the composite that tries the {@code ResponseEntity} handler first and the
+     * {@code @ResponseBody} handler second.
+     *
+     * @param entityHandler handler for {@code ResponseEntity} return values
+     * @param bodyHandler handler for {@code @ResponseBody} return values
+     * @return the composite handler
+     */
     @Bean
     @ConditionalOnMissingBean
     public HandlerMethodReturnValueHandlerComposite exerisReturnValueHandlerComposite(
@@ -210,6 +289,14 @@ public class ExerisCompatAutoConfiguration {
     }
 
     // 11. Exception handler resolver
+    /**
+     * Registers the resolver that applies {@code @ExceptionHandler} and {@code @ControllerAdvice}
+     * methods to controller failures.
+     *
+     * @param argumentResolvers resolves the arguments of exception handler methods
+     * @param converters the message converters available for writing handler results
+     * @return the resolver
+     */
     @Bean
     @ConditionalOnMissingBean
     public ExerisExceptionHandlerResolver exerisExceptionHandlerResolver(
@@ -219,6 +306,11 @@ public class ExerisCompatAutoConfiguration {
     }
 
     // 12. ThreadLocal bridge
+    /**
+     * Registers the bridge that binds the per-request locale around handler invocation.
+     *
+     * @return the bridge
+     */
     @Bean
     @ConditionalOnMissingBean
     public ExerisThreadLocalBridge exerisThreadLocalBridge() {
@@ -226,6 +318,16 @@ public class ExerisCompatAutoConfiguration {
     }
 
     // 13. MVC bridge
+    /**
+     * Registers the bridge that dispatches an exchange to the matched Spring controller method.
+     *
+     * @param registry resolves a request to a controller method
+     * @param argumentResolvers resolves controller method arguments
+     * @param returnValueHandlers writes controller return values
+     * @param exceptionHandlerResolver handles failures raised by controllers
+     * @param threadLocalBridge binds the per-request locale
+     * @return the bridge
+     */
     @Bean
     @ConditionalOnMissingBean
     public ExerisSpringMvcBridge exerisSpringMvcBridge(
@@ -241,6 +343,13 @@ public class ExerisCompatAutoConfiguration {
     // 14. Error mapper. Resolvers turn specific exceptions into specific statuses before the 500
     //     fallback — notably Spring Security's authentication/authorization failures, which were
     //     otherwise reported as server faults.
+    /**
+     * Registers the error mapper, ordered with every {@link ExerisErrorStatusResolver} bean ahead of
+     * the generic server-error fallback.
+     *
+     * @param statusResolvers the status resolvers, consulted in bean order
+     * @return the error mapper
+     */
     @Bean
     @ConditionalOnMissingBean
     public ExerisErrorMapper exerisCompatErrorMapper(
@@ -251,6 +360,12 @@ public class ExerisCompatAutoConfiguration {
     // 14b. Fail-fast on a SecurityFilterChain this runtime cannot execute. Registered as a static
     //      @Bean so it is instantiated as a BeanFactoryPostProcessor rather than as an ordinary
     //      singleton — the check must run before anything binds a port.
+    /**
+     * Registers the check that fails startup when a {@code SecurityFilterChain} bean is declared,
+     * because this runtime cannot execute one.
+     *
+     * @return the check
+     */
     @Bean
     public static UnenforcedSecurityFilterChainCheck exerisUnenforcedSecurityFilterChainCheck() {
         return new UnenforcedSecurityFilterChainCheck();
@@ -347,6 +462,9 @@ public class ExerisCompatAutoConfiguration {
      * {@link ObjectProvider} — NOT at bean construction — to avoid a construction-time cycle
      * ({@code ExerisRuntimeLifecycle} → {@code HttpHandler} dispatcher → this binder). When no
      * lifecycle is present the suppliers yield empty and the binder is a zero-cost pass-through.
+     *
+     * @param lifecycleProvider supplies the runtime lifecycle that captured the kernel providers
+     * @return the binder
      */
     @Bean
     @ConditionalOnMissingBean
@@ -360,6 +478,16 @@ public class ExerisCompatAutoConfiguration {
     }
 
     // 16. Compat dispatcher
+    /**
+     * Registers the dispatcher that serves every request in compatibility mode.
+     *
+     * @param bridge dispatches an exchange to the matched Spring controller method
+     * @param errorMapper maps unhandled failures to HTTP error responses
+     * @param securityFilter populates the security context from the Bearer token; {@code null} when no
+     *        such filter is configured
+     * @param kernelProviderBinder re-binds kernel provider slots around each request
+     * @return the dispatcher
+     */
     @Bean
     @ConditionalOnMissingBean
     public ExerisCompatDispatcher exerisCompatDispatcher(
