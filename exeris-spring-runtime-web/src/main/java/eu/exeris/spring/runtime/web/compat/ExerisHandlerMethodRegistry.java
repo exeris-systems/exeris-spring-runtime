@@ -43,6 +43,14 @@ import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 public final class ExerisHandlerMethodRegistry implements ApplicationContextAware, InitializingBean {
 
     /**
+     * Creates an empty registry. Controller routes are discovered in {@link #afterPropertiesSet()}.
+     */
+    public ExerisHandlerMethodRegistry() {
+        // No construction logic beyond the superclass constructor.
+        super();
+    }
+
+    /**
      * Request attribute key under which a {@code Map<String, String>} of extracted
      * path variables is stored.  Must NOT use
      * {@code HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE} (spring-webmvc banned).
@@ -56,6 +64,9 @@ public final class ExerisHandlerMethodRegistry implements ApplicationContextAwar
 
     /**
      * A resolved handler paired with the extracted URI variables.
+     *
+     * @param handlerMethod the controller method the request routes to
+     * @param pathVariables the URI template variables extracted from the request path, by name
      */
     public record ResolvedHandler(HandlerMethod handlerMethod, Map<String, String> pathVariables) {}
 

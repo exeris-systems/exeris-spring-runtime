@@ -48,10 +48,21 @@ public final class ExerisRequestBodyArgumentResolver implements HandlerMethodArg
     @Nullable
     private final SmartValidator validator;
 
+    /**
+     * Creates a resolver that reads the body without bean validation.
+     *
+     * @param converters the message converters tried when reading the body; copied
+     */
     public ExerisRequestBodyArgumentResolver(List<HttpMessageConverter<?>> converters) {
         this(converters, null);
     }
 
+    /**
+     * Creates a resolver that validates bodies of parameters annotated for validation.
+     *
+     * @param converters the message converters tried when reading the body; copied
+     * @param validator validates annotated bodies, or {@code null} to skip validation
+     */
     public ExerisRequestBodyArgumentResolver(List<HttpMessageConverter<?>> converters,
                                               @Nullable SmartValidator validator) {
         this.converters = List.copyOf(converters);

@@ -22,7 +22,7 @@ import eu.exeris.kernel.spi.flow.model.FlowState;
  * <p>Package-private on purpose. Callers that need a custom context (resume by external
  * instance id, custom timeout) implement {@link FlowContext} directly against the SPI.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 record BridgeFlowContext(
         long instanceIdMost,

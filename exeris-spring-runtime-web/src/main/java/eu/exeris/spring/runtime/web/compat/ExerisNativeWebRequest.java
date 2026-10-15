@@ -34,6 +34,12 @@ public final class ExerisNativeWebRequest implements NativeWebRequest {
     private final Map<String, Object> attributes = new HashMap<>();
     private Map<String, String[]> cachedQueryParams;
 
+    /**
+     * Creates a web request over the given adapter with an empty attribute map.
+     *
+     * @param springRequest the request adapter this web request reads from and exposes as the native
+     *        request
+     */
     public ExerisNativeWebRequest(ExerisMvcServerHttpRequest springRequest) {
         this.springRequest = springRequest;
     }

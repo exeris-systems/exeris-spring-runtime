@@ -28,10 +28,18 @@ package eu.exeris.spring.runtime.web;
  * <p>Implementors must be Spring beans and must be annotated with
  * {@link ExerisRoute} to be registered in the route registry.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 @FunctionalInterface
 public interface ExerisRequestHandler {
 
+    /**
+     * Handles one request.
+     *
+     * @param request the request view; valid only until this method returns, so neither it nor its body
+     *        buffer may be retained
+     * @return the response to send; never {@code null}
+     * @throws Exception any failure; it is mapped to an HTTP error response by the dispatcher
+     */
     ExerisServerResponse handle(ExerisServerRequest request) throws Exception;
 }

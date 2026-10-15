@@ -24,7 +24,7 @@ import eu.exeris.spring.runtime.web.ExerisServerRequest;
  * This is the no-op opt-in: the structured-concurrency wrapper still propagates the (empty)
  * scope across forks, but the typed accessors return {@link java.util.Optional#empty()}.
  *
- * @since 0.6.0
+ * @since 0.6
  */
 @FunctionalInterface
 public interface RequestScopeResolver {
@@ -32,6 +32,9 @@ public interface RequestScopeResolver {
     /**
      * Build a {@link RequestScope} for the given request. Must not return {@code null};
      * use {@link RequestScope#empty()} for the "no identity" case.
+     *
+     * @param request the request the scope is built for; valid only for the duration of the call
+     * @return the scope to bind around the handler invocation, never {@code null}
      */
     RequestScope resolve(ExerisServerRequest request);
 }

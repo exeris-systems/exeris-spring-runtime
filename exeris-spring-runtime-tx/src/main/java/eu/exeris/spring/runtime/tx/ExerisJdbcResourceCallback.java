@@ -25,7 +25,7 @@ import eu.exeris.kernel.spi.persistence.PersistenceConnection;
  * <h2>Mode</h2>
  * <p>Compatibility Mode only. Not used in pure-mode request paths.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 @FunctionalInterface
 public interface ExerisJdbcResourceCallback {

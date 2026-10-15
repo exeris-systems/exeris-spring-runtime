@@ -44,6 +44,14 @@ public final class ExerisCompatDispatcher implements HttpHandler {
     private final ExerisSecurityContextFilter securityFilter;
     private final KernelProviderBinder kernelProviderBinder;
 
+    /**
+     * Creates a dispatcher that does not re-bind kernel provider slots around the handler invocation.
+     *
+     * @param mvcBridge the bridge that invokes the matching Spring handler
+     * @param errorMapper maps unhandled failures to HTTP error responses
+     * @param securityFilter the filter that populates the security context from the Bearer token, or
+     *        {@code null} to dispatch every request anonymously
+     */
     public ExerisCompatDispatcher(ExerisSpringMvcBridge mvcBridge,
                                   ExerisErrorMapper errorMapper,
                                   @Nullable ExerisSecurityContextFilter securityFilter) {
@@ -58,6 +66,13 @@ public final class ExerisCompatDispatcher implements HttpHandler {
      * handler thread; that thread (the transport carrier) carries no kernel bootstrap bindings,
      * so without this re-bind the compat datasource is unusable on the request path. With
      * {@link KernelProviderBinder#noop()} (default and test path) it is a zero-cost pass-through.
+     *
+     * @param mvcBridge the bridge that invokes the matching Spring handler
+     * @param errorMapper maps unhandled failures to HTTP error responses
+     * @param securityFilter the filter that populates the security context from the Bearer token, or
+     *        {@code null} to dispatch every request anonymously
+     * @param kernelProviderBinder re-binds kernel provider slots around the whole request
+     * @throws NullPointerException if {@code kernelProviderBinder} is {@code null}
      */
     public ExerisCompatDispatcher(ExerisSpringMvcBridge mvcBridge,
                                   ExerisErrorMapper errorMapper,

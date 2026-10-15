@@ -25,7 +25,7 @@ import eu.exeris.kernel.spi.http.HttpRequest;
  * lifetime of the handler invocation. It must NOT be retained or referenced after
  * {@code ExerisRequestHandler.handle(request)} returns.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 public final class ExerisServerRequest {
 
@@ -39,19 +39,40 @@ public final class ExerisServerRequest {
      * Creates a view over a kernel {@link HttpRequest}. Intended for use by
      * compatibility-mode classes in other packages that cannot access the
      * package-private constructor.
+     *
+     * @param request the kernel request to view; must not be {@code null}
+     * @return a view that reads through to {@code request}; nothing is copied
+     * @throws NullPointerException if {@code request} is {@code null}
      */
     public static ExerisServerRequest wrap(HttpRequest request) {
         return new ExerisServerRequest(Objects.requireNonNull(request, "request must not be null"));
     }
 
+    /**
+     * Returns the HTTP method of the request.
+     *
+     * @return the request method
+     */
     public HttpMethod method() {
         return delegate.method();
     }
 
+    /**
+     * Returns the request path as the kernel parsed it.
+     *
+     * @return the path component of the request target
+     */
     public String path() {
         return delegate.path();
     }
 
+    /**
+     * Returns the value of the first header carrying the given name.
+     *
+     * @param name the header name to find; must not be {@code null}
+     * @return the first matching header's value, or {@code null} when the request has no such header
+     * @throws NullPointerException if {@code name} is {@code null}
+     */
     public String header(String name) {
         return delegate.firstHeader(name).orElse(null);
     }
@@ -87,6 +108,14 @@ public final class ExerisServerRequest {
         return segment.toArray(java.lang.foreign.ValueLayout.JAVA_BYTE);
     }
 
+    /**
+     * Returns the underlying kernel request for callers that need what this view does not expose.
+     *
+     * <p>The same ownership rule applies as for the view: the request, including its body buffer, is valid
+     * only until the handler returns.
+     *
+     * @return the wrapped kernel request, never {@code null}
+     */
     public HttpRequest kernelRequest() {
         return delegate;
     }

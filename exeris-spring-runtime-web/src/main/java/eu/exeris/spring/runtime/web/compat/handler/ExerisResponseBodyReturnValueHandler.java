@@ -32,6 +32,11 @@ public final class ExerisResponseBodyReturnValueHandler implements HandlerMethod
 
     private final List<HttpMessageConverter<?>> converters;
 
+    /**
+     * Creates a handler that writes through the given converters.
+     *
+     * @param converters the message converters tried when writing a value; copied
+     */
     public ExerisResponseBodyReturnValueHandler(List<HttpMessageConverter<?>> converters) {
         this.converters = List.copyOf(converters);
     }

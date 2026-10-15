@@ -22,12 +22,32 @@ import java.util.Locale;
 @CompatibilityMode
 public final class ExerisThreadLocalBridge {
 
+    /**
+     * Creates a stateless bridge; every call acts on Spring's {@link LocaleContextHolder} for the
+     * calling thread.
+     */
+    public ExerisThreadLocalBridge() {
+        // No construction logic beyond the superclass constructor.
+        super();
+    }
+
+    /**
+     * Binds the request's preferred locale to the calling thread's {@link LocaleContextHolder}.
+     *
+     * <p>The first {@code Accept-Language} locale is used, or {@link Locale#getDefault()} when the header is
+     * absent. Every call must be paired with {@link #clear()} in a {@code finally} block.
+     *
+     * @param request the request whose {@code Accept-Language} header selects the locale
+     */
     public void bind(ServerHttpRequest request) {
         List<Locale> locales = request.getHeaders().getAcceptLanguageAsLocales();
         Locale locale = locales.isEmpty() ? Locale.getDefault() : locales.get(0);
         LocaleContextHolder.setLocaleContext(new SimpleLocaleContext(locale), false);
     }
 
+    /**
+     * Removes the locale context from the calling thread, undoing {@link #bind(ServerHttpRequest)}.
+     */
     public void clear() {
         LocaleContextHolder.resetLocaleContext();
     }

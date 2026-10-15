@@ -31,10 +31,21 @@ public final class ExerisPathVariableArgumentResolver implements HandlerMethodAr
 
     private final ExerisCompatTypeConverter typeConverter;
 
+    /**
+     * Creates a resolver that converts values with Spring Boot's shared {@link ConversionService}.
+     *
+     * <p>That instance is process-wide and mutable; use {@link #ExerisPathVariableArgumentResolver(ConversionService)}
+     * to isolate from it.
+     */
     public ExerisPathVariableArgumentResolver() {
         this(ApplicationConversionService.getSharedInstance());
     }
 
+    /**
+     * Creates a resolver that converts values with the given service.
+     *
+     * @param conversionService the service used to convert the raw string to the parameter type
+     */
     public ExerisPathVariableArgumentResolver(ConversionService conversionService) {
         this.typeConverter = new ExerisCompatTypeConverter(conversionService);
     }

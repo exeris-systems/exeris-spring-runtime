@@ -12,6 +12,10 @@ import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 @CompatibilityMode
 public final class ExerisCompatAttributes {
 
+    /**
+     * Request-attribute key under which the {@link ExerisMvcServerHttpResponse} collecting the current
+     * request's response is stored, so return-value handlers can write to it.
+     */
     public static final String SPRING_RESPONSE_ATTRIBUTE = "__exerisSpringResponse";
 
     private ExerisCompatAttributes() {

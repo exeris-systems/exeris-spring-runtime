@@ -28,12 +28,18 @@ import eu.exeris.kernel.spi.events.EventTypeSpec;
  * the descriptor directly via {@link EventDescriptor#of}; the registry only owns the
  * type-name → ordinal/flags portion.
  *
- * @since 0.1.0
+ * @since 0.1
  */
 public final class ExerisEventTypeRegistry {
 
     private final EventEngineSupplier engineSupplier;
 
+    /**
+     * Creates a registry facade that resolves the kernel's event registry on first use.
+     *
+     * @param engineSupplier source of the kernel event engine, consulted lazily on every lookup
+     * @throws NullPointerException if {@code engineSupplier} is {@code null}
+     */
     public ExerisEventTypeRegistry(EventEngineSupplier engineSupplier) {
         this.engineSupplier = Objects.requireNonNull(engineSupplier, "engineSupplier");
     }
@@ -41,6 +47,9 @@ public final class ExerisEventTypeRegistry {
     /**
      * Returns the kernel ordinal registered for the supplied type name.
      *
+     * @param typeName the event type name to look up
+     * @return the ordinal the kernel registry assigned to {@code typeName}
+     * @throws NullPointerException when {@code typeName} is {@code null}
      * @throws IllegalStateException when the kernel event subsystem is not active
      * @throws IllegalArgumentException when the type name is not registered
      */
@@ -56,6 +65,12 @@ public final class ExerisEventTypeRegistry {
     /**
      * Returns the {@link EventTypeSpec} registered for the supplied type name, or throws
      * if the kernel has no such registration.
+     *
+     * @param typeName the event type name to look up
+     * @return the registered spec, never {@code null}
+     * @throws NullPointerException when {@code typeName} is {@code null}
+     * @throws IllegalStateException when the kernel event subsystem is not active
+     * @throws IllegalArgumentException when the type name is not registered
      */
     public EventTypeSpec specFor(String typeName) {
         Objects.requireNonNull(typeName, "typeName");
@@ -71,6 +86,13 @@ public final class ExerisEventTypeRegistry {
      * Builds a fresh {@link EventDescriptor} for the supplied type and stream. A random
      * event UUID and current epoch-millis timestamp are generated; flags are derived from
      * the registered {@link EventTypeSpec}.
+     *
+     * @param typeName the registered event type name
+     * @param streamId the stream the event belongs to; its 128 bits are stored in the descriptor
+     * @return a new descriptor for the type and stream
+     * @throws NullPointerException when {@code typeName} or {@code streamId} is {@code null}
+     * @throws IllegalStateException when the kernel event subsystem is not active
+     * @throws IllegalArgumentException when the type name is not registered
      */
     public EventDescriptor descriptorFor(String typeName, UUID streamId) {
         Objects.requireNonNull(typeName, "typeName");

@@ -37,6 +37,15 @@ public final class ExerisCompatibilityActuatorController {
     private final ObjectProvider<ExerisRuntimeProperties> runtimeProperties;
     private final ObjectProvider<InfoContributor> infoContributors;
 
+    /**
+     * Creates the controller.
+     *
+     * @param healthIndicator source of the runtime health rendered by {@link #health()}
+     * @param runtimeProperties provider of the bound runtime properties, used to report the web mode
+     * @param infoContributors provider of the Spring Boot {@code InfoContributor} beans merged into
+     *        {@link #info()}
+     * @throws NullPointerException if any argument is {@code null}
+     */
     public ExerisCompatibilityActuatorController(
             ExerisRuntimeHealthIndicator healthIndicator,
             ObjectProvider<ExerisRuntimeProperties> runtimeProperties,
@@ -46,6 +55,15 @@ public final class ExerisCompatibilityActuatorController {
         this.infoContributors = Objects.requireNonNull(infoContributors, "infoContributors must not be null");
     }
 
+    /**
+     * Serves the runtime health in the shape of Spring Boot Actuator's {@code /actuator/health} body.
+     *
+     * <p>The body carries the overall {@code status} and a {@code components} map with a single
+     * {@code exerisRuntime} entry; the entry has a {@code details} map only when the indicator reports
+     * details.
+     *
+     * @return the health document as an insertion-ordered map ready for JSON rendering
+     */
     @GetMapping({"/actuator/health", "/health"})
     public Map<String, Object> health() {
         // Reads the runtime's own health type, not Spring Boot's: the Boot Health class moved
@@ -65,6 +83,15 @@ public final class ExerisCompatibilityActuatorController {
         return body;
     }
 
+    /**
+     * Serves the runtime info in the shape of Spring Boot Actuator's {@code /actuator/info} body.
+     *
+     * <p>The body is the merge of every {@code InfoContributor} bean, in bean order. The keys
+     * {@code runtime} (value {@code exeris}) and {@code mode} are added only where no contributor already
+     * set them; {@code mode} is the configured web mode, or {@code compatibility} when none is configured.
+     *
+     * @return the info document as an insertion-ordered map ready for JSON rendering
+     */
     @GetMapping("/actuator/info")
     public Map<String, Object> info() {
         Info.Builder builder = new Info.Builder();

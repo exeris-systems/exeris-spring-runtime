@@ -35,6 +35,12 @@ public final class ExerisMvcServerHttpRequest implements ServerHttpRequest {
     private final URI uri;
     private final Map<String, Object> attributes = new LinkedHashMap<>();
 
+    /**
+     * Creates an adapter over the given request; the headers and URI are derived once, here.
+     *
+     * @param delegate the request to adapt; must not be {@code null}
+     * @throws NullPointerException if {@code delegate} is {@code null}
+     */
     public ExerisMvcServerHttpRequest(ExerisServerRequest delegate) {
         this.delegate = delegate;
         this.headers = toSpringHeaders(delegate);
