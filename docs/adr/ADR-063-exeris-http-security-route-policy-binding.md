@@ -214,10 +214,10 @@ is honest about what it can enforce: scopes as the identity provider emits them.
    promptly and the previously disabled in-flight-drain scenario is green.
 
    The condition this clause set — *"implementation does not start before the pin moves"* — is therefore
-   satisfied. Implementation may start; nothing else in this ADR changes, and none of it has been
-   implemented yet. Recorded here rather than left in the future tense because a resolved blocker that
-   still reads as live is the drift `CLAUDE.md` calls out by name: a reader arriving from the 0.7.0
-   release notes would conclude this work is still gated when it is merely not yet done.
+   satisfied, and the decision is implemented: the DSL, its compiler and the slot binding ship in
+   `exeris-spring-runtime-web` and `exeris-spring-boot-autoconfigure`, and every layer of
+   §"Compliance / Verification" has a test, the runtime layer against a real kernel over a live socket
+   (`RoutePolicyRuntimeIntegrationTest`). The `ClaimsMapper` slice of protocol 2 remains open.
 2. **End-to-end verification is gated on the `ClaimsMapper` slice.** Scope requirements can be tested with
    tokens carrying literal `scope` claims before then; parity with an application's `JwtAuthenticationConverter`
    cannot.

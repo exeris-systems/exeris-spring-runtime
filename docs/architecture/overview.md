@@ -295,7 +295,7 @@ All integration code is adjacent to the kernel hot path. The following invariant
 | Phase 4B | Closed (2026-05-11) | Flow/saga seam + durable snapshots, preview default-off |
 | Phase 4C | Closed (2026-05-17) | Graph seam, preview default-off, GA kernel-gated (ADR-030) |
 | SB4 matrix | Landed | Spring Boot 4 dual matrix (ADR-028) — both lines build and test in CI on every push, plus an ADR-067 `binary-neutrality` job comparing Spring call-site descriptors across the two lines. Ships in 0.7.0, not the 0.8.0 train the ADR estimated. **Nominal compatibility, not a support commitment**: Spring Security 7 is a separate axis (ADR-028 obligation 6) |
-| ADR-063 route authorization | Accepted, not implemented | `ExerisHttpSecurity` compiles per-path rules onto the kernel `HttpRoutePolicy`. Was blocked on the kernel pin; unblocked by 0.11.0. Until it lands, a migrating application has no per-path rule surface — and kernel 0.11.0 also removed the Community driver's `/secure` prefix convention |
+| ADR-063 route authorization | Implemented | `ExerisHttpSecurity` compiles per-path rules onto the kernel `HttpRoutePolicy`; the kernel decides 401/403 on the admission path, and `@PreAuthorize` still decides inside the handler. The edge verifies tokens only against keys a deployment supplies — see [compat Spring Security support](compat-spring-security-support.md#where-the-edge-gets-its-verification-keys) |
 | Phase 5 | Not started | Edge gateway (ADR-021), 0.9.0 train |
 
 "Closed" means the phase invariants are captured and green — **not** that the module is GA. Phases 4A–4C

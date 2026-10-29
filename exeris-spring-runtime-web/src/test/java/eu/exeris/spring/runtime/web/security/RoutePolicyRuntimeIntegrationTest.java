@@ -14,17 +14,34 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.MapPropertySource;
 import org.springframework.core.env.StandardEnvironment;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
 
+import eu.exeris.kernel.community.testkit.security.TestJwt;
+import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpRoutePolicy;
 import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
 import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeProperties;
 import eu.exeris.spring.boot.autoconfigure.ExerisSpringConfigProvider;
+import eu.exeris.spring.runtime.web.autoconfigure.ExerisCompatAutoConfiguration;
+import eu.exeris.spring.runtime.web.autoconfigure.ExerisSecurityErrorMappingAutoConfiguration;
+import eu.exeris.spring.runtime.web.compat.ExerisCompatDispatcher;
+import eu.exeris.spring.runtime.web.test.TestJwtSecurityProvider;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
@@ -36,8 +53,13 @@ import static org.assertj.core.api.Assertions.fail;
  * in the bootstrap thread scope and verify enforcement by the kernel admission engine over
  * a live socket.
  *
- * <p>Validates anonymous access for {@code permitAll} routes and 401 unauthenticated
- * response enforcement for {@code authenticated()} routes.
+ * <p>Validates anonymous access for {@code permitAll} routes, 401 for a route that requires an
+ * identity when none is presented, 403 and 200 for a scope rule decided on a verified token's
+ * scopes, and that an edge admission does not bypass {@code @PreAuthorize} on the Compatibility Mode
+ * handler it admits to.
+ *
+ * <p>Tests that present a token boot the kernel {@code security} subsystem, which selects
+ * {@link TestJwtSecurityProvider}: the Community verification pipeline over the testkit signing key.
  *
  * @see "ADR-063: Route Security Policy"
  */
@@ -125,17 +147,182 @@ class RoutePolicyRuntimeIntegrationTest {
     }
 
     /**
+     * A scope rule is decided on the scopes of a token the kernel itself verified: a valid token
+     * without the scope is forbidden, one carrying it is admitted, and no token at all is
+     * unauthenticated rather than forbidden.
+     */
+    @Test
+    void kernelDecidesAScopeRuleOnTheVerifiedTokensScopes() throws Exception {
+        int port = freePort();
+
+        HttpRoutePolicy policy = ExerisRoutePolicyCompiler.compile(ExerisHttpSecurity.create()
+                .requestMatchers("/health", "/health/live", "/health/ready", "/db/ping", "/db/roundtrip")
+                .permitAll()
+                .requestMatchers("/orders").hasAnyScope("orders:read")
+                .anyRequest().permitAll());
+
+        AtomicInteger handled = new AtomicInteger();
+        ExerisRuntimeLifecycle lifecycle = new ExerisRuntimeLifecycle(
+                properties(ExerisRuntimeProperties.Mode.PURE, SECURED_SUBSYSTEMS),
+                new ExerisSpringConfigProvider(environmentWithPort(port)),
+                Optional.of(exchange -> {
+                    handled.incrementAndGet();
+                    exchange.respond(eu.exeris.kernel.spi.http.HttpResponse.noBody(
+                            eu.exeris.kernel.spi.http.HttpStatus.OK, exchange.request().version()));
+                }),
+                Optional.of(policy));
+
+        HttpClient client = client();
+
+        try {
+            lifecycle.start();
+            awaitAccepting(port);
+
+            assertThat(statusOf(client, port, "/orders"))
+                    .as("a scope rule must answer a request with no token as unauthenticated, not forbidden")
+                    .isEqualTo(401);
+
+            assertThat(statusOf(client, port, "/orders", tokenWithScope("other")))
+                    .as("a verified token lacking the required scope must be forbidden by the kernel")
+                    .isEqualTo(403);
+
+            assertThat(handled)
+                    .as("a request the edge refuses must never reach the handler")
+                    .hasValue(0);
+
+            assertThat(statusOf(client, port, "/orders", tokenWithScope("orders:read")))
+                    .as("a verified token carrying the required scope must be admitted")
+                    .isEqualTo(200);
+
+            assertThat(handled)
+                    .as("the admitted request must reach the handler exactly once")
+                    .hasValue(1);
+        } finally {
+            lifecycle.stop();
+        }
+    }
+
+    /**
+     * Edge admission is not authorization of the handler: a request the kernel admits on
+     * {@code authenticated()} still meets {@code @PreAuthorize} on the Compatibility Mode controller
+     * method, which refuses a token lacking the authority with 403 and serves one carrying it.
+     */
+    @Test
+    void preAuthorizeIsStillEnforcedInsideTheHandlerForAnAdmittedRequest() throws Exception {
+        int port = freePort();
+
+        HttpRoutePolicy policy = ExerisRoutePolicyCompiler.compile(ExerisHttpSecurity.create()
+                .requestMatchers("/health", "/health/live", "/health/ready", "/db/ping", "/db/roundtrip")
+                .permitAll()
+                .requestMatchers("/orders/admin").authenticated()
+                .anyRequest().permitAll());
+
+        AnnotationConfigApplicationContext context = compatContextWithMethodSecurity();
+        ExerisCompatDispatcher compatDispatcher = context.getBean(ExerisCompatDispatcher.class);
+        AdminOrdersController controller = context.getBean(AdminOrdersController.class);
+
+        AtomicInteger dispatched = new AtomicInteger();
+        HttpHandler countingDispatcher = exchange -> {
+            dispatched.incrementAndGet();
+            compatDispatcher.handle(exchange);
+        };
+
+        ExerisRuntimeLifecycle lifecycle = new ExerisRuntimeLifecycle(
+                properties(ExerisRuntimeProperties.Mode.COMPATIBILITY, SECURED_SUBSYSTEMS),
+                new ExerisSpringConfigProvider(environmentWithPort(port)),
+                Optional.of(countingDispatcher),
+                Optional.of(policy));
+
+        HttpClient client = client();
+
+        try {
+            lifecycle.start();
+            awaitAccepting(port);
+
+            assertThat(statusOf(client, port, "/orders/admin", tokenWithScope("orders:read")))
+                    .as("@PreAuthorize must refuse an admitted request whose token lacks the authority")
+                    .isEqualTo(403);
+
+            assertThat(dispatched)
+                    .as("the 403 must come from inside the handler: the edge admitted the request "
+                            + "to the compat dispatcher")
+                    .hasValue(1);
+            assertThat(controller.invocations())
+                    .as("the guarded method body must not run when @PreAuthorize refuses")
+                    .hasValue(0);
+
+            assertThat(statusOf(client, port, "/orders/admin", tokenWithScope("orders:read orders:admin")))
+                    .as("@PreAuthorize must admit a token carrying the authority")
+                    .isEqualTo(200);
+
+            assertThat(controller.invocations())
+                    .as("the guarded method body must run once for the authorized request")
+                    .hasValue(1);
+        } finally {
+            try {
+                lifecycle.stop();
+            } finally {
+                context.close();
+            }
+        }
+    }
+
+    /**
      * Only the subsystems ingress needs. Persistence is excluded deliberately: it fails to boot with
      * no database reachable, and a route-policy test that needed one would be testing the wrong thing.
      */
+    private static final List<String> INGRESS_SUBSYSTEMS = List.of("memory", "transport", "http");
+
+    /** Ingress plus the security subsystem, which binds the provider that verifies bearer tokens. */
+    private static final List<String> SECURED_SUBSYSTEMS = List.of("memory", "security", "transport", "http");
+
     private static ExerisRuntimeProperties properties() {
+        return properties(ExerisRuntimeProperties.Mode.PURE, INGRESS_SUBSYSTEMS);
+    }
+
+    private static ExerisRuntimeProperties properties(ExerisRuntimeProperties.Mode mode, List<String> subsystems) {
         return new ExerisRuntimeProperties(
                 true,
                 false,
-                new ExerisRuntimeProperties.WebProperties(ExerisRuntimeProperties.Mode.PURE),
+                new ExerisRuntimeProperties.WebProperties(mode),
                 new ExerisRuntimeProperties.LifecycleProperties(30),
                 new ExerisRuntimeProperties.ShutdownProperties(true, 30),
-                java.util.List.of("memory", "transport", "http"));
+                subsystems);
+    }
+
+    /**
+     * A token the kernel's {@link TestJwtSecurityProvider} verifies, carrying a literal
+     * space-delimited {@code scope} claim. The Spring side reads the same claim: its default
+     * converter grants {@code SCOPE_<scope>} for each entry.
+     */
+    private static String tokenWithScope(String scope) {
+        return TestJwt.builder().claim("scope", scope).serialize();
+    }
+
+    /**
+     * A Compatibility Mode context with method security on and a {@link JwtDecoder} trusting the
+     * same testkit key the kernel trusts, so the compat security filter populates the Spring
+     * {@code SecurityContext} from the token the edge already verified.
+     */
+    private static AnnotationConfigApplicationContext compatContextWithMethodSecurity() {
+        AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
+        context.getEnvironment().getPropertySources().addFirst(
+                new MapPropertySource("compatProps", Map.of("exeris.runtime.web.mode", "compatibility")));
+        // User configuration first, as Boot orders it ahead of auto-configuration: the compat security
+        // filter is conditional on a JwtDecoder bean, which must already be defined when that
+        // condition is evaluated.
+        context.register(MethodSecurityCompatConfig.class);
+        context.register(ExerisSecurityErrorMappingAutoConfiguration.class);
+        context.register(ExerisCompatAutoConfiguration.class);
+        context.refresh();
+        return context;
+    }
+
+    private static HttpClient client() {
+        return HttpClient.newBuilder()
+                .connectTimeout(Duration.ofMillis(500))
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
     }
 
     private static StandardEnvironment environmentWithPort(int port) {
@@ -146,12 +333,17 @@ class RoutePolicyRuntimeIntegrationTest {
     }
 
     private static int statusOf(HttpClient client, int port, String path) throws Exception {
-        return client.send(
-                HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path))
-                        .timeout(Duration.ofSeconds(5))
-                        .GET()
-                        .build(),
-                HttpResponse.BodyHandlers.ofString()).statusCode();
+        return statusOf(client, port, path, null);
+    }
+
+    private static int statusOf(HttpClient client, int port, String path, String bearerToken) throws Exception {
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path))
+                .timeout(Duration.ofSeconds(5))
+                .GET();
+        if (bearerToken != null) {
+            request.header("Authorization", "Bearer " + bearerToken);
+        }
+        return client.send(request.build(), HttpResponse.BodyHandlers.ofString()).statusCode();
     }
 
     /**
@@ -176,5 +368,37 @@ class RoutePolicyRuntimeIntegrationTest {
             }
         }
         fail("Exeris ingress never began accepting on 127.0.0.1:" + port);
+    }
+
+    @Configuration
+    @EnableMethodSecurity
+    static class MethodSecurityCompatConfig {
+
+        @Bean
+        JwtDecoder jwtDecoder() {
+            return NimbusJwtDecoder.withPublicKey(TestJwt.testPublicKey()).build();
+        }
+
+        @Bean
+        AdminOrdersController adminOrdersController() {
+            return new AdminOrdersController();
+        }
+    }
+
+    @RestController
+    public static class AdminOrdersController {
+
+        private final AtomicInteger invocations = new AtomicInteger();
+
+        @GetMapping("/orders/admin")
+        @PreAuthorize("hasAuthority('SCOPE_orders:admin')")
+        public String adminOrders() {
+            invocations.incrementAndGet();
+            return "admin-orders";
+        }
+
+        public AtomicInteger invocations() {
+            return invocations;
+        }
     }
 }

@@ -104,6 +104,23 @@ effective policy depends on which one ran.
 **Declaring nothing changes nothing.** With no `ExerisHttpSecurity` bean the slot is left unbound and
 the kernel applies no per-route requirement.
 
+### Where the edge gets its verification keys
+
+A scope or `authenticated()` rule is decided on the identity the kernel's `SecurityProvider` derives
+from the bearer token — not on the Spring `JwtDecoder`, which only runs later, inside Compatibility
+Mode. The Community provider the kernel discovers by default is constructed with **no verification
+keys** and a placeholder issuer, and the kernel has no configuration key for an issuer, an audience
+or a JWKS endpoint. On a stock Community kernel, therefore, **every token is refused** and every
+route that requires identity answers `401`. Routes declared `permitAll()` are unaffected.
+
+Until the kernel reads that configuration, a deployment that binds a policy requiring identity
+supplies its own `SecurityProvider` through `META-INF/services`, with a priority above the
+Community provider's `0`, delegating to
+`new CommunitySecurityProvider(keysByKid, expectedIssuer, expectedAudience)`. Verification —
+signature, issuer, audience, expiry, scope mapping — stays the kernel's own. This runtime's
+`RoutePolicyRuntimeIntegrationTest` uses exactly that shape. The key set is a fixed snapshot: the
+kernel's rotating-JWKS variant is not public.
+
 **One divergence to know about while it lasts.** The kernel derives the scopes it checks through its
 own `ClaimsMapper`; Spring derives authorities through your `Converter<Jwt, …>`. For a token whose
 authorities do not come from a literal `scope`/`scp` claim these are two mappings of the same token,
