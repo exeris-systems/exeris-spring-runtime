@@ -182,6 +182,65 @@ class ExerisBootstrapIntegrationTest {
         }
     }
 
+    /**
+     * A stop requested while the kernel is still inside {@code boot()} is bounded by
+     * {@code exeris.runtime.shutdown.timeout-seconds}. {@code KernelBootstrap.shutdown()} called from a
+     * foreign thread at that point waits for the boot to unwind and cannot be interrupted, so the
+     * lifecycle must join the boot thread on its own deadline before it reaches for that call.
+     *
+     * <p>The environment answers normally until a read is made from inside {@code KernelBootstrap},
+     * which pins the block to the kernel's own boot window rather than to {@code prepareBootstrap()}.
+     */
+    @Test
+    void stopDuringKernelBoot_isBoundedByTheShutdownTimeout() throws Exception {
+        ExerisRuntimeProperties properties = new ExerisRuntimeProperties(
+                true,
+                false,
+                new ExerisRuntimeProperties.WebProperties(ExerisRuntimeProperties.Mode.PURE),
+                new ExerisRuntimeProperties.LifecycleProperties(30),
+                new ExerisRuntimeProperties.ShutdownProperties(true, 1)
+        );
+        CountDownLatch kernelReadStarted = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ExerisRuntimeLifecycle lifecycle = new ExerisRuntimeLifecycle(
+                properties,
+                new ExerisSpringConfigProvider(blockingInsideKernelBoot(kernelReadStarted, release)),
+                java.util.Optional.empty()
+        );
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try {
+            Future<?> startFuture = executor.submit(lifecycle::start);
+            assertThat(kernelReadStarted.await(10, TimeUnit.SECONDS))
+                    .as("the kernel must reach its own configuration read inside boot()")
+                    .isTrue();
+            Thread bootThread = awaitRuntimeThread(Duration.ofSeconds(5));
+
+            long stopStartedAt = System.nanoTime();
+            Future<?> stopFuture = executor.submit(() -> lifecycle.stop());
+            assertThatThrownBy(() -> stopFuture.get(5, TimeUnit.SECONDS))
+                    .as("stop() must give up on its own deadline instead of waiting for the boot to unwind")
+                    .hasCauseInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("shutdown timed out");
+            assertThat(Duration.ofNanos(System.nanoTime() - stopStartedAt)).isLessThan(Duration.ofSeconds(5));
+
+            bootThread.join(Duration.ofSeconds(5).toMillis());
+            assertThat(bootThread.isAlive())
+                    .as("the boot thread interrupted on the shutdown deadline must unwind")
+                    .isFalse();
+            assertThat(lifecycle.isRunning()).isFalse();
+            // start() may return or report the aborted boot; what it must not do is keep waiting.
+            try {
+                startFuture.get(5, TimeUnit.SECONDS);
+            } catch (java.util.concurrent.ExecutionException _) {
+                // an aborted startup is an acceptable outcome of a stop that interrupted it
+            }
+        } finally {
+            release.countDown();
+            shutdownExecutor(executor);
+        }
+    }
+
     @Test
     void prepareBootstrap_withNullEnvironmentStillReservesSingleSlot() {
         ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider(null);
@@ -532,6 +591,41 @@ class ExerisBootstrapIntegrationTest {
                         Thread.currentThread().interrupt();
                     }
                     return defaultEnvironmentValue(method.getReturnType());
+                }
+        );
+    }
+
+    private static Environment blockingInsideKernelBoot(CountDownLatch kernelReadStarted,
+                                                        CountDownLatch release) {
+        Environment delegate = new org.springframework.core.env.StandardEnvironment();
+        StackWalker walker = StackWalker.getInstance();
+        return (Environment) Proxy.newProxyInstance(
+                ExerisBootstrapIntegrationTest.class.getClassLoader(),
+                new Class<?>[]{Environment.class},
+                (proxy, method, args) -> {
+                    if (method.getDeclaringClass() == Object.class) {
+                        return switch (method.getName()) {
+                            case "toString" -> "kernel-boot-blocking-test-environment";
+                            case "hashCode" -> System.identityHashCode(proxy);
+                            case "equals" -> proxy == args[0];
+                            default -> null;
+                        };
+                    }
+                    boolean insideKernelBoot = walker.walk(frames -> frames.anyMatch(
+                            frame -> frame.getClassName().startsWith("eu.exeris.kernel.core.bootstrap.KernelBootstrap")));
+                    if (insideKernelBoot) {
+                        kernelReadStarted.countDown();
+                        try {
+                            release.await();
+                        } catch (InterruptedException _) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }
+                    try {
+                        return method.invoke(delegate, args);
+                    } catch (java.lang.reflect.InvocationTargetException ex) {
+                        throw ex.getCause();
+                    }
                 }
         );
     }
