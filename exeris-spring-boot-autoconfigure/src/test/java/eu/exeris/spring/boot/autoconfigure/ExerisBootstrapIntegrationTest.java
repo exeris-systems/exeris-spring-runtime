@@ -348,6 +348,58 @@ class ExerisBootstrapIntegrationTest {
         });
     }
 
+    /**
+     * The lifecycle is the only owner of the kernel stop sequence. A kernel that registered its own
+     * JVM shutdown hook would start a second stop on {@code SIGTERM}, racing Spring's context close
+     * and able to stop the kernel ahead of the beans that still use it.
+     *
+     * <p>The kernel exposes no public view of its hook, so the built bootstrap's setting is read
+     * reflectively; a rename of that field fails this test loudly rather than passing it silently.
+     */
+    @Test
+    void lifecycleStart_leavesTheKernelShutdownHookDisabled() throws Exception {
+        int port = 0;
+        withKernelHttpSystemProperties(port, () -> {
+            try (var ctx = createContext(
+                    Map.of(
+                            "exeris.runtime.auto-start", "false",
+                            "exeris.runtime.network.port", Integer.toString(port),
+                            "exeris.runtime.persistence.jdbc-url", "jdbc:h2:mem:exeris_bootstrap_hook_test;DB_CLOSE_DELAY=-1",
+                            "exeris.runtime.persistence.username", "sa",
+                            "exeris.runtime.persistence.password", "",
+                            "exeris.runtime.persistence.run-migrations", "false"
+                    ),
+                    LifecycleHandlerConfig.class)) {
+                ExerisRuntimeLifecycle lifecycle = ctx.getBean(ExerisRuntimeLifecycle.class);
+
+                lifecycle.start();
+                try {
+                    assertThat(lifecycle.isRunning()).isTrue();
+                    assertThat(readField(runningBootstrap(lifecycle), "registerShutdownHook"))
+                            .as("the kernel must not register its own JVM shutdown hook")
+                            .isEqualTo(Boolean.FALSE);
+                } finally {
+                    lifecycle.stop();
+                }
+                assertThat(lifecycle.isRunning()).isFalse();
+            } catch (Exception ex) {
+                throw new RuntimeException(ex);
+            }
+        });
+    }
+
+    private static Object runningBootstrap(ExerisRuntimeLifecycle lifecycle) throws ReflectiveOperationException {
+        Object bootstrap = ((java.util.concurrent.atomic.AtomicReference<?>) readField(lifecycle, "bootstrap")).get();
+        assertThat(bootstrap).as("a running lifecycle holds its KernelBootstrap").isNotNull();
+        return bootstrap;
+    }
+
+    private static Object readField(Object target, String name) throws ReflectiveOperationException {
+        java.lang.reflect.Field field = target.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(target);
+    }
+
     @Test
     void lifecycleRunning_keepsNonDaemonBootThreadAlive() throws Exception {
         int port = 0;

@@ -6,7 +6,6 @@ package eu.exeris.spring.boot.autoconfigure;
 
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
-import java.lang.reflect.InvocationTargetException;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
@@ -23,6 +22,7 @@ import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.events.EventEngine;
 import eu.exeris.kernel.spi.flow.FlowEngine;
 import eu.exeris.kernel.spi.graph.GraphEngine;
+import eu.exeris.kernel.spi.graph.GraphKernelProviders;
 import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpKernelProviders;
 import eu.exeris.kernel.spi.http.HttpRoutePolicy;
@@ -54,15 +54,22 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  * Spring shutdown (SIGTERM / context.close())
  *   → SmartLifecycle.stop(callback) called
  *   → ExerisRuntimeLifecycle.stop()
- *       → KernelBootstrap.shutdown()
+ *       → releases the boot scope; boot() stops the subsystems in its finally
+ *       → joins the boot thread
+ *       → KernelBootstrap.shutdown() (idempotent backstop)
  *       → callback.run()
  * </pre>
  *
  * <h3>Shutdown Invariants</h3>
- * <p>Ingress teardown and stream drain are executed on the kernel side during
- * {@code KernelBootstrap.shutdown()}. Spring waits up to
+ * <p>This lifecycle is the only owner of the kernel stop sequence. The kernel's own JVM shutdown hook
+ * is disabled, so one {@code SIGTERM} reaches the kernel through Spring's context close alone and the
+ * runtime stops after — never before — the Spring beans that still use it.
+ *
+ * <p>Ingress teardown and stream drain are executed on the kernel side, on the boot thread, inside
+ * the kernel's {@code ScopedValue} scope. Spring waits up to
  * {@code exeris.runtime.shutdown.timeout-seconds} (configured via
- * {@link ExerisRuntimeProperties.ShutdownProperties}) for kernel shutdown to complete.
+ * {@link ExerisRuntimeProperties.ShutdownProperties}) for the boot thread to finish; on expiry it
+ * interrupts that thread and fails the stop.
  *
  * <p>Shutdown executes gracefully in three stages: closes transport ingress to reject new requests,
  * drains in-flight requests while response-writing reactors remain active, and finally executes
@@ -127,7 +134,7 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
 
     /**
      * Captured kernel-side {@link GraphEngine} reference, populated from the boot thread
-     * (where {@link KernelProviders#GRAPH_ENGINE} is bound) so Spring beans running outside
+     * (where {@link GraphKernelProviders#GRAPH_ENGINE} is bound) so Spring beans running outside
      * the kernel {@code ScopedValue} scope can still open graph sessions and run MATCH-DSL
      * traversals. Empty if the kernel activated without a {@code GraphProvider} on the
      * classpath. Read by {@code GraphEngineSupplier} in {@code exeris-spring-runtime-graph}
@@ -208,8 +215,11 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         // MIXED — selector wires the kernel at bootstrap, upstream of any web-mode
         // selection. The same selector value applies whether the application runs in
         // Pure Mode or Compatibility Mode; restricting subsystems is mode-orthogonal.
+        // The host owns the stop sequence: a kernel hook would start a second one on SIGTERM and
+        // could stop the kernel ahead of the Spring beans that still depend on it.
         KernelBootstrap.Builder bootstrapBuilder = KernelBootstrap.builder()
-                .classLoader(Thread.currentThread().getContextClassLoader());
+                .classLoader(Thread.currentThread().getContextClassLoader())
+                .registerShutdownHook(false);
         List<String> subsystems = properties.subsystems();
         if (!subsystems.isEmpty()) {
             BootstrapSelector selector = BootstrapSelector.forNames(subsystems.toArray(String[]::new));
@@ -264,8 +274,9 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
             throw failedStart(kernelBootstrap, failure);
         }
         if (shutdownImmediately) {
+            // stop() requested this and is joining the boot thread; releasing the scope is the stop
+            // signal, and calling shutdown() from here would race the boot thread's own stop.
             releaseBootScope(releaseSignal);
-            shutdownKernelOnce(kernelBootstrap);
         }
     }
 
@@ -294,9 +305,16 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
             }
             this.running = false;
         }
+        // Releasing the scope lets boot() run the subsystem stop on the boot thread, inside the kernel
+        // scope. KernelBootstrap.shutdown() from this thread would either run that stop here, without
+        // the kernel bindings, or — mid-startup — wait uninterruptibly past the shutdown timeout. It
+        // comes last, as a backstop, and is skipped when the join times out for the same reason.
         releaseBootScope(releaseSignal);
-        shutdownKernelOnce(kernelBootstrap);
+        if (!properties.shutdown().graceful()) {
+            interruptBootThread(thread);
+        }
         awaitStopCompletion(thread, startupInProgress);
+        shutdownKernelOnce(kernelBootstrap);
     }
 
     @Override
@@ -344,7 +362,7 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
      *
      * <p>Spring beans (graph template, {@code @ExerisGraphQuery} processor) consume this
      * accessor through {@code GraphEngineSupplier} in {@code exeris-spring-runtime-graph}
-     * to obtain a long-lived engine reference, since {@link KernelProviders#GRAPH_ENGINE}
+     * to obtain a long-lived engine reference, since {@link GraphKernelProviders#GRAPH_ENGINE}
      * is a {@code ScopedValue} only bound on kernel-owned virtual threads.
      *
      * @return captured {@link GraphEngine} reference if present
@@ -397,8 +415,8 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         if (KernelProviders.FLOW_ENGINE.isBound()) {
             capturedFlowEngine.set(KernelProviders.FLOW_ENGINE.get());
         }
-        if (KernelProviders.GRAPH_ENGINE.isBound()) {
-            capturedGraphEngine.set(KernelProviders.GRAPH_ENGINE.get());
+        if (GraphKernelProviders.GRAPH_ENGINE.isBound()) {
+            capturedGraphEngine.set(GraphKernelProviders.GRAPH_ENGINE.get());
         }
         if (KernelProviders.PERSISTENCE_ENGINE.isBound()) {
             capturedPersistenceEngine.set(KernelProviders.PERSISTENCE_ENGINE.get());
@@ -531,14 +549,19 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
                                           RuntimeException failure) {
         heldBootScope.compareAndSet(releaseSignal, null);
         releaseBootScope(releaseSignal);
+        // Interrupt first: a startup that is still initializing does not see shutdown(), which waits
+        // for the boot to unwind and would otherwise block until the kernel's own init deadline.
+        interruptBootThread(thread);
 
         try {
             shutdownKernelOnce(kernelBootstrap);
         } catch (RuntimeException ex) {
             failure.addSuppressed(ex);
         }
+    }
 
-        if (thread != null && thread.isAlive()) {
+    private static void interruptBootThread(Thread thread) {
+        if (thread != null && thread != Thread.currentThread() && thread.isAlive()) {
             thread.interrupt();
         }
     }
@@ -611,17 +634,7 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         if (kernelBootstrap == null || !shutdownTriggered.compareAndSet(false, true)) {
             return;
         }
-        shutdownKernel(kernelBootstrap);
-    }
-
-    private static void shutdownKernel(KernelBootstrap bootstrap) {
-        if (bootstrap == null) {
-            return;
-        }
-        if (invokeNoArg(bootstrap, "shutdown")) {
-            return;
-        }
-        invokeNoArg(bootstrap, "close");
+        kernelBootstrap.shutdown();
     }
 
     private IllegalStateException failedStart(KernelBootstrap kernelBootstrap, Exception cause) {
@@ -634,28 +647,5 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
             cause.addSuppressed(ex);
         }
         return new IllegalStateException("Exeris runtime startup failed", cause);
-    }
-
-    private static boolean invokeNoArg(Object target, String methodName) {
-        try {
-            target.getClass().getMethod(methodName).invoke(target);
-            return true;
-        } catch (NoSuchMethodException _) {
-            return false;
-        } catch (InvocationTargetException ex) {
-            Throwable cause = ex.getCause();
-            if (cause == null) {
-                cause = ex;
-            }
-            throw new IllegalStateException(
-                    "Failed invoking method '" + methodName + "' on " + target.getClass().getName(),
-                    cause
-            );
-        } catch (ReflectiveOperationException | RuntimeException ex) {
-            throw new IllegalStateException(
-                    "Failed invoking method '" + methodName + "' on " + target.getClass().getName(),
-                    ex
-            );
-        }
     }
 }
