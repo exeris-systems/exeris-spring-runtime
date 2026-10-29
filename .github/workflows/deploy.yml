@@ -123,7 +123,7 @@ jobs:
       - name: Build the Central bundle without uploading it (dry run)
         if: env.DRY_RUN == 'true'
         run: >
-          mvn -B -ntp -s .github/maven-settings.xml -P release
+          mvn -B -ntp -s .github/maven-settings.xml -P release,matrix-sb3
           clean deploy
           -DskipUpload=true
           -DskipTests=${{ inputs.skipTests || false }}
@@ -135,7 +135,7 @@ jobs:
       - name: Upload the release deployment to Maven Central
         if: env.IS_RELEASE == 'true' && env.DRY_RUN != 'true'
         run: >
-          mvn -B -ntp -s .github/maven-settings.xml -P release
+          mvn -B -ntp -s .github/maven-settings.xml -P release,matrix-sb3
           clean deploy
           -DskipTests=${{ inputs.skipTests || false }}
         env:
@@ -182,8 +182,9 @@ jobs:
           sys.exit(1 if problems else 0)
           PY
 
-      # Snapshots on every push; on a release, the same version after Central accepted it. The
-      # release build already ran the tests, so this second build does not run them again.
+      # Snapshots on every push; on a release, the same version once Central has validated the
+      # deployment (it is not yet published there). The release build already ran the tests, so
+      # this second build does not run them again.
       - name: Build, test, deploy to GitHub Packages
         if: env.DRY_RUN != 'true'
         run: >

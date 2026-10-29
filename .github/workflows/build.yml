@@ -140,8 +140,8 @@ jobs:
           retention-days: 7
 
   # The `verify` matrix proves the source compiles and tests on both lines. It cannot prove what we
-  # ship: deploy.yml runs `mvn clean deploy` with no profile, so exactly one SB3-compiled jar is
-  # published and ADR-028 claims it runs on SB4 as well. Source compatibility does not imply binary
+  # ship: deploy.yml publishes exactly one SB3-compiled jar per module (ADR-107) and ADR-028 claims
+  # it runs on SB4 as well. Source compatibility does not imply binary
   # compatibility — a call site can compile on both lines and bind to a different descriptor on each,
   # which is invisible to a per-line build and fatal at runtime. ADR-067 decides that the artefact stays
   # single and that this property is enforced rather than assumed; this job is that enforcement.

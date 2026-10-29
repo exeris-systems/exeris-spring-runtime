@@ -2,7 +2,7 @@
 
 | Attribute       | Value                                                                                                                                                                                                             |
 |:----------------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Status**      | **ACCEPTED** (drafted and accepted 2026-08-08; single decider — no future gating event; ratified by the PR that introduces this file; convention documented in `CLAUDE.md` §"ADR status convention in this repo")   |
+| **Status**      | **SUPERSEDED** by [ADR-107](ADR-107-one-main-jar-published-to-maven-central.md) (2026-10-30), per this ADR's Engineering Protocol 4. Accepted 2026-08-08; single decider. |
 | **Deciders**    | Arkadiusz Przychocki                                                                                                                                                                                              |
 | **Date**        | 2026-08-08                                                                                                                                                                                                        |
 | **Scope**       | spring/build (`.github/workflows/build.yml`, `.github/scripts/`; two call sites in `exeris-spring-runtime-web`; no kernel involvement)                                                                             |

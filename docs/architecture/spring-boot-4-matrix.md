@@ -17,7 +17,7 @@ the SB4 line actually costs**, measured rather than anticipated, and what has la
 | **SB3 line** | ✅ green — full reactor, tests included |
 | **SB4 line** | ✅ green — full reactor, tests included |
 | **CI** | both axes run `-Pmatrix-<line>,coverage clean verify` on every push; failure on either blocks merge (ADR-028 obligation 2). A third job, `binary-neutrality`, compares Spring call-site descriptors across the two lines — see §"Binary neutrality" for why the matrix alone is not enough |
-| **What ships** | **one** jar, built by the default `matrix-sb3` profile (`deploy.yml` runs `clean deploy` with no `-P`) and claimed to run on both lines |
+| **What ships** | **one** jar per module, compiled against SB3 (`matrix-sb3`) and claimed to run on both lines. Releases add only its `-sources` and `-javadoc` jars and signatures, for Maven Central (ADR-107) |
 
 > **Measure with `clean`.** An incremental `-Pmatrix-sb4 install` can report SUCCESS on stale classes
 > left by an SB3 build. The first run of this kind here did exactly that, and it looked like the
@@ -268,8 +268,9 @@ that line — which is why the failure looked selective rather than total.
 
 ### The mechanism
 
-`deploy.yml` runs `mvn clean deploy` with **no profile**, so `matrix-sb3` is active by default and the
-published jar is compiled against Spring Framework 6. ADR-028 then claims that one jar runs on both
+`deploy.yml` publishes a jar compiled against Spring Framework 6: snapshots under the default
+`matrix-sb3` profile, releases under `release,matrix-sb3`, whose `release` half adds only sources,
+javadoc and signatures (ADR-107). ADR-028 then claims that one jar runs on both
 lines. The dual matrix proves the *source* compiles and tests on both. It cannot prove anything about
 the *binary*, and the two are not the same claim:
 
