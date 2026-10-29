@@ -76,46 +76,34 @@ Conflict handling:
 - **Phase 2** adds explicitly scoped, opt-in Spring compatibility.
 - **Phase 3** expands into high-risk tx/context/persistence concerns.
 
-## GitHub Packages
+## Getting the artefacts
 
-Until artifacts are published to Maven Central, snapshot usage (for example in benchmark projects) should resolve from GitHub Packages.
-
-This repository also ships a workflow-friendly template at `.github/maven-settings.xml`.
-
-Add server credentials to your Maven `settings.xml`:
+**Releases** are published to **Maven Central** under `eu.exeris`. They need no repository entry
+and no credentials. Import the BOM and depend on the modules you use:
 
 ```xml
-<servers>
-	<server>
-		<id>github-exeris-kernel</id>
-		<username>exeris-systems</username>
-		<password>${env.GITHUB_TOKEN}</password>
-	</server>
-	<server>
-		<id>github-exeris-runtime-releases</id>
-		<username>exeris-systems</username>
-		<password>${env.GITHUB_TOKEN}</password>
-	</server>
-	<server>
-		<id>github-exeris-runtime-snapshots</id>
-		<username>exeris-systems</username>
-		<password>${env.GITHUB_TOKEN}</password>
-	</server>
-	<server>
-		<id>github-exeris-spring-runtime</id>
-		<username>exeris-systems</username>
-		<password>${env.GITHUB_TOKEN}</password>
-	</server>
-</servers>
+<dependencyManagement>
+	<dependencies>
+		<dependency>
+			<groupId>eu.exeris</groupId>
+			<artifactId>exeris-spring-runtime-bom</artifactId>
+			<version><!-- release version --></version>
+			<type>pom</type>
+			<scope>import</scope>
+		</dependency>
+	</dependencies>
+</dependencyManagement>
 ```
 
-Deploy example:
+The kernel this runtime binds to (`eu.exeris:exeris-kernel-*`) is on Maven Central as well.
 
-```bash
-mvn -s .github/maven-settings.xml clean deploy
-```
+**Snapshots** (`-SNAPSHOT`, built from every commit to `main`) are published to GitHub Packages
+only. A consumer of snapshots declares the repository
+`https://maven.pkg.github.com/exeris-systems/exeris-spring-runtime` and a matching `<server>` in
+its own `settings.xml`, with a token that has `read:packages`.
 
-Consumers should either include the required GitHub Packages repository URLs in their project configuration or import this parent POM where repositories are already defined.
+Building this repository needs no package credentials. `.github/maven-settings.xml` carries only
+the server entries CI uses to publish: GitHub Packages for snapshots, and `central` for releases.
 
 ## License
 

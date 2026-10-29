@@ -28,6 +28,19 @@
     <name>Exeris Spring Runtime :: Parent</name>
     <description>Host-runtime integration layer enabling Spring applications to run on top of the Exeris execution model.</description>
 
+    <!--
+        Maven appends a child's artifactId to an inherited project <url>, which would publish a
+        project page that does not exist for every module. Each module therefore declares its own
+        <url> verbatim. The scm attributes below stop the same append for the scm coordinates.
+    -->
+    <url>https://github.com/exeris-systems/exeris-spring-runtime</url>
+    <inceptionYear>2026</inceptionYear>
+
+    <organization>
+        <name>Exeris Systems</name>
+        <url>https://github.com/exeris-systems</url>
+    </organization>
+
     <licenses>
         <license>
             <name>Apache License, Version 2.0</name>
@@ -40,6 +53,29 @@
             </comments>
         </license>
     </licenses>
+
+    <!-- Central requires at least one developer entry: the point of contact behind the coordinate. -->
+    <developers>
+        <developer>
+            <id>aprzychocki</id>
+            <name>Arkadiusz Przychocki</name>
+            <organization>Exeris Systems</organization>
+            <organizationUrl>https://github.com/exeris-systems</organizationUrl>
+            <roles>
+                <role>Founder</role>
+                <role>Lead Architect</role>
+            </roles>
+        </developer>
+    </developers>
+
+    <scm child.scm.connection.inherit.append.path="false"
+         child.scm.developerConnection.inherit.append.path="false"
+         child.scm.url.inherit.append.path="false">
+        <connection>scm:git:https://github.com/exeris-systems/exeris-spring-runtime.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/exeris-systems/exeris-spring-runtime.git</developerConnection>
+        <url>https://github.com/exeris-systems/exeris-spring-runtime</url>
+        <tag>HEAD</tag>
+    </scm>
 
     <modules>
         <module>exeris-spring-runtime-bom</module>
@@ -82,6 +118,10 @@
         <maven.failsafe.plugin.version>3.2.5</maven.failsafe.plugin.version>
         <maven.deploy.plugin.version>3.1.4</maven.deploy.plugin.version>
         <maven.javadoc.plugin.version>3.12.0</maven.javadoc.plugin.version>
+        <maven.source.plugin.version>3.4.0</maven.source.plugin.version>
+        <maven.gpg.plugin.version>3.2.8</maven.gpg.plugin.version>
+        <!-- 0.12.0 or later: earlier versions leave Maven 3.10 resolver bookkeeping in the bundle, which Central refuses. -->
+        <central.publishing.plugin.version>0.12.0</central.publishing.plugin.version>
 
         <!-- Coverage quality gate (opt-in via -Pcoverage). JaCoCo 0.8.15 supports class-file
              major version 70; kept ahead of baseline so class-file parsing succeeds. -->
@@ -166,29 +206,6 @@
             </dependency>
         </dependencies>
     </dependencyManagement>
-
-    <repositories>
-        <repository>
-            <id>github-exeris-kernel</id>
-            <url>https://maven.pkg.github.com/exeris-systems/exeris-kernel</url>
-            <releases>
-                <enabled>true</enabled>
-            </releases>
-            <snapshots>
-                <enabled>true</enabled>
-            </snapshots>
-        </repository>
-        <repository>
-            <id>github-exeris-spring-runtime</id>
-            <url>https://maven.pkg.github.com/exeris-systems/exeris-spring-runtime</url>
-            <releases>
-                <enabled>true</enabled>
-            </releases>
-            <snapshots>
-                <enabled>true</enabled>
-            </snapshots>
-        </repository>
-    </repositories>
 
     <distributionManagement>
         <repository>
@@ -342,6 +359,99 @@
                                 </configuration>
                             </execution>
                         </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!--
+            Maven Central publication, activated only by `-P release`. It is a profile on purpose:
+            central-publishing-maven-plugin is a build extension that takes over the deploy phase,
+            and declared outside this profile it would also capture the snapshot publish that every
+            push to main sends to GitHub Packages. Without the profile the deploy phase goes to
+            GitHub Packages through <distributionManagement>; with it, to Central.
+        -->
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <!-- Central requires a sources jar for every published jar coordinate. -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <version>${maven.source.plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals>
+                                    <goal>jar-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!--
+                        Central requires a javadoc jar to exist; it does not judge its prose. Javadoc
+                        quality is not what decides whether a release can publish, so doclint is off
+                        and a javadoc error does not fail this build. The contract tags are inherited
+                        from pluginManagement: an unregistered tag is dropped from the page silently.
+                    -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <doclint>none</doclint>
+                            <failOnError>false</failOnError>
+                            <quiet>true</quiet>
+                        </configuration>
+                    </plugin>
+
+                    <!--
+                        Central verifies a detached signature on every file. The passphrase arrives
+                        through the environment variable that actions/setup-java's `gpg-passphrase`
+                        input names; deploy.yml sets both to MAVEN_GPG_PASSPHRASE.
+                    -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>${maven.gpg.plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!--
+                        autoPublish=false: the upload creates a deployment that a person publishes in
+                        the Central Portal after reading its validation result. Until then it can be
+                        dropped; once published, a version can never be changed or reused.
+                        waitUntil=validated makes the build wait for that result rather than pass on
+                        the upload alone. skipUpload builds the bundle and sends nothing, which is
+                        what the dry run in deploy.yml uses.
+                    -->
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>${central.publishing.plugin.version}</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>false</autoPublish>
+                            <waitUntil>validated</waitUntil>
+                        </configuration>
                     </plugin>
                 </plugins>
             </build>

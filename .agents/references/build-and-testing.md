@@ -9,7 +9,7 @@
 ## Maven Commands
 
 ```bash
-# Full reactor build with GitHub Packages settings
+# Full reactor build
 mvn -s .github/maven-settings.xml clean install
 
 # Run single module tests
@@ -27,9 +27,12 @@ mvn -s .github/maven-settings.xml -Pmatrix-sb3 test
 
 ## Settings & Credentials
 
-The `.github/maven-settings.xml` file configures repository mirrors and snapshots:
-- `PACKAGES_READ_TOKEN`: Personal Access Token (classic) with `read:packages` to pull `exeris-kernel` snapshots.
-- `GITHUB_TOKEN`: Actions token or developer token for `exeris-spring-runtime` packages.
+Dependencies, the kernel included, resolve from Maven Central; a build needs no package credentials.
+`.github/maven-settings.xml` holds only the publishing servers:
+- `GITHUB_TOKEN`: Actions token for the snapshot and release uploads to GitHub Packages.
+- `CENTRAL_TOKEN_USERNAME` / `CENTRAL_TOKEN_PASSWORD`: Central Portal user token, read only by the `release` profile.
+
+Release artefacts (sources, javadoc, GPG signatures, Central bundle) are produced only under `-P release`.
 
 ## Four-Layer Testing Model
 

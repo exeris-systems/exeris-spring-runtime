@@ -18,11 +18,9 @@ name: build
 # report a conclusion. Skipping via paths-ignore leaves a required check "pending"
 # forever and blocks otherwise-mergeable PRs (e.g. docs-only changes).
 #
-# Required repo secrets (same as deploy.yml):
-#   GITHUB_TOKEN         — provided automatically; reads this repo's own packages.
-#   PACKAGES_READ_TOKEN  — PAT (classic) with read:packages; needed because the
-#                          default GITHUB_TOKEN cannot read exeris-kernel snapshots
-#                          from a different repository.
+# Required repo secrets:
+#   GITHUB_TOKEN         — provided automatically.
+# The kernel resolves from Maven Central, so no cross-repository package token is needed.
 
 on:
   push:
@@ -69,7 +67,6 @@ jobs:
 
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      PACKAGES_READ_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
       MAVEN_OPTS: '-Xmx2g'
 
     steps:
@@ -82,13 +79,6 @@ jobs:
           distribution: temurin
           java-version: '25'
           cache: maven
-
-      - name: Verify settings token wiring
-        run: |
-          if [ -z "${PACKAGES_READ_TOKEN}" ]; then
-            echo "::error::PACKAGES_READ_TOKEN secret is not set. Create a PAT (classic) with read:packages scope and add it as a repository secret."
-            exit 1
-          fi
 
       - name: Build, test, architecture guards & coverage gate (mvn verify)
         run: >
@@ -162,7 +152,6 @@ jobs:
 
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      PACKAGES_READ_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
       MAVEN_OPTS: '-Xmx2g'
 
     steps:
@@ -175,13 +164,6 @@ jobs:
           distribution: temurin
           java-version: '25'
           cache: maven
-
-      - name: Verify settings token wiring
-        run: |
-          if [ -z "${PACKAGES_READ_TOKEN}" ]; then
-            echo "::error::PACKAGES_READ_TOKEN secret is not set. Create a PAT (classic) with read:packages scope and add it as a repository secret."
-            exit 1
-          fi
 
       - name: Compare Spring call-site descriptors across both matrix lines
         run: ./.github/scripts/spring-binary-neutrality.sh

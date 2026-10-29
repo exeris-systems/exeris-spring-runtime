@@ -1,14 +1,25 @@
-name: Deploy to GitHub Packages
+name: Deploy (GitHub Packages snapshots, Maven Central releases)
 
-# Snapshots: pushed automatically on every commit to main (current pom version,
-# expected to be -SNAPSHOT — Maven routes by version suffix to snapshotRepository).
-# Releases: workflow_dispatch with explicit releaseVersion + optional next snapshot bump.
+# Snapshots: pushed automatically on every commit to main (current pom version, expected to be
+# -SNAPSHOT — Maven routes by version suffix to snapshotRepository) to GitHub Packages.
+#
+# Releases: workflow_dispatch with an explicit releaseVersion. A release goes to Maven Central
+# first and to GitHub Packages second, and is tagged only after both succeeded. Central comes first
+# because its upload is the one that can still be taken back: with autoPublish=false the upload is
+# a deployment that a person publishes in the Central Portal, and it can be dropped until then. A
+# GitHub Packages release and a pushed tag are not reversible in the same way.
+#
+# centralDryRun builds, tests, signs and bundles the release exactly as Central would receive it,
+# and uploads, deploys, commits and tags nothing. Run it before a real release.
 #
 # Required repo secrets:
-#   GITHUB_TOKEN         — provided automatically; has packages:write on this repo only.
-#   PACKAGES_READ_TOKEN  — PAT (classic) with read:packages scope; needed because the
-#                          default GITHUB_TOKEN cannot read exeris-kernel snapshots
-#                          from a different repository.
+#   GITHUB_TOKEN            — provided automatically; has packages:write on this repo only.
+#   GPG_PRIVATE_KEY         — armored private key that signs release artefacts (releases only).
+#   GPG_PASSPHRASE          — its passphrase (releases only).
+#   CENTRAL_TOKEN_USERNAME  — Central Portal user token name, from central.sonatype.com/usertoken
+#   CENTRAL_TOKEN_PASSWORD  — and its secret (real releases only, not the dry run).
+#
+# The kernel resolves from Maven Central, so the build needs no cross-repository package token.
 
 on:
   push:
@@ -30,6 +41,11 @@ on:
         description: 'Next development version (e.g. 1.1.0-SNAPSHOT). Leave empty to skip post-release bump-and-commit.'
         required: false
         type: string
+      centralDryRun:
+        description: 'Build, sign and bundle the release for Central without uploading, deploying or tagging anything.'
+        required: false
+        type: boolean
+        default: false
       skipTests:
         description: 'Skip tests during deploy (use only for emergency re-publish).'
         required: false
@@ -43,15 +59,16 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: write
       packages: write
 
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      PACKAGES_READ_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
       MAVEN_OPTS: '-Xmx2g'
+      IS_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.releaseVersion != '' }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.centralDryRun }}
 
     steps:
       - name: Checkout
@@ -59,22 +76,26 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up JDK 25 (LTS baseline)
+      - name: Refuse a dry run without a release version
+        if: env.DRY_RUN == 'true' && env.IS_RELEASE != 'true'
+        run: |
+          echo "::error::centralDryRun needs releaseVersion: Central refuses SNAPSHOT versions, so there is nothing to rehearse."
+          exit 1
+
+      # gpg-passphrase is the NAME of the environment variable maven-gpg-plugin reads, not the
+      # passphrase. It must match the variable the release steps export; with the action's default
+      # name the plugin reads a variable nobody set and signing fails with "No pinentry".
+      - name: Set up JDK 25 (LTS baseline) and import the signing key
         uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '25'
           cache: maven
-
-      - name: Verify settings token wiring
-        run: |
-          if [ -z "${PACKAGES_READ_TOKEN}" ]; then
-            echo "::error::PACKAGES_READ_TOKEN secret is not set. Create a PAT (classic) with read:packages scope and add it as a repository secret."
-            exit 1
-          fi
+          gpg-private-key: ${{ env.IS_RELEASE == 'true' && secrets.GPG_PRIVATE_KEY || '' }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
       - name: Configure git identity (release only)
-        if: github.event_name == 'workflow_dispatch' && inputs.releaseVersion != ''
+        if: env.IS_RELEASE == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -90,7 +111,7 @@ jobs:
       # Pushing the tag carries the commit's objects, so it stays reachable by tag — which is
       # what a release tag is for. `main` gets the next-snapshot bump instead, further down.
       - name: Set release version and commit it
-        if: github.event_name == 'workflow_dispatch' && inputs.releaseVersion != ''
+        if: env.IS_RELEASE == 'true'
         run: |
           mvn -B -ntp -s .github/maven-settings.xml versions:set \
             -DnewVersion=${{ inputs.releaseVersion }} \
@@ -99,17 +120,88 @@ jobs:
           git add -A
           git commit -m "release: v${{ inputs.releaseVersion }}"
 
-      - name: Build, test, deploy
+      - name: Build the Central bundle without uploading it (dry run)
+        if: env.DRY_RUN == 'true'
+        run: >
+          mvn -B -ntp -s .github/maven-settings.xml -P release
+          clean deploy
+          -DskipUpload=true
+          -DskipTests=${{ inputs.skipTests || false }}
+        env:
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+      # Uploads a deployment and waits for Central's validation (waitUntil=validated). It is not
+      # published: press Publish in the Central Portal once its validation result has been read.
+      - name: Upload the release deployment to Maven Central
+        if: env.IS_RELEASE == 'true' && env.DRY_RUN != 'true'
+        run: >
+          mvn -B -ntp -s .github/maven-settings.xml -P release
+          clean deploy
+          -DskipTests=${{ inputs.skipTests || false }}
+        env:
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+
+      # Central validates per artefact, so one coordinate missing one file refuses the whole bundle.
+      # Checked on the bundle Central receives (or, on the dry run, would receive): every published
+      # jar coordinate carries a pom, jar, sources and javadoc, and every file a signature.
+      - name: Check the Central bundle
+        if: env.IS_RELEASE == 'true'
+        run: |
+          set -euo pipefail
+          bundle=target/central-publishing/central-bundle.zip
+          test -f "$bundle" || { echo "::error::$bundle was not produced"; exit 1; }
+          python3 - "$bundle" <<'PY'
+          import sys, zipfile, collections
+          names = [n for n in zipfile.ZipFile(sys.argv[1]).namelist() if not n.endswith('/')]
+          by_dir = collections.defaultdict(set)
+          for n in names:
+              d, _, f = n.rpartition('/')
+              by_dir[d].add(f)
+          problems = []
+          for d, files in sorted(by_dir.items()):
+              parts = d.split('/')
+              artifact, version = parts[-2], parts[-1]
+              base = f"{artifact}-{version}"
+              pom = f"{base}.pom"
+              if pom not in files:
+                  problems.append(f"{d}: no {pom}")
+                  continue
+              wanted = [pom]
+              if f"{base}.jar" in files:
+                  wanted += [f"{base}.jar", f"{base}-sources.jar", f"{base}-javadoc.jar"]
+              for w in wanted:
+                  if w not in files:
+                      problems.append(f"{d}: missing {w}")
+                  if f"{w}.asc" not in files:
+                      problems.append(f"{d}: {w} is unsigned")
+          print(f"{len(by_dir)} coordinates in the bundle")
+          for p in problems:
+              print(f"::error::{p}")
+          sys.exit(1 if problems else 0)
+          PY
+
+      # Snapshots on every push; on a release, the same version after Central accepted it. The
+      # release build already ran the tests, so this second build does not run them again.
+      - name: Build, test, deploy to GitHub Packages
+        if: env.DRY_RUN != 'true'
         run: >
           mvn -B -ntp -s .github/maven-settings.xml
           clean deploy
-          -DskipTests=${{ inputs.skipTests || false }}
+          -DskipTests=${{ env.IS_RELEASE == 'true' || inputs.skipTests || false }}
 
       - name: Tag release
-        if: github.event_name == 'workflow_dispatch' && inputs.releaseVersion != ''
+        if: env.IS_RELEASE == 'true' && env.DRY_RUN != 'true'
         run: |
           git tag -a "v${{ inputs.releaseVersion }}" -m "Release ${{ inputs.releaseVersion }}"
           git push origin "v${{ inputs.releaseVersion }}"
+          {
+            echo "### v${{ inputs.releaseVersion }} uploaded to Maven Central, deployed to GitHub Packages, tagged"
+            echo ""
+            echo "The Central deployment is **validated but not published**. Read its validation result in"
+            echo "the Central Portal and press Publish there. Until then it can be dropped."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Computed from the branch, not from the release commit. The bump belongs on the branch's
       # own history, and building it on top of an unpushed release commit would drag that commit
@@ -122,7 +214,7 @@ jobs:
       # By that point the release is published and tagged; only the bump is outstanding, and it
       # is a one-line PR. Re-running the workflow would try to publish an existing version.
       - name: Bump to next snapshot
-        if: github.event_name == 'workflow_dispatch' && inputs.releaseVersion != '' && inputs.nextSnapshotVersion != ''
+        if: env.IS_RELEASE == 'true' && env.DRY_RUN != 'true' && inputs.nextSnapshotVersion != ''
         run: |
           git reset --hard "origin/${{ github.ref_name }}"
           mvn -B -ntp -s .github/maven-settings.xml versions:set \

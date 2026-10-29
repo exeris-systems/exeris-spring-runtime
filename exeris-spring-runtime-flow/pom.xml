@@ -14,6 +14,7 @@
     <artifactId>exeris-spring-runtime-flow</artifactId>
 
     <name>Exeris Spring Runtime :: Flow / Saga Bridge</name>
+    <url>https://github.com/exeris-systems/exeris-spring-runtime</url>
     <description>
         Compatibility-friendly bridge that exposes the kernel FlowEngine to Spring beans
         as a structured asynchronous / saga programming model — without making

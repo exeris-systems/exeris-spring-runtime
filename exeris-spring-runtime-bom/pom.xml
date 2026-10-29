@@ -15,6 +15,7 @@
     <packaging>pom</packaging>
 
     <name>Exeris Spring Runtime :: BOM</name>
+    <url>https://github.com/exeris-systems/exeris-spring-runtime</url>
     <description>Bill of Materials for consistent version alignment across all exeris-spring-runtime modules.</description>
 
     <dependencyManagement>

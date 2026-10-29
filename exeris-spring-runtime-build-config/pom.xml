@@ -15,6 +15,7 @@
     <packaging>pom</packaging>
 
     <name>Exeris Spring Runtime :: Build Configuration</name>
+    <url>https://github.com/exeris-systems/exeris-spring-runtime</url>
     <description>Shared build tooling configuration (Checkstyle, PMD, etc.) for the exeris-spring-runtime project.</description>
 
     <!--
