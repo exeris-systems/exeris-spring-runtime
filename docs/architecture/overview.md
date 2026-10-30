@@ -1,3 +1,12 @@
+---
+title: "Architecture Overview"
+type: explanation
+visibility: public
+owning-repo: exeris-spring-runtime
+status: active
+last-verified: 2026-10-30
+---
+
 # Architecture Overview
 
 **Repository:** `exeris-spring-runtime`  

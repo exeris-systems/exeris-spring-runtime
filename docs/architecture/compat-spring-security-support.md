@@ -1,3 +1,12 @@
+---
+title: "Spring Security in Compatibility Mode — what is supported"
+type: reference
+visibility: public
+owning-repo: exeris-spring-runtime
+status: active
+last-verified: 2026-10-30
+---
+
 # Spring Security in Compatibility Mode — what is supported
 
 **Audience:** engineers evaluating or performing a brownfield migration of a Spring application onto
@@ -109,7 +118,7 @@ the kernel applies no per-route requirement.
 A scope or `authenticated()` rule is decided on the identity the kernel's `SecurityProvider` derives
 from the bearer token — not on the Spring `JwtDecoder`, which only runs later, inside Compatibility
 Mode. The Community provider takes its verification keys from three configuration keys, set as
-ordinary Spring properties and read by the kernel through `ExerisSpringConfigProvider` unaliased:
+ordinary Spring properties and read by the kernel through `ExerisSpringConfigProvider` under the same names:
 
 | Property | Meaning |
 |:--|:--|

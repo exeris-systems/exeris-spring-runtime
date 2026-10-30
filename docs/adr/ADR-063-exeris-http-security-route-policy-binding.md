@@ -1,3 +1,12 @@
+---
+title: "ADR-063: `ExerisHttpSecurity` — Spring-shaped route rules compile onto the kernel's authorization decision"
+type: adr
+visibility: public
+owning-repo: exeris-spring-runtime
+status: active
+slug: adr/ADR-063
+---
+
 # ADR-063: `ExerisHttpSecurity` — Spring-shaped route rules compile onto the kernel's authorization decision
 
 | Attribute       | Value                                                                                                                                                                                                                          |
