@@ -108,18 +108,25 @@ the kernel applies no per-route requirement.
 
 A scope or `authenticated()` rule is decided on the identity the kernel's `SecurityProvider` derives
 from the bearer token — not on the Spring `JwtDecoder`, which only runs later, inside Compatibility
-Mode. The Community provider the kernel discovers by default is constructed with **no verification
-keys** and a placeholder issuer, and the kernel has no configuration key for an issuer, an audience
-or a JWKS endpoint. On a stock Community kernel, therefore, **every token is refused** and every
-route that requires identity answers `401`. Routes declared `permitAll()` are unaffected.
+Mode. The Community provider takes its verification keys from three configuration keys, set as
+ordinary Spring properties and read by the kernel through `ExerisSpringConfigProvider` unaliased:
 
-Until the kernel reads that configuration, a deployment that binds a policy requiring identity
-supplies its own `SecurityProvider` through `META-INF/services`, with a priority above the
-Community provider's `0`, delegating to
-`new CommunitySecurityProvider(keysByKid, expectedIssuer, expectedAudience)`. Verification —
-signature, issuer, audience, expiry, scope mapping — stays the kernel's own. This runtime's
-`RoutePolicyRuntimeIntegrationTest` uses exactly that shape. The key set is a fixed snapshot: the
-kernel's rotating-JWKS variant is not public.
+| Property | Meaning |
+|:--|:--|
+| `security.jwks.uri` | The JWKS document tokens are verified against: an absolute `http` or `https` URI with a host. |
+| `security.jwt.issuer` | The `iss` claim a token must present. |
+| `security.jwt.audience` | The `aud` claim a token must present. |
+
+All three or none. With none set the provider holds no key and **every token is refused**, so every
+route that requires identity answers `401`; routes declared `permitAll()` are unaffected. A partial
+set fails the kernel boot with `EX-BOOT-0002` naming the missing key. The key set is fetched on the
+first token and rotated by the kernel; its full contract is the kernel's
+`docs/subsystems/security.md`.
+
+These are the kernel's keys, not Spring Boot's: `spring.security.oauth2.resourceserver.jwt.*` configures
+the Compatibility Mode `JwtDecoder` and does not reach the edge. A deployment that verifies tokens at
+both layers sets both, against the same issuer. `RoutePolicyRuntimeIntegrationTest` boots the kernel
+with the three keys pointing at a loopback JWKS server.
 
 **One divergence to know about while it lasts.** The kernel derives the scopes it checks through its
 own `ClaimsMapper`; Spring derives authorities through your `Converter<Jwt, …>`. For a token whose

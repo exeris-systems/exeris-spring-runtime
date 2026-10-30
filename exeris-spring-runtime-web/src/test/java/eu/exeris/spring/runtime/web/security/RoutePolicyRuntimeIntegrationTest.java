@@ -5,6 +5,8 @@
 package eu.exeris.spring.runtime.web.security;
 
 import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -12,13 +14,17 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
@@ -32,6 +38,10 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.nimbusds.jose.jwk.JWKSet;
+import com.nimbusds.jose.jwk.RSAKey;
+import com.sun.net.httpserver.HttpServer;
+
 import eu.exeris.kernel.community.testkit.security.TestJwt;
 import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpRoutePolicy;
@@ -41,7 +51,6 @@ import eu.exeris.spring.boot.autoconfigure.ExerisSpringConfigProvider;
 import eu.exeris.spring.runtime.web.autoconfigure.ExerisCompatAutoConfiguration;
 import eu.exeris.spring.runtime.web.autoconfigure.ExerisSecurityErrorMappingAutoConfiguration;
 import eu.exeris.spring.runtime.web.compat.ExerisCompatDispatcher;
-import eu.exeris.spring.runtime.web.test.TestJwtSecurityProvider;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
@@ -58,12 +67,40 @@ import static org.assertj.core.api.Assertions.fail;
  * scopes, and that an edge admission does not bypass {@code @PreAuthorize} on the Compatibility Mode
  * handler it admits to.
  *
- * <p>Tests that present a token boot the kernel {@code security} subsystem, which selects
- * {@link TestJwtSecurityProvider}: the Community verification pipeline over the testkit signing key.
+ * <p>Tests that present a token boot the kernel {@code security} subsystem and hand it its
+ * verification keys the way a deployment does: {@code security.jwks.uri}, {@code security.jwt.issuer}
+ * and {@code security.jwt.audience} in the Spring {@code Environment}, read by the kernel through
+ * {@link ExerisSpringConfigProvider}. The JWKS endpoint is a loopback server publishing the testkit
+ * signing key, so signature, issuer, audience and expiry are checked by the stock Community provider.
  *
  * @see "ADR-063: Route Security Policy"
  */
 class RoutePolicyRuntimeIntegrationTest {
+
+    private static HttpServer jwksServer;
+
+    @BeforeAll
+    static void publishTheTestkitKeyAsAJwksDocument() throws IOException {
+        byte[] jwks = new JWKSet(new RSAKey.Builder(TestJwt.testPublicKey()).keyID(TestJwt.TEST_KID).build())
+                .toString()
+                .getBytes(StandardCharsets.UTF_8);
+        jwksServer = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        jwksServer.createContext("/jwks", exchange -> {
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, jwks.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(jwks);
+            }
+        });
+        jwksServer.start();
+    }
+
+    @AfterAll
+    static void stopTheJwksServer() {
+        if (jwksServer != null) {
+            jwksServer.stop(0);
+        }
+    }
 
     @Test
     void kernelEnforcesTheCompiledPolicyOnTheAdmissionPath() throws Exception {
@@ -164,7 +201,7 @@ class RoutePolicyRuntimeIntegrationTest {
         AtomicInteger handled = new AtomicInteger();
         ExerisRuntimeLifecycle lifecycle = new ExerisRuntimeLifecycle(
                 properties(ExerisRuntimeProperties.Mode.PURE, SECURED_SUBSYSTEMS),
-                new ExerisSpringConfigProvider(environmentWithPort(port)),
+                new ExerisSpringConfigProvider(environmentWithVerificationKeys(port)),
                 Optional.of(exchange -> {
                     handled.incrementAndGet();
                     exchange.respond(eu.exeris.kernel.spi.http.HttpResponse.noBody(
@@ -229,7 +266,7 @@ class RoutePolicyRuntimeIntegrationTest {
 
         ExerisRuntimeLifecycle lifecycle = new ExerisRuntimeLifecycle(
                 properties(ExerisRuntimeProperties.Mode.COMPATIBILITY, SECURED_SUBSYSTEMS),
-                new ExerisSpringConfigProvider(environmentWithPort(port)),
+                new ExerisSpringConfigProvider(environmentWithVerificationKeys(port)),
                 Optional.of(countingDispatcher),
                 Optional.of(policy));
 
@@ -291,7 +328,7 @@ class RoutePolicyRuntimeIntegrationTest {
     }
 
     /**
-     * A token the kernel's {@link TestJwtSecurityProvider} verifies, carrying a literal
+     * A token signed by the key the JWKS server publishes, carrying a literal
      * space-delimited {@code scope} claim. The Spring side reads the same claim: its default
      * converter grants {@code SCOPE_<scope>} for each entry.
      */
@@ -326,9 +363,27 @@ class RoutePolicyRuntimeIntegrationTest {
     }
 
     private static StandardEnvironment environmentWithPort(int port) {
+        return environment(Map.of("exeris.runtime.network.port", port));
+    }
+
+    /**
+     * The listener port plus the three keys that arm the kernel's Community {@code SecurityProvider}
+     * over a JWKS endpoint. Set as plain Spring properties, so the test proves they reach the kernel
+     * through {@link ExerisSpringConfigProvider} unaliased.
+     */
+    private static StandardEnvironment environmentWithVerificationKeys(int port) {
+        Map<String, Object> properties = new HashMap<>();
+        properties.put("exeris.runtime.network.port", port);
+        properties.put("security.jwks.uri",
+                "http://127.0.0.1:" + jwksServer.getAddress().getPort() + "/jwks");
+        properties.put("security.jwt.issuer", TestJwt.EXPECTED_ISSUER);
+        properties.put("security.jwt.audience", TestJwt.EXPECTED_AUDIENCE);
+        return environment(properties);
+    }
+
+    private static StandardEnvironment environment(Map<String, Object> properties) {
         StandardEnvironment environment = new StandardEnvironment();
-        environment.getPropertySources().addFirst(new MapPropertySource(
-                "routePolicyTest", Map.of("exeris.runtime.network.port", port)));
+        environment.getPropertySources().addFirst(new MapPropertySource("routePolicyTest", properties));
         return environment;
     }
 
