@@ -66,7 +66,7 @@
         <!-- Pinned to a published kernel release (clean, not -SNAPSHOT), resolved from Maven
              Central. The GA line (eu.exeris:*) targets JDK 25 LTS, class-file 69.0; the preview
              line is a separate groupId. See ADR-068 for the artefact model. -->
-        <exeris.kernel.version>0.13.0</exeris.kernel.version>
+        <exeris.kernel.version>0.13.1</exeris.kernel.version>
 
         <!-- Spring Boot dual matrix per ADR-028. Tracking the active 4.x line (4.1.x)
              maintains load-bearing verification against current releases. -->
