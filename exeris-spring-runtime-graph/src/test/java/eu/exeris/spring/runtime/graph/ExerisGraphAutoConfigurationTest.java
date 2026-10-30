@@ -56,7 +56,7 @@ class ExerisGraphAutoConfigurationTest {
             GraphEngineSupplier supplier = context.getBean(GraphEngineSupplier.class);
 
             assertThat(supplier.tryGet())
-                    .as("kernel did not bind GRAPH_ENGINE → tryGet returns empty")
+                    .as("kernel did not bind GraphKernelProviders.GRAPH_ENGINE → tryGet returns empty")
                     .isEmpty();
 
             assertThatThrownBy(supplier::requireEngine)
