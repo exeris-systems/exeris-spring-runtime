@@ -1,3 +1,12 @@
+---
+title: "ADR-067: Binary neutrality of the single published artefact across the Spring Boot dual matrix"
+type: adr
+visibility: public
+owning-repo: exeris-spring-runtime
+status: superseded
+slug: adr/ADR-067
+---
+
 # ADR-067: Binary neutrality of the single published artefact across the Spring Boot dual matrix
 
 | Attribute       | Value                                                                                                                                                                                                             |

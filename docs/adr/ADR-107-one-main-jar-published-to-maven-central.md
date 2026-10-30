@@ -1,3 +1,12 @@
+---
+title: "ADR-107: One main jar for both Spring Boot lines, published to Maven Central with its sources, javadoc and signatures"
+type: adr
+visibility: public
+owning-repo: exeris-spring-runtime
+status: active
+slug: adr/ADR-107
+---
+
 # ADR-107: One main jar for both Spring Boot lines, published to Maven Central with its sources, javadoc and signatures
 
 | Attribute       | Value                                                                                                                                                                                                             |

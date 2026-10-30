@@ -1,3 +1,12 @@
+---
+title: "Spring Boot 4 dual matrix — status and friction inventory"
+type: reference
+visibility: public
+owning-repo: exeris-spring-runtime
+status: active
+last-verified: 2026-10-30
+---
+
 # Spring Boot 4 dual matrix — status and friction inventory
 
 Working document for the ADR-028 dual-matrix work. ADR-028 is the decision; this file records **what
