@@ -182,6 +182,65 @@ class ExerisBootstrapIntegrationTest {
         }
     }
 
+    /**
+     * A stop requested while the kernel is still inside {@code boot()} is bounded by
+     * {@code exeris.runtime.shutdown.timeout-seconds}. {@code KernelBootstrap.shutdown()} called from a
+     * foreign thread at that point waits for the boot to unwind and cannot be interrupted, so the
+     * lifecycle must join the boot thread on its own deadline before it reaches for that call.
+     *
+     * <p>The environment answers normally until a read is made from inside {@code KernelBootstrap},
+     * which pins the block to the kernel's own boot window rather than to {@code prepareBootstrap()}.
+     */
+    @Test
+    void stopDuringKernelBoot_isBoundedByTheShutdownTimeout() throws Exception {
+        ExerisRuntimeProperties properties = new ExerisRuntimeProperties(
+                true,
+                false,
+                new ExerisRuntimeProperties.WebProperties(ExerisRuntimeProperties.Mode.PURE),
+                new ExerisRuntimeProperties.LifecycleProperties(30),
+                new ExerisRuntimeProperties.ShutdownProperties(true, 1)
+        );
+        CountDownLatch kernelReadStarted = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ExerisRuntimeLifecycle lifecycle = new ExerisRuntimeLifecycle(
+                properties,
+                new ExerisSpringConfigProvider(blockingInsideKernelBoot(kernelReadStarted, release)),
+                java.util.Optional.empty()
+        );
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try {
+            Future<?> startFuture = executor.submit(lifecycle::start);
+            assertThat(kernelReadStarted.await(10, TimeUnit.SECONDS))
+                    .as("the kernel must reach its own configuration read inside boot()")
+                    .isTrue();
+            Thread bootThread = awaitRuntimeThread(Duration.ofSeconds(5));
+
+            long stopStartedAt = System.nanoTime();
+            Future<?> stopFuture = executor.submit(() -> lifecycle.stop());
+            assertThatThrownBy(() -> stopFuture.get(5, TimeUnit.SECONDS))
+                    .as("stop() must give up on its own deadline instead of waiting for the boot to unwind")
+                    .hasCauseInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("shutdown timed out");
+            assertThat(Duration.ofNanos(System.nanoTime() - stopStartedAt)).isLessThan(Duration.ofSeconds(5));
+
+            bootThread.join(Duration.ofSeconds(5).toMillis());
+            assertThat(bootThread.isAlive())
+                    .as("the boot thread interrupted on the shutdown deadline must unwind")
+                    .isFalse();
+            assertThat(lifecycle.isRunning()).isFalse();
+            // start() may return or report the aborted boot; what it must not do is keep waiting.
+            try {
+                startFuture.get(5, TimeUnit.SECONDS);
+            } catch (java.util.concurrent.ExecutionException _) {
+                // an aborted startup is an acceptable outcome of a stop that interrupted it
+            }
+        } finally {
+            release.countDown();
+            shutdownExecutor(executor);
+        }
+    }
+
     @Test
     void prepareBootstrap_withNullEnvironmentStillReservesSingleSlot() {
         ExerisSpringConfigProvider provider = new ExerisSpringConfigProvider(null);
@@ -348,6 +407,58 @@ class ExerisBootstrapIntegrationTest {
         });
     }
 
+    /**
+     * The lifecycle is the only owner of the kernel stop sequence. A kernel that registered its own
+     * JVM shutdown hook would start a second stop on {@code SIGTERM}, racing Spring's context close
+     * and able to stop the kernel ahead of the beans that still use it.
+     *
+     * <p>The kernel exposes no public view of its hook, so the built bootstrap's setting is read
+     * reflectively; a rename of that field fails this test loudly rather than passing it silently.
+     */
+    @Test
+    void lifecycleStart_leavesTheKernelShutdownHookDisabled() throws Exception {
+        int port = 0;
+        withKernelHttpSystemProperties(port, () -> {
+            try (var ctx = createContext(
+                    Map.of(
+                            "exeris.runtime.auto-start", "false",
+                            "exeris.runtime.network.port", Integer.toString(port),
+                            "exeris.runtime.persistence.jdbc-url", "jdbc:h2:mem:exeris_bootstrap_hook_test;DB_CLOSE_DELAY=-1",
+                            "exeris.runtime.persistence.username", "sa",
+                            "exeris.runtime.persistence.password", "",
+                            "exeris.runtime.persistence.run-migrations", "false"
+                    ),
+                    LifecycleHandlerConfig.class)) {
+                ExerisRuntimeLifecycle lifecycle = ctx.getBean(ExerisRuntimeLifecycle.class);
+
+                lifecycle.start();
+                try {
+                    assertThat(lifecycle.isRunning()).isTrue();
+                    assertThat(readField(runningBootstrap(lifecycle), "registerShutdownHook"))
+                            .as("the kernel must not register its own JVM shutdown hook")
+                            .isEqualTo(Boolean.FALSE);
+                } finally {
+                    lifecycle.stop();
+                }
+                assertThat(lifecycle.isRunning()).isFalse();
+            } catch (Exception ex) {
+                throw new RuntimeException(ex);
+            }
+        });
+    }
+
+    private static Object runningBootstrap(ExerisRuntimeLifecycle lifecycle) throws ReflectiveOperationException {
+        Object bootstrap = ((java.util.concurrent.atomic.AtomicReference<?>) readField(lifecycle, "bootstrap")).get();
+        assertThat(bootstrap).as("a running lifecycle holds its KernelBootstrap").isNotNull();
+        return bootstrap;
+    }
+
+    private static Object readField(Object target, String name) throws ReflectiveOperationException {
+        java.lang.reflect.Field field = target.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(target);
+    }
+
     @Test
     void lifecycleRunning_keepsNonDaemonBootThreadAlive() throws Exception {
         int port = 0;
@@ -480,6 +591,41 @@ class ExerisBootstrapIntegrationTest {
                         Thread.currentThread().interrupt();
                     }
                     return defaultEnvironmentValue(method.getReturnType());
+                }
+        );
+    }
+
+    private static Environment blockingInsideKernelBoot(CountDownLatch kernelReadStarted,
+                                                        CountDownLatch release) {
+        Environment delegate = new org.springframework.core.env.StandardEnvironment();
+        StackWalker walker = StackWalker.getInstance();
+        return (Environment) Proxy.newProxyInstance(
+                ExerisBootstrapIntegrationTest.class.getClassLoader(),
+                new Class<?>[]{Environment.class},
+                (proxy, method, args) -> {
+                    if (method.getDeclaringClass() == Object.class) {
+                        return switch (method.getName()) {
+                            case "toString" -> "kernel-boot-blocking-test-environment";
+                            case "hashCode" -> System.identityHashCode(proxy);
+                            case "equals" -> proxy == args[0];
+                            default -> null;
+                        };
+                    }
+                    boolean insideKernelBoot = walker.walk(frames -> frames.anyMatch(
+                            frame -> frame.getClassName().startsWith("eu.exeris.kernel.core.bootstrap.KernelBootstrap")));
+                    if (insideKernelBoot) {
+                        kernelReadStarted.countDown();
+                        try {
+                            release.await();
+                        } catch (InterruptedException _) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }
+                    try {
+                        return method.invoke(delegate, args);
+                    } catch (java.lang.reflect.InvocationTargetException ex) {
+                        throw ex.getCause();
+                    }
                 }
         );
     }
