@@ -72,8 +72,9 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  * interrupts that thread and fails the stop.
  *
  * <p>Shutdown executes gracefully in three stages: closes transport ingress to reject new requests,
- * drains in-flight requests while response-writing reactors remain active, and finally executes
- * kernel teardown via {@code KernelBootstrap.shutdown()}.
+ * drains in-flight requests while response-writing reactors remain active, and finally stops the
+ * kernel subsystems on the boot thread. {@code KernelBootstrap.shutdown()} is called last, as an
+ * idempotent backstop.
  *
  * <h2>Phase Ordering</h2>
  * <p>Phase {@code Integer.MAX_VALUE - 100} ensures this lifecycle starts after
