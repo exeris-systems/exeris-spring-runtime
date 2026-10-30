@@ -75,6 +75,7 @@
         <!-- Fallback keeping reactor resolvable if neither matrix profile is active. -->
         <spring.boot.version>${spring.boot.sb3.version}</spring.boot.version>
         <spring.framework.version>6.2.4</spring.framework.version>
+        <logback.version>1.6.6</logback.version>
 
         <!-- Build tooling -->
         <maven.compiler.plugin.version>3.14.1</maven.compiler.plugin.version>
@@ -108,6 +109,20 @@
                 <version>${exeris.kernel.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+
+            <!-- Logback is ahead of both Boot BOMs: the versions they manage carry CVE-2026-9828
+                 and CVE-2026-19880, fixed in 1.6.3. Declared before the BOM import, which only
+                 supplies versions not already managed here. -->
+            <dependency>
+                <groupId>ch.qos.logback</groupId>
+                <artifactId>logback-classic</artifactId>
+                <version>${logback.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>ch.qos.logback</groupId>
+                <artifactId>logback-core</artifactId>
+                <version>${logback.version}</version>
             </dependency>
 
             <!-- Spring Boot BOM — governs all Spring dependency versions.
