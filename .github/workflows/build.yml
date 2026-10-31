@@ -130,6 +130,33 @@ jobs:
           print(f"all classes at major {EXPECTED_MAJOR}, minor 0 — no preview stamp")
           EOF
 
+      # A consumer imports the BOM into its own dependencyManagement, so every coordinate the
+      # published BOM manages overrides what the consumer's Spring Boot line would choose. The BOM
+      # must therefore manage this project's own modules and nothing else: inheriting the parent's
+      # Spring Boot import would hand an SB4 application the SB3 line's Spring Framework.
+      - name: Published BOM manages only eu.exeris coordinates
+        run: |
+          python3 - <<'EOF'
+          import sys, xml.etree.ElementTree as ET
+          ns = {'m': 'http://maven.apache.org/POM/4.0.0'}
+          root = ET.parse('exeris-spring-runtime-bom/.flattened-pom.xml').getroot()
+          problems = []
+          if root.find('m:parent', ns) is not None:
+              problems.append('the published BOM declares a parent')
+          deps = root.findall('m:dependencyManagement/m:dependencies/m:dependency', ns)
+          if not deps:
+              problems.append('the published BOM manages no coordinate')
+          for d in deps:
+              g = d.findtext('m:groupId', namespaces=ns)
+              a = d.findtext('m:artifactId', namespaces=ns)
+              if g != 'eu.exeris' or not a.startswith('exeris-spring-'):
+                  problems.append(f'the published BOM manages {g}:{a}')
+          print(f'{len(deps)} coordinates managed by the published BOM')
+          for p in problems:
+              print(f'::error::{p}')
+          sys.exit(1 if problems else 0)
+          EOF
+
       - name: Upload Surefire/Failsafe reports on failure
         if: failure()
         uses: actions/upload-artifact@v7

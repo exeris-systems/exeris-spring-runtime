@@ -127,8 +127,11 @@ do not change. The items below reach you through this runtime's own paths.
   the kernel BOM and the parent's own pins. A Spring Boot 4 application that imported it therefore
   resolved Spring Framework 6.2.x and did not start. A Spring Boot 3 application got 3.5.14's versions
   over its own. The published BOM now declares no parent and manages only the `eu.exeris` modules, and
-  CI fails if it manages anything else (#90). If you worked around this by not importing the BOM, you
-  can import it again.
+  CI fails if it manages anything else (#90, ADR-107 amendment). If you worked around this by not
+  importing the BOM, you can import it again. **If you relied on the BOM for Spring or other
+  third-party versions**, with no `spring-boot-starter-parent` and no `spring-boot-dependencies` import
+  of your own, those dependencies no longer resolve without a version: import
+  `org.springframework.boot:spring-boot-dependencies` for your Spring Boot line alongside this BOM.
 - **Logback 1.6.6 is managed in this project's build, ahead of both Spring Boot BOMs.** Both BOMs
   manage a 1.5.x affected by CVE-2026-9828 and CVE-2026-19880. Logback reaches this build through the
   optional resource-server starter of the web module. The pin is not part of the published BOM, so

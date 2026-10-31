@@ -19,3 +19,4 @@ replay_pid*
 .claude/worktrees/
 .agents-state/
 working-notes/eval-report.json
+.flattened-pom.xml
