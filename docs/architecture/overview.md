@@ -1,9 +1,18 @@
+---
+title: "Architecture Overview"
+type: explanation
+visibility: public
+owning-repo: exeris-spring-runtime
+status: active
+last-verified: 2026-10-30
+---
+
 # Architecture Overview
 
 **Repository:** `exeris-spring-runtime`  
-**Version:** see the root `pom.xml` `<version>` for the current development coordinate. Release train: `0.7.0` (Phase 4C graph seam is the highest landed train; see [`CHANGELOG.md`](../../CHANGELOG.md)).  
-**Status:** Phases 0 / 1 / 2 / 3 (3A + 3C) / 3B-α / 4A / 4B / 4C all closed, and the Spring Boot 4 dual matrix has landed (ADR-028; it merged into the untagged 0.7.0 rather than the 0.8.0 train the ADR estimated). Outstanding for 1.0: Phase 5 edge gateway (0.9.0 train, ADR-021), Phase 3B-β/γ (kernel-gated, ADR-031), and per-path route authorization (ADR-063 — accepted, unblocked by the kernel 0.11.0 pin, not yet implemented). See `docs/roadmap-1.0-trl9.md` for the full release-train view.  
-**Kernel target:** `exeris-kernel` 0.11.0 — the GA line of the kernel's two-track model, not the `0.11.0-preview` coordinate. **JDK 25 (LTS), no preview flag** anywhere in the chain: not at compile time, not on the test JVM, not on a consumer's.
+**Version:** see the root `pom.xml` `<version>` for the current development coordinate. Latest release: `0.7.0` (2026-08-19; Phase 4C graph seam is the highest feature train it carries — see [`CHANGELOG.md`](../../CHANGELOG.md)); development is on the `0.8.0` train.  
+**Status:** Phases 0 / 1 / 2 / 3 (3A + 3C) / 3B-α / 4A / 4B / 4C all closed, and the Spring Boot 4 dual matrix has landed (ADR-028; it shipped in 0.7.0 rather than the 0.8.0 train the ADR estimated). Per-path route authorization (ADR-063) is implemented on the 0.8.0 train. Outstanding for 1.0: Phase 5 edge gateway (0.9.0 train, ADR-021) and Phase 3B-β/γ (kernel-gated, ADR-031). See `docs/roadmap-1.0-trl9.md` for the full release-train view.  
+**Kernel target:** `exeris-kernel` 0.13.1 — the GA line of the kernel's two-track model, not its `-preview` line. **JDK 25 (LTS), no preview flag** anywhere in the chain: not at compile time, not on the test JVM, not on a consumer's.
 
 ---
 
@@ -108,11 +117,12 @@ Interpretation rules:
 - **Phase 1** proves host-runtime legitimacy (Exeris-owned ingress path).
 - **Phase 2** adds explicitly scoped, opt-in Spring compatibility.
 - **Phase 3** expands into high-risk tx/context/persistence concerns (3A tx, 3C JDBC bridge per ADR-017).
-- **Phase 3B-α** adds request scope + structured concurrency on `ScopedValue` (ADR-029). Kernel-independent.
+- **Phase 3B-α** adds request scope on `ScopedValue` (ADR-029). Kernel-independent. No fan-out helper
+  ships: `StructuredTaskScope` used directly propagates the scope by itself.
 - **Phase 3B-β/γ** add W3C `traceparent` propagation and OTel emission (ADR-031). **Kernel-gated** — waits
-  on the kernel `TraceContext`/`ScopedValue` slot and `PrometheusOtlpTelemetrySink`; neither shipped as of
-  the pinned kernel 0.11.0. The kernel places the `TraceContext` carrier in its consolidated 1.0 GA
-  roadmap around Sprint 0.12, so this is not near-term.
+  on the kernel `TraceContext`/`ScopedValue` slot and `PrometheusOtlpTelemetrySink`; neither has shipped as
+  of the pinned kernel 0.13.1. The kernel's support matrix places OTLP export and distributed tracing
+  post-1.0, its `~v0.12` target having passed unmet, so this is not near-term.
 - **Phase 4A / 4B / 4C** add the events, flow/saga, and graph seams — each a separate opt-in module,
   each default-off (ADR-027, ADR-030).
 - **Phase 5** adds the edge gateway (ADR-021). Not started; it is **not** a Spring Cloud Gateway bridge.
@@ -196,9 +206,9 @@ The Exeris kernel initialises subsystems in a strict DAG:
 ```
 FOUNDATION:  Memory (sequential)
                 ↓
-SERVICES:    Crypto + Persistence + Graph + Transport   (parallel, StructuredTaskScope)
-                ↓
-RUNTIME:     Events + Flow + HTTP                       (parallel)
+SERVICES:    Crypto + Security + Persistence + Scheduling + Storage → then Graph + Transport
+                ↓                                       (dependency rounds, booting thread)
+RUNTIME:     HTTP + Events + Flow + WebSocket           (dependency rounds, booting thread)
                 ↓
              KERNEL READY
 ```
@@ -207,14 +217,14 @@ Two things this DAG deliberately does **not** contain:
 
 - **`Config` is not a DAG node.** It is resolved by `KernelBootstrap` via `ServiceLoader<ConfigProvider>`
   *before* the orchestrator runs. This repo contributes `ExerisSpringConfigProvider` at priority 150.
-- **`Security` is not a boot node** — it is an L1 Citadel concept (ADR-012). `Exceptions` is not a
-  subsystem layer either.
+- **`Exceptions` is not a subsystem layer.** `Security` is a boot node: Community binds the discovered
+  `SecurityProvider` in a `SERVICES` subsystem (kernel ADR-061).
 
 The canonical source is `exeris-kernel/docs/subsystems/bootstrap.md`; if this diagram and the kernel doc
 disagree, the kernel doc wins.
 
-The Spring `ApplicationContext` starts **after** the kernel reaches `READY` state (or in parallel for
-config-only phases). The lifecycle sequencing is managed by `ExerisRuntimeLifecycle` (in this repo)
+The kernel boots from Spring's lifecycle phase, **after** the `ApplicationContext` has wired its beans,
+and `ExerisRuntimeLifecycle.start()` returns only once the kernel is `READY`. The lifecycle sequencing is managed by `ExerisRuntimeLifecycle` (in this repo)
 which implements `SmartLifecycle` and coordinates with `KernelBootstrap` in core.
 
 Bootstrap order invariant:
@@ -222,7 +232,8 @@ Bootstrap order invariant:
 1. Spring `ApplicationContext` refreshes (beans wire, properties bind).
 2. `ExerisRuntimeLifecycle.start()` triggers kernel bootstrap via `KernelBootstrap`.
 3. Kernel loads providers via `ServiceLoader`, initialises all subsystems.
-4. On `KERNEL READY`: `exeris-spring-runtime-web` registers Spring handlers as `HttpHandler` instances.
+4. The Spring-side `HttpHandler` (and the compiled `HttpRoutePolicy`, if one is declared) is bound into
+   `HttpKernelProviders` around the boot, so the kernel dispatches to it from `KERNEL READY` on.
 5. Exeris `HttpServerEngine` starts accepting ingress.
 
 Shutdown order is the exact reverse.
@@ -254,7 +265,7 @@ Forbidden crossings:
 ```
 eu.exeris.spring.boot.autoconfigure.*   — Boot config, conditions, lifecycle wiring
 eu.exeris.spring.runtime.web.*          — Transport/request bridge, handlers, codecs
-eu.exeris.spring.runtime.web.scope.*    — Request scope + structured concurrency (Phase 3B-α)
+eu.exeris.spring.runtime.web.scope.*    — Request scope (Phase 3B-α)
 eu.exeris.spring.runtime.tx.*           — Transaction abstraction bridge
 eu.exeris.spring.runtime.data.*         — Persistence integration (Phase 3C, compat JDBC)
 eu.exeris.spring.runtime.actuator.*     — Health, metrics, diagnostics
@@ -289,13 +300,13 @@ All integration code is adjacent to the kernel hot path. The following invariant
 | Phase 1 | Closed (2026-05-09) | Exeris-owned HTTP ingress, proven wire-level (`ExerisWireLevelRuntimeIntegrationTest`) |
 | Phase 2 | Closed (2026-05-09) | Compatibility-mode `@RestController` bridge, no `DispatcherServlet` |
 | Phase 3A / 3C | Closed (2026-05-09) | `ExerisPlatformTransactionManager`; ADR-017-bounded JDBC bridge |
-| Phase 3B-α | Closed (2026-05-17) | Request scope + structured concurrency (ADR-029) |
-| Phase 3B-β / γ | **Kernel-gated** | Waits on kernel `TraceContext` slot / OTLP sink (ADR-031) — still absent in the pinned kernel 0.11.0 |
+| Phase 3B-α | Closed (2026-05-17) | Request scope on `ScopedValue` (ADR-029) |
+| Phase 3B-β / γ | **Kernel-gated** | Waits on kernel `TraceContext` slot / OTLP sink (ADR-031) — still absent in the pinned kernel 0.13.1 |
 | Phase 4A | Closed (2026-05-09) | Events seam, preview default-off |
 | Phase 4B | Closed (2026-05-11) | Flow/saga seam + durable snapshots, preview default-off |
 | Phase 4C | Closed (2026-05-17) | Graph seam, preview default-off, GA kernel-gated (ADR-030) |
 | SB4 matrix | Landed | Spring Boot 4 dual matrix (ADR-028) — both lines build and test in CI on every push, plus an ADR-067 `binary-neutrality` job comparing Spring call-site descriptors across the two lines. Ships in 0.7.0, not the 0.8.0 train the ADR estimated. **Nominal compatibility, not a support commitment**: Spring Security 7 is a separate axis (ADR-028 obligation 6) |
-| ADR-063 route authorization | Accepted, not implemented | `ExerisHttpSecurity` compiles per-path rules onto the kernel `HttpRoutePolicy`. Was blocked on the kernel pin; unblocked by 0.11.0. Until it lands, a migrating application has no per-path rule surface — and kernel 0.11.0 also removed the Community driver's `/secure` prefix convention |
+| ADR-063 route authorization | Implemented | `ExerisHttpSecurity` compiles per-path rules onto the kernel `HttpRoutePolicy`; the kernel decides 401/403 on the admission path, and `@PreAuthorize` still decides inside the handler. The edge verifies tokens against the JWKS endpoint named by `security.jwks.uri` — see [compat Spring Security support](compat-spring-security-support.md#where-the-edge-gets-its-verification-keys) |
 | Phase 5 | Not started | Edge gateway (ADR-021), 0.9.0 train |
 
 "Closed" means the phase invariants are captured and green — **not** that the module is GA. Phases 4A–4C

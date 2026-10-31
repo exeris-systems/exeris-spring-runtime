@@ -1,3 +1,12 @@
+---
+title: "Spring Security in Compatibility Mode — what is supported"
+type: reference
+visibility: public
+owning-repo: exeris-spring-runtime
+status: active
+last-verified: 2026-10-30
+---
+
 # Spring Security in Compatibility Mode — what is supported
 
 **Audience:** engineers evaluating or performing a brownfield migration of a Spring application onto
@@ -5,7 +14,9 @@ the Exeris runtime.
 
 **Read this before migrating.** It tells you whether your security configuration survives the move,
 what it becomes, and what has no equivalent yet. Nothing here is aspirational — every row describes
-behaviour that exists in `0.7.0`.
+behaviour that exists in the current code (the `0.8.0` train). The per-path rule surface
+(`ExerisHttpSecurity`) and the edge's verification-key configuration are newer than the `0.7.0`
+release; everything else is in `0.7.0`.
 
 **Mode:** everything below is Compatibility Mode (`exeris.runtime.web.mode=compatibility`) unless a
 row says otherwise. Pure Mode applications do not use Spring Security's request-path machinery at
@@ -20,7 +31,8 @@ Exeris owns HTTP ingress. There is no servlet container, so there is no `FilterC
 the resource-server half: a Bearer token is decoded and validated by your `JwtDecoder`, an
 `Authentication` is placed in the `SecurityContextHolder`, and authorization is enforced by method
 security (`@PreAuthorize`, `@Secured`) on your services. Per-path rules
-(`authorizeHttpRequests`) have no equivalent in `0.7.0`.
+(`authorizeHttpRequests`) are rewritten as an `ExerisHttpSecurity` declaration that the kernel enforces
+at admission — see [Per-path rules](#per-path-rules-exerishttpsecurity).
 
 If your application's authorization lives entirely in a `SecurityFilterChain` and nowhere else, it
 does not migrate cleanly today. **The context will refuse to start** rather than serve your traffic
@@ -48,7 +60,7 @@ unauthenticated — see [Startup failures](#startup-failures) below.
 | Feature | Status | Notes |
 |---|---|---|
 | `@PreAuthorize` / `@PostAuthorize` / `@Secured` on beans | **Supported** | Plain Spring AOP; independent of the request path. This is where your authorization should live during a migration. |
-| `authorizeHttpRequests` / `requestMatchers` per-path rules | **Supported, rewritten** | Not by running the chain — it still does not run. Declare an `ExerisHttpSecurity` bean and the runtime compiles it, once at startup, into the kernel's route policy. See [Per-path rules](#per-path-rules-exerishttpsecurity) below for the mapping and its one real reduction. |
+| `authorizeHttpRequests` / `requestMatchers` per-path rules | **Supported, rewritten** | Not by running the chain — it still does not run. Declare an `ExerisHttpSecurity` bean and the runtime compiles it, once at startup, into the kernel's route policy. Mode-neutral: the policy governs Pure Mode ingress too. See [Per-path rules](#per-path-rules-exerishttpsecurity) below for the mapping and its one real reduction. |
 | `hasRole(...)` / `hasAuthority(...)` at the edge | **Not supported** | The kernel's route contract evaluates scopes only — there is no role kind, and simulating one by convention would install a second authority model whose disagreements with Spring's are authorization decisions taken on the wrong basis. Role checks stay in `@PreAuthorize`. |
 | Custom filters in the chain (`addFilterBefore`, …) | **Not supported** | No chain, no filter positions. |
 | `AuthorizationManager` beans used directly by your own code | **Supported** | Nothing stops you calling them; the runtime just does not call them for you. |
@@ -97,9 +109,10 @@ effective policy depends on which one ran.
    lands.
 2. **Fail-closed without the probe routes declared.** `anyRequest().authenticated()` is the line a
    Spring application already writes — and the kernel does not exempt its own `/health`, `/health/live`,
-   `/health/ready`, `/db/ping` and `/db/roundtrip` endpoints from a bound policy. Writing the familiar
+   `/health/ready` and `/db/ping` endpoints from a bound policy. Writing the familiar
    thing would therefore deny orchestrator probes against a perfectly healthy process, and the symptom
-   is a rollout that never becomes ready. Startup fails with those routes named instead.
+   is a rollout that never becomes ready. Startup fails instead, naming each of `/health`,
+   `/health/live`, `/health/ready`, `/db/ping` and `/db/roundtrip` the declaration does not permit.
 
 **Declaring nothing changes nothing.** With no `ExerisHttpSecurity` bean the slot is left unbound and
 the kernel applies no per-route requirement.
@@ -111,6 +124,30 @@ so an edge rule and a `@PreAuthorize` can disagree. Both fail closed, so a disag
 refusal rather than an escalation — but an operator debugging "why is this a 403 when the user has the
 role" needs to know there are two mappings. Kernel 0.11.0 made `ClaimsMapper` supplyable, so this is
 now fixable rather than inherent; closing it is the next slice.
+
+### Where the edge gets its verification keys
+
+A scope or `authenticated()` rule is decided on the identity the kernel's `SecurityProvider` derives
+from the bearer token — not on the Spring `JwtDecoder`, which only runs later, inside Compatibility
+Mode. The Community provider takes its verification keys from three configuration keys, set as
+ordinary Spring properties and read by the kernel through `ExerisSpringConfigProvider` under the same names:
+
+| Property | Meaning |
+|:--|:--|
+| `security.jwks.uri` | The JWKS document tokens are verified against: an absolute `http` or `https` URI with a host. |
+| `security.jwt.issuer` | The `iss` claim a token must present. |
+| `security.jwt.audience` | The `aud` claim a token must present. |
+
+All three or none. With none set the provider holds no key and **every token is refused**, so every
+route that requires identity answers `401`; routes declared `permitAll()` are unaffected. A partial
+set fails the kernel boot with `EX-BOOT-0002` naming the missing key. The key set is fetched on the
+first token and rotated by the kernel; its full contract is the kernel's
+`docs/subsystems/security.md`.
+
+These are the kernel's keys, not Spring Boot's: `spring.security.oauth2.resourceserver.jwt.*` configures
+the Compatibility Mode `JwtDecoder` and does not reach the edge. A deployment that verifies tokens at
+both layers sets both, against the same issuer. `RoutePolicyRuntimeIntegrationTest` boots the kernel
+with the three keys pointing at a loopback JWKS server.
 
 ### Request-path concerns
 
@@ -131,7 +168,8 @@ now fixable rather than inherent; closing it is the next slice.
 | `AccessDeniedException` escapes a handler (e.g. from `@PreAuthorize`) | `403` |
 | Anything else unhandled | `500`, body-less |
 
-Before 0.7.0 the first three were all `500`.
+Before 0.7.0 an escaping `AuthenticationException` or `AccessDeniedException` was a `500`, and a
+presented token that failed validation was not answered at all — the request continued as anonymous.
 
 ---
 
