@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# ADR-067 binary-neutrality gate (supplements ADR-028 obligation 2).
+# Binary-neutrality gate (ADR-107, which supersedes ADR-067; supplements ADR-028 obligation 2).
 #
 # The dual matrix (obligation 2) proves the *source* compiles and tests on both Spring Boot lines.
-# It cannot prove what we actually ship. `deploy.yml` runs `mvn clean deploy` with no profile, so
-# the published jar is built by the default `matrix-sb3` profile — one SB3-compiled binary that
-# ADR-028 then claims runs on SB4 too. Source compatibility does not imply binary compatibility:
+# It cannot prove what we actually ship. Every published jar is built on the `matrix-sb3` line —
+# releases name it explicitly beside `release` — so it is one SB3-compiled binary that ADR-028
+# then claims runs on SB4 too. Source compatibility does not imply binary compatibility:
 # a call site can compile on both lines and bind to a *different descriptor* on each.
 #
 # Two real instances, both green on the dual matrix and both fatal at runtime on SB4:
@@ -95,7 +95,7 @@ fi
 
 cat >&2 <<'MSG'
 
-::error::ADR-067 binary-neutrality gate failed.
+::error::ADR-107 binary-neutrality gate failed.
 
 One or more call sites bind to a different Spring descriptor on each matrix line. The dual matrix
 stays green because the source compiles on both, but the published SB3-compiled jar will fail at

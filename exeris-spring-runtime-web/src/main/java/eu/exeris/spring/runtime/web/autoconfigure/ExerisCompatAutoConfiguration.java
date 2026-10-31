@@ -76,7 +76,7 @@ public class ExerisCompatAutoConfiguration {
 
     // 1. Message converter.
     //
-    // Declared as HttpMessageConverter<?> rather than MappingJackson2HttpMessageConverter because the
+    // Declared as an HttpMessageConverter rather than MappingJackson2HttpMessageConverter because the
     // two Spring Boot lines ship different Jackson majors: SB3 has Jackson 2, SB4 has Jackson 3 and
     // only Jackson 2's *annotations*. The Jackson 2 converter class still compiles on both lines but
     // cannot be constructed under SB4 — see ExerisCompatJsonConverterFactory. Consumers take
