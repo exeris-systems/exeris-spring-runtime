@@ -14,7 +14,9 @@ the Exeris runtime.
 
 **Read this before migrating.** It tells you whether your security configuration survives the move,
 what it becomes, and what has no equivalent yet. Nothing here is aspirational — every row describes
-behaviour that exists in `0.7.0`.
+behaviour that exists in the current code (the `0.8.0` train). The per-path rule surface
+(`ExerisHttpSecurity`) and the edge's verification-key configuration are newer than the `0.7.0`
+release; everything else is in `0.7.0`.
 
 **Mode:** everything below is Compatibility Mode (`exeris.runtime.web.mode=compatibility`) unless a
 row says otherwise. Pure Mode applications do not use Spring Security's request-path machinery at
@@ -29,7 +31,8 @@ Exeris owns HTTP ingress. There is no servlet container, so there is no `FilterC
 the resource-server half: a Bearer token is decoded and validated by your `JwtDecoder`, an
 `Authentication` is placed in the `SecurityContextHolder`, and authorization is enforced by method
 security (`@PreAuthorize`, `@Secured`) on your services. Per-path rules
-(`authorizeHttpRequests`) have no equivalent in `0.7.0`.
+(`authorizeHttpRequests`) are rewritten as an `ExerisHttpSecurity` declaration that the kernel enforces
+at admission — see [Per-path rules](#per-path-rules-exerishttpsecurity).
 
 If your application's authorization lives entirely in a `SecurityFilterChain` and nowhere else, it
 does not migrate cleanly today. **The context will refuse to start** rather than serve your traffic
@@ -57,7 +60,7 @@ unauthenticated — see [Startup failures](#startup-failures) below.
 | Feature | Status | Notes |
 |---|---|---|
 | `@PreAuthorize` / `@PostAuthorize` / `@Secured` on beans | **Supported** | Plain Spring AOP; independent of the request path. This is where your authorization should live during a migration. |
-| `authorizeHttpRequests` / `requestMatchers` per-path rules | **Supported, rewritten** | Not by running the chain — it still does not run. Declare an `ExerisHttpSecurity` bean and the runtime compiles it, once at startup, into the kernel's route policy. See [Per-path rules](#per-path-rules-exerishttpsecurity) below for the mapping and its one real reduction. |
+| `authorizeHttpRequests` / `requestMatchers` per-path rules | **Supported, rewritten** | Not by running the chain — it still does not run. Declare an `ExerisHttpSecurity` bean and the runtime compiles it, once at startup, into the kernel's route policy. Mode-neutral: the policy governs Pure Mode ingress too. See [Per-path rules](#per-path-rules-exerishttpsecurity) below for the mapping and its one real reduction. |
 | `hasRole(...)` / `hasAuthority(...)` at the edge | **Not supported** | The kernel's route contract evaluates scopes only — there is no role kind, and simulating one by convention would install a second authority model whose disagreements with Spring's are authorization decisions taken on the wrong basis. Role checks stay in `@PreAuthorize`. |
 | Custom filters in the chain (`addFilterBefore`, …) | **Not supported** | No chain, no filter positions. |
 | `AuthorizationManager` beans used directly by your own code | **Supported** | Nothing stops you calling them; the runtime just does not call them for you. |
@@ -106,9 +109,10 @@ effective policy depends on which one ran.
    lands.
 2. **Fail-closed without the probe routes declared.** `anyRequest().authenticated()` is the line a
    Spring application already writes — and the kernel does not exempt its own `/health`, `/health/live`,
-   `/health/ready`, `/db/ping` and `/db/roundtrip` endpoints from a bound policy. Writing the familiar
+   `/health/ready` and `/db/ping` endpoints from a bound policy. Writing the familiar
    thing would therefore deny orchestrator probes against a perfectly healthy process, and the symptom
-   is a rollout that never becomes ready. Startup fails with those routes named instead.
+   is a rollout that never becomes ready. Startup fails instead, naming each of `/health`,
+   `/health/live`, `/health/ready`, `/db/ping` and `/db/roundtrip` the declaration does not permit.
 
 **Declaring nothing changes nothing.** With no `ExerisHttpSecurity` bean the slot is left unbound and
 the kernel applies no per-route requirement.
@@ -164,7 +168,8 @@ with the three keys pointing at a loopback JWKS server.
 | `AccessDeniedException` escapes a handler (e.g. from `@PreAuthorize`) | `403` |
 | Anything else unhandled | `500`, body-less |
 
-Before 0.7.0 the first three were all `500`.
+Before 0.7.0 an escaping `AuthenticationException` or `AccessDeniedException` was a `500`, and a
+presented token that failed validation was not answered at all — the request continued as anonymous.
 
 ---
 
