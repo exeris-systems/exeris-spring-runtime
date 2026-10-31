@@ -223,10 +223,13 @@ is honest about what it can enforce: scopes as the identity provider emits them.
    promptly and the previously disabled in-flight-drain scenario is green.
 
    The condition this clause set — *"implementation does not start before the pin moves"* — is therefore
-   satisfied, and the decision is implemented: the DSL, its compiler and the slot binding ship in
-   `exeris-spring-runtime-web` and `exeris-spring-boot-autoconfigure`, and every layer of
-   §"Compliance / Verification" has a test, the runtime layer against a real kernel over a live socket
-   (`RoutePolicyRuntimeIntegrationTest`). The `ClaimsMapper` slice of protocol 2 remains open.
+   satisfied. Implementation may start; nothing else in this ADR changes, and none of it has been
+   implemented yet. Recorded here rather than left in the future tense because a resolved blocker that
+   still reads as live is the drift `CLAUDE.md` calls out by name: a reader arriving from the 0.7.0
+   release notes would conclude this work is still gated when it is merely not yet done.
+
+   *(Amended 2026-10-31: the decision is implemented; the `ClaimsMapper` slice of protocol 2 remains
+   open — see [Amendments](#amendments).)*
 2. **End-to-end verification is gated on the `ClaimsMapper` slice.** Scope requirements can be tested with
    tokens carrying literal `scope` claims before then; parity with an application's `JwtAuthenticationConverter`
    cannot.
@@ -235,6 +238,22 @@ is honest about what it can enforce: scopes as the identity provider emits them.
 4. **A kernel stub** (`exeris-kernel/docs/adr/ADR-063.link.md`) is appropriate on the ADR-030 precedent:
    this ADR binds a kernel provider slot, so kernel-side awareness is warranted even though no kernel SPI
    change ships with it.
+
+## Amendments
+
+Each amendment is marked in place at the text it changes, not rewritten (`adr-conventions.md`
+rule 7). This section indexes them.
+
+- **2026-10-31 — Engineering Protocol 1: the decision is implemented.** `ExerisHttpSecurity`, its
+  compiler onto the kernel `HttpRoutePolicy` and the `HTTP_ROUTE_POLICY` binding ship in
+  `exeris-spring-runtime-web` and `exeris-spring-boot-autoconfigure` on the 0.8.0 train. Every layer of
+  §"Compliance / Verification" has a test, the runtime layer against a real kernel over a live socket
+  (`RoutePolicyRuntimeIntegrationTest`): 401 without a token, 403 for a verified token lacking the
+  scope, 200 with it, and `@PreAuthorize` still deciding inside a Compatibility Mode handler the edge
+  admitted. The edge verifies tokens against the keys named by `security.jwks.uri`,
+  `security.jwt.issuer` and `security.jwt.audience` (kernel 0.13.1). The `ClaimsMapper` slice of
+  protocol 2 remains open, so authority parity stays deferred as §"Authority parity is deferred, not
+  claimed" states.
 
 ## Cross-references
 
