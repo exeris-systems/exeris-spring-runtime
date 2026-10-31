@@ -10,7 +10,8 @@ name: Deploy (GitHub Packages snapshots, Maven Central releases)
 # GitHub Packages release and a pushed tag are not reversible in the same way.
 #
 # centralDryRun builds, tests, signs and bundles the release exactly as Central would receive it,
-# and uploads, deploys, commits and tags nothing. Run it before a real release.
+# and pushes, uploads, deploys and tags nothing; the release-version commit stays on the runner.
+# Run it before a real release.
 #
 # Required repo secrets:
 #   GITHUB_TOKEN            — provided automatically; has packages:write on this repo only.

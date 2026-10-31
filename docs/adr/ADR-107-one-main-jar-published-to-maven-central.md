@@ -106,12 +106,11 @@ unchanged.**
   published, tagged or deployed to GitHub Packages.
 - **Assumption: the two release builds produce the same main jar.** They build one commit with one
   profile set on one JDK, but nothing compares their bytes, so a consumer of GitHub Packages and a
-  consumer of Central could in principle link against different class files.
+  consumer of Central could in principle link against different class files. A measured difference is
+  fixed by publishing the same files to both channels, not by reversing this decision.
 - **Risk: the release depends on three secrets and a person.** A missing or expired GPG key or
   Central token stops the release at the signing or upload step; a deployment nobody publishes stays
   validated and unpublished.
-  A measured difference is fixed by publishing the same files to both channels, not by reversing
-  this decision.
 - **Reversed by:** a `binary-neutrality` delta for which no neutral member exists, so that only a
   per-line jar serves both Spring Boot lines; or a Central requirement that only a classifier other
   than `sources` or `javadoc`, or a per-line build, can satisfy. Engineering Protocol 4 turns either
