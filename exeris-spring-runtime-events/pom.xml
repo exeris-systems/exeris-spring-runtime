@@ -14,6 +14,7 @@
     <artifactId>exeris-spring-runtime-events</artifactId>
 
     <name>Exeris Spring Runtime :: Events Bridge</name>
+    <url>https://github.com/exeris-systems/exeris-spring-runtime</url>
     <description>
         Compatibility-friendly bridge that exposes the kernel EventBus to Spring beans
         as publish/subscribe primitives without making the Spring ApplicationContext the

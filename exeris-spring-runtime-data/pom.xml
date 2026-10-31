@@ -14,6 +14,7 @@
     <artifactId>exeris-spring-runtime-data</artifactId>
 
     <name>Exeris Spring Runtime :: Data</name>
+    <url>https://github.com/exeris-systems/exeris-spring-runtime</url>
     <description>
         Persistence integration module providing DataSource and Hibernate integration.
 

@@ -3,17 +3,7 @@
           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
           xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd">
   <servers>
-    <!-- Tokens are injected via env vars; never hardcode credentials.
-         PACKAGES_READ_TOKEN: PAT (classic) with read:packages, used for cross-repo
-         reads of exeris-kernel snapshots. The default GITHUB_TOKEN in Actions cannot
-         read packages from a different repository unless that package's "Manage Actions
-         access" explicitly grants this repo. Locally, export PACKAGES_READ_TOKEN
-         alongside GITHUB_TOKEN (one PAT can cover both). -->
-    <server>
-      <id>github-exeris-kernel</id>
-      <username>exeris-systems</username>
-      <password>${env.PACKAGES_READ_TOKEN}</password>
-    </server>
+    <!-- Tokens are injected via env vars; never hardcode credentials. -->
     <server>
       <id>github-exeris-runtime-releases</id>
       <username>exeris-systems</username>
@@ -24,10 +14,15 @@
       <username>exeris-systems</username>
       <password>${env.GITHUB_TOKEN}</password>
     </server>
+    <!--
+      Maven Central (release profile only). Credentials are a USER TOKEN generated at
+      central.sonatype.com/usertoken, not the account password, and arrive from the workflow
+      environment. The id must match <publishingServerId> in the root POM's release profile.
+    -->
     <server>
-      <id>github-exeris-spring-runtime</id>
-      <username>exeris-systems</username>
-      <password>${env.GITHUB_TOKEN}</password>
+      <id>central</id>
+      <username>${env.CENTRAL_TOKEN_USERNAME}</username>
+      <password>${env.CENTRAL_TOKEN_PASSWORD}</password>
     </server>
   </servers>
 </settings>

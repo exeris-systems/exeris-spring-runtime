@@ -14,7 +14,8 @@ The authoritative text of local decisions lives in `docs/adr/`. This reference m
 | ADR-030 | Phase 4C Spring-Side Seam for Kernel Graph SPI | `exeris-spring-runtime-graph` integration: default-off, no Spring Data Neo4j. |
 | ADR-041 | Compat Resource Server Security Under None | Security bridging under compat mode: narrow `ThreadLocal` cleared in `finally`. |
 | ADR-063 | ExerisHttpSecurity Route Policy Binding | Route policy compilation at startup; kernel decides, runtime compiles. |
-| ADR-067 | Binary Neutrality of the Published Artefact | Ensuring published JARs have no preview stamps and maintain multi-runtime neutrality. |
+| ADR-067 | Binary Neutrality of the Published Artefact | **Superseded by ADR-107.** Ensuring published JARs have no preview stamps and maintain multi-runtime neutrality. |
+| ADR-107 | One Main Jar Published to Maven Central | Supersedes ADR-067: one SB3-compiled jar per module serves both Spring Boot lines; releases add only sources/javadoc jars and signatures, published to Maven Central. Binary-neutrality job stays mandatory. |
 | ADR-068 | Two-Track JDK Artefact Model | GA track (Java 25 LTS, major 69) vs preview track. No preview flags on GA line. |
 
 ## Precedence When Documents Disagree

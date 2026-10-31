@@ -1,3 +1,12 @@
+---
+title: "Spring Boot 4 dual matrix — status and friction inventory"
+type: reference
+visibility: public
+owning-repo: exeris-spring-runtime
+status: active
+last-verified: 2026-10-30
+---
+
 # Spring Boot 4 dual matrix — status and friction inventory
 
 Working document for the ADR-028 dual-matrix work. ADR-028 is the decision; this file records **what
@@ -17,7 +26,7 @@ the SB4 line actually costs**, measured rather than anticipated, and what has la
 | **SB3 line** | ✅ green — full reactor, tests included |
 | **SB4 line** | ✅ green — full reactor, tests included |
 | **CI** | both axes run `-Pmatrix-<line>,coverage clean verify` on every push; failure on either blocks merge (ADR-028 obligation 2). A third job, `binary-neutrality`, compares Spring call-site descriptors across the two lines — see §"Binary neutrality" for why the matrix alone is not enough |
-| **What ships** | **one** jar, built by the default `matrix-sb3` profile (`deploy.yml` runs `clean deploy` with no `-P`) and claimed to run on both lines |
+| **What ships** | **one** jar per module, compiled against SB3 (`matrix-sb3`) and claimed to run on both lines. Releases add only its `-sources` and `-javadoc` jars and signatures, for Maven Central (ADR-107) |
 
 > **Measure with `clean`.** An incremental `-Pmatrix-sb4 install` can report SUCCESS on stale classes
 > left by an SB3 build. The first run of this kind here did exactly that, and it looked like the
@@ -47,7 +56,7 @@ obligation 2's "run both axes in full" earns its keep here: a compile-only matri
 the SB4 line healthy while every compat dispatch failed.
 
 **Three of the five closed with no bridge and no reflection**; one needed a real reflective bridge;
-one is open. The recurring lesson is in the §"What this means" section below.
+one closed by choosing the implementation at runtime, with a single reflective construction. The recurring lesson is in the §"What this means" section below.
 
 ### 1. `actuator` — health types moved module *and* package — ✅ closed, reflective bridge
 
@@ -75,8 +84,10 @@ which resolves a factory method's *declared* return type before instantiating it
 `Object`-returning `@Bean` would never match and the indicator would silently never appear. The
 definition's target type is set explicitly instead.
 
-Resolution failure stands the indicator down with a log line rather than throwing — an actuator that
-cannot register must not stop the application serving traffic.
+When no `HealthIndicator` type resolves, the indicator stands down with a log line rather than
+throwing — an actuator that cannot register must not stop the application serving traffic. A
+`HealthIndicator` that resolves while its `Health` builder matches neither line fails bean creation
+instead.
 
 Worth recording against ADR-028: obligation 4 names exactly this case as the canonical `bridge.sb4.*`
 sub-package example. A sub-package cannot solve it. The problem is that the type is unnameable at
@@ -174,7 +185,7 @@ the metadata switch that previously had no such protection.
 | **Anticipated?** | Yes — ADR-028's `org.springframework.http` row named `MappingJackson2HttpMessageConverter` as the expected friction there |
 
 **Closed by choosing the implementation at runtime.** `ExerisCompatJsonConverterFactory` picks by which
-Jackson databind is present and the bean is declared as `HttpMessageConverter<?>`, a type on both
+Jackson databind is present and the bean is declared as `HttpMessageConverter<Object>`, a type on both
 lines — which cost nothing, since every consumer already took `List<HttpMessageConverter<?>>`.
 
 Only one of the two converters is constructed reflectively, and the asymmetry is the point:
@@ -192,8 +203,7 @@ factory the production path uses, so what they exercise is the selection, not a 
 ## What this means for the bridge design
 
 ADR-028 obligation 4 offers three forms — `bridge.sb4.*` sub-package, `compat.sb4.*` sub-package, or an
-inline guard. For the one open item, **the sub-package forms do not solve the compile problem**, and
-that is worth stating before the implementing slice picks it up:
+inline guard. For item 1, **the sub-package forms do not solve the compile problem**:
 
 > A class that imports an SB4-only type cannot compile under `matrix-sb3`, and vice versa. Since both
 > profiles compile the *same* source tree (obligation 1, "no `src/sb3`, no `src/sb4`"), any class
@@ -236,7 +246,8 @@ still reports the other: knowing whether a change broke SB4 only or both is most
 Note the profile list — `-Pmatrix-sb3,coverage`, not `-Pcoverage`. Naming any profile disables
 `activeByDefault`, so the matrix profile must be explicit whenever another one is used. That is the
 same trap described at the top of this document, and CI would have hit it silently: the SB3 axis would
-have fallen through to the fallback pin and still gone green, testing nothing the SB4 axis did not.
+have fallen through to the fallback pin and still gone green, testing SB3 only because the fallback
+happens to equal `spring.boot.sb3.version`.
 
 A third job, `binary-neutrality`, sits beside the matrix rather than inside it: it needs both lines
 compiled in one workspace, which a per-line axis cannot provide. It skips tests — it only compares
@@ -268,8 +279,9 @@ that line — which is why the failure looked selective rather than total.
 
 ### The mechanism
 
-`deploy.yml` runs `mvn clean deploy` with **no profile**, so `matrix-sb3` is active by default and the
-published jar is compiled against Spring Framework 6. ADR-028 then claims that one jar runs on both
+`deploy.yml` publishes a jar compiled against Spring Framework 6: snapshots under the default
+`matrix-sb3` profile, releases under `release,matrix-sb3`, whose `release` half adds only sources,
+javadoc and signatures (ADR-107). ADR-028 then claims that one jar runs on both
 lines. The dual matrix proves the *source* compiles and tests on both. It cannot prove anything about
 the *binary*, and the two are not the same claim:
 
@@ -319,6 +331,8 @@ in the constant pool as an ordinary `Methodref`, so the lambda form is not a bli
   settled in [ADR-067](../adr/ADR-067-binary-neutrality-of-the-published-artefact.md) rather than here:
   the artefact stays single and SB3-compiled, per-line classifiers are rejected, and binary neutrality
   becomes an enforced obligation joining obligation 2 rather than superseding it.
+  [ADR-107](../adr/ADR-107-one-main-jar-published-to-maven-central.md) supersedes ADR-067 and restates
+  that decision as its own.
 
 ---
 
@@ -326,8 +340,11 @@ in the constant pool as an ordinary `Methodref`, so the lambda form is not a bli
 
 - [ADR-028](../adr/ADR-028-spring-boot-4-nominal-compatibility-scope.md) — the decision, the obligations,
   and the bridge-package taxonomy.
-- [ADR-067](../adr/ADR-067-binary-neutrality-of-the-published-artefact.md) — one artefact serves both
-  lines, and binary neutrality is enforced rather than assumed. Supplements ADR-028 obligation 2.
+- [ADR-107](../adr/ADR-107-one-main-jar-published-to-maven-central.md) — one main jar serves both
+  lines, binary neutrality is enforced rather than assumed, and releases add only `sources`, `javadoc`
+  and signatures for Maven Central.
+- [ADR-067](../adr/ADR-067-binary-neutrality-of-the-published-artefact.md) — superseded by ADR-107; its
+  measurements and the two call-site fixes remain the record of why the descriptor comparison exists.
 - [ADR-041](../adr/ADR-041-compat-resource-server-security-under-none.md) — the compat resource-server
   surface that friction item 2 lands on.
 - [ADR-011](../adr/ADR-011-pure-mode-vs-compatibility-mode.md) — why `compat.sb4.*` is hidden from

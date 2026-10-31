@@ -14,6 +14,7 @@
     <artifactId>exeris-spring-runtime-web</artifactId>
 
     <name>Exeris Spring Runtime :: Web</name>
+    <url>https://github.com/exeris-systems/exeris-spring-runtime</url>
     <description>
         Bridge between the Exeris HTTP/transport runtime and the Spring handler
         invocation model.

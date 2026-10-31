@@ -14,6 +14,7 @@
     <artifactId>exeris-spring-runtime-tx</artifactId>
 
     <name>Exeris Spring Runtime :: Transaction</name>
+    <url>https://github.com/exeris-systems/exeris-spring-runtime</url>
     <description>
         Transaction boundary bridge between Exeris runtime resource semantics
         and the Spring transaction abstraction (@Transactional, PlatformTransactionManager).
