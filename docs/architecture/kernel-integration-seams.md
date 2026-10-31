@@ -1,12 +1,21 @@
+---
+title: "Kernel Integration Seams"
+type: reference
+visibility: public
+owning-repo: exeris-spring-runtime
+status: active
+last-verified: 2026-10-31
+---
+
 # Kernel Integration Seams
 
 This is the primary engineering reference for how Exeris kernel SPI interfaces
 map to Spring integration points. Engineers implementing features in this
 repository must read this document first.
 
-**Kernel version:** 0.11.0 (pinned in the root `pom.xml` as `<exeris.kernel.version>`; a released
+**Kernel version:** 0.13.1 (pinned in the root `pom.xml` as `<exeris.kernel.version>`; a released
 coordinate, never a `-SNAPSHOT`). This is the kernel's **GA line** — JDK 25 LTS, class-file major 69,
-no preview stamp. The companion `0.11.0-preview` coordinate is a different artefact on a newer JDK
+no preview stamp, resolved from Maven Central. The kernel's `-preview` line is a different artefact on a newer JDK
 and is not what this repository consumes; see [ADR-068](../adr/ADR-068-two-track-jdk-artefact-model.md).  
 **Kernel package root:** `eu.exeris.kernel.spi.*`
 
@@ -31,7 +40,7 @@ FlowEngine               →    ExerisFlowTemplate/Registrar       →    @Exeri
 FlowChoreographyMapper   →    ExerisFlowChoreographyBridge       →    ExerisFlowChoreographyMapper beans
 GraphEngine / GraphSession →  ExerisGraphTemplate                →    @ExerisGraphQuery beans
 HttpRoutePolicy          →    ExerisRoutePolicyCompiler          →    ExerisHttpSecurity bean
-PersistenceProvider      →    ExerisPersistenceAdapter           →    DataSource / @Transactional
+PersistenceProvider      →    ExerisDataSource / ExerisConnectionProxy → DataSource / @Transactional
 ```
 
 ---
@@ -71,7 +80,7 @@ HttpExchange arrives on VT
     → ExerisHttpDispatcher.handle(exchange)
         → ExerisRouteRegistry.resolve(path, method)
         → handler.invoke(ExerisServerRequest)
-        → ExerisResponseBuilder → HttpResponse
+        → ExerisServerResponse.toKernelResponse(version) → HttpResponse
         → exchange.respond(response)       ← ownership of LoanedBuffer transferred to engine
 ```
 
@@ -138,7 +147,7 @@ ServiceLoader.load(ConfigProvider.class)
 ```
 
 Priority convention:
-- Community `ConfigProvider`: priority 100
+- Community `ConfigProvider`: priority 0
 - `ExerisSpringConfigProvider`: priority 150 (takes precedence over community defaults)
 
 The `ExerisSpringConfigProvider` is registered in:
@@ -197,7 +206,7 @@ triggers `KernelBootstrap.start()` at the appropriate Spring lifecycle phase.
 Spring refresh() completes
     → SmartLifecycle.start() ordered after bean wiring
     → ExerisRuntimeLifecycle.start()
-        → KernelBootstrap.bootstrap(configProvider)
+        → KernelBootstrap.boot(...)
         → ServiceLoader discovers SubsystemProviders
         → all subsystems initialise in DAG order
         → KERNEL READY
@@ -207,23 +216,25 @@ Spring refresh() completes
 
 Shutdown:
 ```
-JVM shutdown hook / Spring close()
+Spring close() (SIGTERM; the kernel's own JVM shutdown hook is disabled via registerShutdownHook(false))
     → SmartLifecycle.stop() in reverse order
-    → KernelBootstrap.shutdown()
-        → all subsystems cleaned up in reverse DAG order
+    → ExerisRuntimeLifecycle.stop() releases the boot scope; boot() stops the kernel in its finally
         → transport teardown + in-flight drain happen HERE, kernel-side
+        → all subsystems cleaned up in reverse DAG order
+    → joins the boot thread
+    → KernelBootstrap.shutdown() (idempotent backstop)
     → lifecycle callback.run()
 ```
 
 **Ingress teardown and drain are not Spring-side steps.** `ExerisRuntimeLifecycle.stop()` does not
-call `closeIngress()` and does not run a drain loop of its own — it calls `KernelBootstrap.shutdown()`
-and then the lifecycle callback. Both steps happen *inside* kernel shutdown, and the kernel owns their
+call `closeIngress()` and does not run a drain loop of its own — it releases the boot scope, joins the
+boot thread, calls `KernelBootstrap.shutdown()` as an idempotent backstop, and then the lifecycle callback. Both steps happen *inside* the kernel's stop, on the boot thread, and the kernel owns their
 ordering and their deadline. `exeris.runtime.shutdown.timeout-seconds` (default `30`, gated by
 `exeris.runtime.shutdown.graceful`, bound via `ExerisRuntimeProperties.ShutdownProperties`) bounds
 joining the kernel boot thread (`awaitShutdown` → `thread.join(timeoutMillis)`), **not** the drain,
 which has its own kernel-side deadline and is not configurable from Spring.
 
-**Drain behaviour on the pinned kernel.** On 0.11.0 the guarantee above is observed, not merely
+**Drain behaviour on the pinned kernel.** On 0.13.1 the guarantee above is observed, not merely
 intended: stop runs as three phases — close ingress, drain while the write path is still alive, then
 tear down — with a distinct `draining` state so the reactors keep serving (`isReactorActive()`) after
 the listening socket has closed. Proven by
@@ -260,7 +271,7 @@ Spring property `exeris.runtime.subsystems` is bound to a `List<String>` in
 
 | Property value | Selector effect | Kernel behaviour |
 |:---|:---|:---|
-| Unset or empty list (default) | `.selector(...)` not called → builder default | All community subsystems boot (memory, crypto, persistence, events, graph, transport, http, flow) |
+| Unset or empty list (default) | `.selector(...)` not called → builder default | All community subsystems boot (memory, crypto, security, persistence, scheduling, storage, graph, transport, http, events, flow, websocket) |
 | Non-empty list (`memory,crypto,persistence,events,flow`) | `BootstrapSelector.forNames(...)` | Only the named subsystems boot; unlisted subsystems are not started |
 
 Property binding (Spring Boot relaxed): both `exeris.runtime.subsystems=memory,crypto`
@@ -335,7 +346,7 @@ request path: unbound-only re-bind, `ScopedValue` only, mode-neutral.
 |:-----|:-----|:------------------|
 | `KernelProviders.TELEMETRY_SINKS` | `List<TelemetrySink>` | Read by actuator bridge |
 | `KernelProviders.PERSISTENCE_ENGINE` | `PersistenceEngine` | Read by tx/data modules |
-| `KernelProviders.HTTP_PROVIDER` | `HttpProvider` | Accessed by web module for engine ref |
+| `HttpKernelProviders.HTTP_PROVIDER` | `HttpProvider` | Accessed by web module for engine ref |
 
 **ScopedValue vs ThreadLocal rule:**
 
@@ -540,9 +551,8 @@ the same shape already used for `HttpHandler`. Only the compiled kernel contract
 `RouteAuthorizationEnforcer`, enforced by `RoutePolicyArchitectureTest`. ADR-061 placed that enforcer in
 kernel Core so a Spring-side DSL would translate onto it rather than growing a rival mechanism.
 
-**`path` is the raw request target**, query string included — the same contract detail that governs
-route lookup in Seam 1. Matching must be bounded at the `?`, and bounded by index, since a substring
-would breach the allocation requirement above.
+**`path` excludes the query string**, and a `HEAD` request is asked as `GET`, so the compiled policy
+matches the path alone and needs no separate `HEAD` rules.
 
 **Mode:** mode-neutral. Governs ingress for Pure and Compatibility Mode alike; deliberately not a
 `*.compat.*` type.
@@ -653,6 +663,6 @@ Spring `@Transactional` method, using `ScopedValue` rather than `TransactionSync
 | `EventEngine` / `EventBus` | Spring beans publish/subscribe | `ExerisEventPublisher`, `ExerisEventListenerRegistrar`, `ExerisEventTypeRegistry` | `events` | 4A |
 | `FlowEngine` / `FlowScheduler` | Saga / structured async | `ExerisFlowTemplate`, `ExerisFlowDefinitionRegistrar` | `flow` | 4B Steps 1–2 |
 | `FlowChoreographyMapper` / `ChoreographyDecision` | Event-driven flow trigger | `ExerisFlowChoreographyBridge`, `ExerisFlowChoreographyMapper` | `flow` | 4B Step 3 |
-| `GraphEngine` / `GraphSession` (`KernelProviders.GRAPH_ENGINE`) | Graph-query facade | `ExerisGraphTemplate`, `@ExerisGraphQuery`, `GraphEngineSupplier` | `graph` | 4C |
-| `PersistenceEngine` / `ConnectionFactory` | Repository / DataSource | `ExerisPersistenceAdapter` | `data` | 3 |
+| `GraphEngine` / `GraphSession` (`GraphKernelProviders.GRAPH_ENGINE`) | Graph-query facade | `ExerisGraphTemplate`, `@ExerisGraphQuery`, `GraphEngineSupplier` | `graph` | 4C |
+| `PersistenceEngine` / `ConnectionFactory` | Repository / DataSource | `ExerisDataSource`, `ExerisConnectionProxy` | `data` | 3 |
 | `PlatformTransactionManager` (Spring) | `StorageContext` | `ExerisPlatformTransactionManager` | `tx` | 3 |

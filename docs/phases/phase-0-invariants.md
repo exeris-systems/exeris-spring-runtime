@@ -1,3 +1,12 @@
+---
+title: "Phase 0 Invariants"
+type: reference
+visibility: public
+owning-repo: exeris-spring-runtime
+status: active
+last-verified: 2026-10-31
+---
+
 # Phase 0 Invariants
 
 **Status:** Locked-in (Phase 0 closed)
@@ -42,6 +51,7 @@ Spring ApplicationContext.refresh()
           → ServiceLoader → ConfigProvider → ExerisSpringConfigProvider (priority 150)
           → kernel DAG: Config → Memory → Exceptions → {Security, Persistence}
                           → {Graph, Transport} → {Events, Flow} → READY
+          → boot scope held open on the boot thread until stop() releases it
       → store KernelBootstrap for stop() / isRunning()
 ```
 
@@ -49,20 +59,23 @@ Shutdown reverses this exactly:
 
 ```
 SmartLifecycle.stop(callback)
-  → KernelBootstrap.shutdown()
+  → ExerisRuntimeLifecycle.stop()
+      → release the boot scope; boot() stops the subsystems in its finally
+      → interrupt the boot thread (only when shutdown.graceful = false)
+      → join the boot thread
+      → KernelBootstrap.shutdown()          (idempotent backstop)
   → callback.run()
 ```
 
-> **Corrected 2026-08-02.** This block previously listed `transport.closeIngress()` and a
-> drain of in-flight requests bounded by `shutdown.timeoutSeconds` as steps of the Spring-side
-> stop. They are not: `ExerisRuntimeLifecycle.stop()` calls `KernelBootstrap.shutdown()`, and
-> ingress-close and drain happen inside it on the kernel side. That property —
+> Ingress-close and drain are not Spring-side steps: they run kernel-side, on the boot thread,
+> when `boot()` stops its subsystems. The kernel's own JVM shutdown hook is disabled
+> (`registerShutdownHook(false)`), so this lifecycle is the only owner of the stop sequence.
 > `exeris.runtime.shutdown.timeout-seconds` as an operator sets it, `shutdown().timeoutSeconds()`
-> as the code reads it — bounds how long Spring waits to join the kernel boot thread. It is not an
+> as the code reads it, bounds how long Spring waits to join the kernel boot thread. It is not an
 > in-flight request budget; the kernel drain carries its own 60 s deadline and is not configurable
 > from here.
 >
-> On the pinned kernel (0.11.0) that drain (`PaqsScheduler.close()`, waits for zero active
+> On the pinned kernel (0.13.1) that drain (`PaqsScheduler.close()`, waits for zero active
 > streams) is sequenced *before* transport teardown, with a distinct `draining` state keeping the
 > write path alive, so an in-flight request completes and is answered. Up to and including 0.10.2
 > it ran last — after transport teardown and after the reactor threads that write responses had
@@ -70,7 +83,9 @@ SmartLifecycle.stop(callback)
 > [`phase-1-milestone-status.md`](phase-1-milestone-status.md).
 
 - **Guards:** `ExerisBootstrapIntegrationTest` (start/stop, thread liveness,
-  concurrent stop-during-start, timeout enforcement).
+  concurrent stop-during-start, timeout enforcement);
+  `ExerisWireLevelRuntimeIntegrationTest#pureMode_shutdownDrainsInFlightRequest_beforeIngressBecomesUnavailable`
+  (in-flight drain on stop).
 
 ## 4. Provider discovery is `ServiceLoader`-first
 

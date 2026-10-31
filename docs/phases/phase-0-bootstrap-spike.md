@@ -1,3 +1,12 @@
+---
+title: "Phase 0: Architecture Spike & Bootstrap Validation"
+type: explanation
+visibility: public
+owning-repo: exeris-spring-runtime
+status: active
+last-verified: 2026-10-31
+---
+
 # Phase 0: Architecture Spike & Bootstrap Validation
 
 **Status:** Closed 2026-05-09 (retrospective — deliverables 1–8 landed
@@ -90,9 +99,7 @@ public record ExerisRuntimeProperties(
 > Concretely, the shutdown fields sketched above are **not** bindable keys. The
 > real ones are `exeris.runtime.shutdown.graceful` and
 > `exeris.runtime.shutdown.timeout-seconds`; there is no
-> `gracefulShutdownTimeoutSeconds` anywhere in the binder. Reading the sketch as
-> a property reference is how a wrong name reached the shutdown prose below —
-> corrected 2026-08-05.
+> `gracefulShutdownTimeoutSeconds` anywhere in the binder.
 
 ### `ExerisSpringConfigProvider`
 **Package:** `eu.exeris.spring.boot.autoconfigure`  
@@ -101,7 +108,7 @@ public record ExerisRuntimeProperties(
 **Registered via:** `META-INF/services/eu.exeris.kernel.spi.config.ConfigProvider`
 
 Responsibility: read `exeris.*` properties from Spring `Environment` and return the kernel
-`KernelSettings` record. Priority = 150 (higher than community default of 100).
+`KernelSettings` record. Priority = 150 (higher than the community default of 0).
 
 Important: this class may only be created after the Spring `ApplicationContext` has been
 refreshed. The `KernelBootstrap` is triggered by `ExerisRuntimeLifecycle`, which runs after
@@ -170,16 +177,21 @@ SmartLifecycle.start() called (ordered)
 
 SmartLifecycle.stop() called on shutdown
     → ExerisRuntimeLifecycle.stop(callback)
-        → KernelBootstrap.shutdown()
-            → ingress close + in-flight drain happen HERE, kernel-side
+        → release the boot scope; boot() stops the subsystems in its finally
+            → ingress close + in-flight drain happen HERE, kernel-side, on the boot thread
+        → interrupt the boot thread (only when shutdown.graceful = false)
+        → join the boot thread
+        → KernelBootstrap.shutdown() (idempotent backstop)
         → callback.run()
 ```
 
-Ingress close and drain are **not** Spring-side steps: `stop()` calls `KernelBootstrap.shutdown()`
-and then the callback, nothing else. `exeris.runtime.shutdown.timeout-seconds` (gated by
+Ingress close and drain are **not** Spring-side steps: `stop()` releases the boot scope, joins the
+boot thread, calls `KernelBootstrap.shutdown()` as a backstop, and then the callback. The kernel's
+JVM shutdown hook is disabled (`registerShutdownHook(false)`), so this lifecycle alone owns the stop
+sequence. `exeris.runtime.shutdown.timeout-seconds` (gated by
 `exeris.runtime.shutdown.graceful`) bounds joining the kernel boot thread, **not** the drain, which
 carries its own kernel-side deadline and is not configurable from Spring.
-On the pinned kernel (0.11.0) the drain runs before transport teardown and does protect in-flight
+On the pinned kernel (0.13.1) the drain runs before transport teardown and does protect in-flight
 requests; up to 0.10.2 it did not — see [`phase-0-invariants.md`](phase-0-invariants.md).
 
 ---
