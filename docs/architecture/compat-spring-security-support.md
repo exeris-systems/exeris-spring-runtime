@@ -113,6 +113,14 @@ effective policy depends on which one ran.
 **Declaring nothing changes nothing.** With no `ExerisHttpSecurity` bean the slot is left unbound and
 the kernel applies no per-route requirement.
 
+**One divergence to know about while it lasts.** The kernel derives the scopes it checks through its
+own `ClaimsMapper`; Spring derives authorities through your `Converter<Jwt, …>`. For a token whose
+authorities do not come from a literal `scope`/`scp` claim these are two mappings of the same token,
+so an edge rule and a `@PreAuthorize` can disagree. Both fail closed, so a disagreement produces a
+refusal rather than an escalation — but an operator debugging "why is this a 403 when the user has the
+role" needs to know there are two mappings. Kernel 0.11.0 made `ClaimsMapper` supplyable, so this is
+now fixable rather than inherent; closing it is the next slice.
+
 ### Where the edge gets its verification keys
 
 A scope or `authenticated()` rule is decided on the identity the kernel's `SecurityProvider` derives
@@ -136,14 +144,6 @@ These are the kernel's keys, not Spring Boot's: `spring.security.oauth2.resource
 the Compatibility Mode `JwtDecoder` and does not reach the edge. A deployment that verifies tokens at
 both layers sets both, against the same issuer. `RoutePolicyRuntimeIntegrationTest` boots the kernel
 with the three keys pointing at a loopback JWKS server.
-
-**One divergence to know about while it lasts.** The kernel derives the scopes it checks through its
-own `ClaimsMapper`; Spring derives authorities through your `Converter<Jwt, …>`. For a token whose
-authorities do not come from a literal `scope`/`scp` claim these are two mappings of the same token,
-so an edge rule and a `@PreAuthorize` can disagree. Both fail closed, so a disagreement produces a
-refusal rather than an escalation — but an operator debugging "why is this a 403 when the user has the
-role" needs to know there are two mappings. Kernel 0.11.0 made `ClaimsMapper` supplyable, so this is
-now fixable rather than inherent; closing it is the next slice.
 
 ### Request-path concerns
 
