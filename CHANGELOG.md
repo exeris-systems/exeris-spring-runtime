@@ -1,9 +1,154 @@
+---
+title: "Changelog — exeris-spring-runtime"
+type: changelog
+visibility: public
+owning-repo: exeris-spring-runtime
+status: active
+last-verified: 2026-10-31
+---
+
 # Changelog
 
 All notable changes to `exeris-spring-runtime` are documented here.
 
 This project is a **host-runtime integration layer**, not a Spring Boot starter. Spring is the
 application framework; Exeris is the runtime owner. See [`docs/architecture/overview.md`](docs/architecture/overview.md).
+
+---
+
+## 0.8.0 — not yet tagged
+
+**Status: preview**, as 0.7.0. Nothing in this release graduates a module. The section freezes when the
+tag is cut.
+
+0.8.0 adds three things to 0.7.0:
+
+- **Per-path route authorization** that the kernel enforces at admission (ADR-063). It closes the one
+  gap in 0.7.0 with a security consequence.
+- **The kernel pin moves from 0.11.0 to 0.13.1.** This runtime now owns the stop sequence alone.
+- **Releases resolve from Maven Central** (ADR-107), with no repository entry and no credentials.
+
+The 0.8.0 train in `docs/roadmap-1.0-trl9.md` was scheduled for the Spring Boot 4 dual matrix, but that
+shipped in 0.7.0. See the roadmap for what this train carries instead.
+
+### Requirements
+
+| | |
+|:---|:---|
+| Java | **25 (LTS)**, no preview flag anywhere. Published classes are class-file major 69, minor 0. |
+| `exeris-kernel` | **0.13.1**, the GA line, from Maven Central. 0.13.1 is the first kernel whose Community `SecurityProvider` reads verification keys from configuration, which per-path rules that require an identity depend on (see below). |
+| Spring Boot | **3.5.14** (default) or **4.1.0**. One artefact serves both lines, as in 0.7.0. |
+| Resolution | **Maven Central.** No `<repository>` entry and no token. Snapshots stay on GitHub Packages. |
+
+### Per-path route authorization — `ExerisHttpSecurity` (ADR-063)
+
+Since 0.7.0 the runtime fails startup on a `SecurityFilterChain`, because the chain cannot run without
+a servlet container. Kernel 0.11.0 then removed its `/secure` prefix convention. Together they left a
+migrating application with nowhere to put per-path rules. In 0.8.0 an application declares an
+`ExerisHttpSecurity` bean:
+
+```java
+@Bean
+ExerisHttpSecurity httpSecurity() {
+    return ExerisHttpSecurity.create()
+            .requestMatchers("/health", "/health/live", "/health/ready", "/db/ping", "/db/roundtrip")
+                .permitAll()
+            .requestMatchers(HttpMethod.GET, "/api/orders/**").hasAnyScope("orders:read")
+            .anyRequest().authenticated();
+}
+```
+
+The runtime compiles the declaration once, at startup, into the kernel's `HttpRoutePolicy`. The
+kernel's enforcer then takes every decision on the admission path, before either dispatcher runs, so a
+refused caller never reaches Spring.
+
+- **Mode-neutral.** It governs Pure Mode and Compatibility Mode ingress alike.
+- **Scopes, not roles.** There is no `hasRole`. `@PreAuthorize` still decides inside a Compatibility
+  Mode handler the edge admitted.
+- **No default for the unmatched route.** A declaration without `anyRequest()` fails startup. So does
+  a fail-closed declaration that leaves the probe routes undeclared.
+- **No bean, no policy.** With no `ExerisHttpSecurity` bean the slot is unbound and nothing changes.
+- **Verified at runtime against a real kernel over a socket:** 401 with no token, 403 for a verified
+  token lacking the scope, 200 with it, and `@PreAuthorize` refusing an admitted request whose token
+  lacks the authority.
+
+**🔒 The edge needs verification keys.** A rule that requires an identity is decided on the token the
+kernel's `SecurityProvider` verifies, not on the Spring `JwtDecoder`. Kernel 0.13.1 arms that provider
+from three properties. Set them as ordinary Spring properties:
+
+```properties
+security.jwks.uri=https://issuer.example.com/.well-known/jwks.json
+security.jwt.issuer=https://issuer.example.com
+security.jwt.audience=my-api
+```
+
+- **All three or none.** With none set, every token is refused and every identity-requiring route
+  answers `401`. A partial set fails the kernel boot with `EX-BOOT-0002`, naming the missing key.
+- **They are not `spring.security.oauth2.resourceserver.jwt.*`.** Those configure only the
+  Compatibility Mode `JwtDecoder`. A deployment that verifies tokens at both layers sets both, against
+  the same issuer.
+
+See [`compat-spring-security-support.md`](docs/architecture/compat-spring-security-support.md#where-the-edge-gets-its-verification-keys).
+
+### Kernel 0.11.0 → 0.13.1 — what the bump changes for you
+
+The kernel's own breaking changes for 0.12 and 0.13 come with its version. They are listed in the
+kernel's `CHANGELOG.md` (§0.12.0 and §0.13.0 "Breaking") and in `MIGRATION.md`
+(§"0.11.x → 0.12.x", §"0.12.x → 0.13"). This runtime's public types, configuration keys and defaults
+do not change. The items below reach you through this runtime's own paths.
+
+- **One `SIGTERM`, one stop sequence.** Kernel 0.13 registers a JVM shutdown hook by default. This
+  runtime turns it off, because Spring's context close owns the stop. The runtime then stops after,
+  never before, the beans that still use it.
+- **The shutdown timeout also bounds a stop that lands during kernel boot.** With graceful shutdown
+  (the default), `exeris.runtime.shutdown.timeout-seconds` now bounds that stop too. Before, it could
+  wait uninterruptibly for the boot to unwind. With `graceful=false` that stop is not yet bounded.
+- **The route policy is asked about the dispatched route.** The query string is excluded, and `HEAD`
+  is asked as `GET`.
+- **A publish under an unregistered tenant isolation key is refused with `EX-EVENT-6009`.** This
+  applies to `ExerisEventPublisher` under a tenant context. See kernel ADR-101.
+- **Graph traversals honour the descriptor's direction**, and are refused under an unscopable tenant
+  context before any database I/O. See kernel ADR-102.
+- **The graph engine is read from `GraphKernelProviders.GRAPH_ENGINE`.** The `KernelProviders` alias
+  is deprecated in the kernel and refers to the same instance.
+
+### Distribution and metadata
+
+- **Maven Central (ADR-107, which supersedes ADR-067).** Each module's main jar is the one SB3-compiled
+  binary serving both Spring Boot lines, published with a `-sources` jar, a `-javadoc` jar and a
+  signature on every file. The `binary-neutrality` job is unchanged. The build itself resolves the
+  kernel from Central and needs no package credentials.
+- **Apache-2.0.** The repository carries a `LICENSE`. Every source header and every published pom
+  states the licence.
+- **Javadoc.** The public API of `web`, `tx`, `actuator`, `events` and `autoconfigure` is documented,
+  and gated in CI.
+- **🔒 The BOM manages this project's modules and nothing else.** In 0.7.0, importing
+  `exeris-spring-runtime-bom` also imported the parent's management: the whole Spring Boot 3.5.14 BOM,
+  the kernel BOM and the parent's own pins. A Spring Boot 4 application that imported it therefore
+  resolved Spring Framework 6.2.x and did not start. A Spring Boot 3 application got 3.5.14's versions
+  over its own. The published BOM now declares no parent and manages only the `eu.exeris` modules, and
+  CI fails if it manages anything else (#90). If you worked around this by not importing the BOM, you
+  can import it again.
+- **Logback 1.6.6 is managed in this project's build, ahead of both Spring Boot BOMs.** Both BOMs
+  manage a 1.5.x affected by CVE-2026-9828 and CVE-2026-19880. Logback reaches this build through the
+  optional resource-server starter of the web module. The pin is not part of the published BOM, so
+  your logback version is your Spring Boot line's unless you manage it yourself.
+
+### Preview status — what 0.8.x does *not* promise
+
+Everything in 0.7.0's [Preview status](#preview-status--what-07x-does-not-promise) still holds. The
+exception is its last bullet: per-path route authorization now exists. In addition:
+
+- **Authority parity between the edge and Spring is not claimed.** The kernel derives scopes through
+  its own `ClaimsMapper`, and Spring derives authorities through your `Converter<Jwt, …>`. For a token
+  whose authorities do not come from a literal `scope`/`scp` claim, the two can disagree. Both fail
+  closed. Supplying a `ClaimsMapper` is the next slice of ADR-063.
+- **No `-preview` artefact line.** ADR-068 publishes that line only when it carries preview-dependent
+  code, and nothing here does yet.
+- **No tracing.** Kernel 0.13.1 still has no `TraceContext` carrier and no OTLP sink, and its support
+  matrix now places both after 1.0. Phase 3B-β/γ stay blocked.
+- **Graph GA stays kernel-gated.** The kernel's `GraphChurnRatioTck` binding now runs in kernel CI as
+  a zero-skip gate, but for the Cypher (Neo4j) path only. The SQL/PGQ path has no churn binding.
 
 ---
 
