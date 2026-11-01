@@ -15,6 +15,7 @@ import eu.exeris.kernel.spi.graph.GraphEngine;
 import eu.exeris.kernel.spi.graph.GraphSession;
 import eu.exeris.kernel.spi.graph.model.GraphTraversal;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
+import eu.exeris.spring.boot.autoconfigure.KernelProviderScope;
 
 /**
  * JdbcTemplate-shaped Spring-side facade over the kernel {@link GraphEngine} / {@link GraphSession}
@@ -51,6 +52,16 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
  *       {@code tryGet()} is consulted first.</li>
  * </ul>
  *
+ * <h2>Kernel provider scope</h2>
+ *
+ * <p>Kernel graph backends read other kernel providers from their {@code ScopedValue} slots on
+ * the calling thread: the SQL/PGQ backend opens its connection through
+ * {@code KernelProviders.PERSISTENCE_ENGINE}, and the JSON streaming path allocates its buffer
+ * from {@code KernelProviders.MEMORY_ALLOCATOR}. A Spring thread is outside the kernel bootstrap
+ * scope, so every session the template opens runs inside a {@link KernelProviderScope}, which
+ * re-binds those slots from the references {@code ExerisRuntimeLifecycle} captured at boot. Only
+ * unbound slots are re-bound: a caller already inside a kernel scope keeps its own bindings.
+ *
  * @since 0.7
  * @see "ADR-030: Phase 4C Spring-Side Seam for Kernel Graph SPI"
  */
@@ -58,16 +69,32 @@ public final class ExerisGraphTemplate {
 
     private final GraphEngineSupplier engineSupplier;
     private final ExerisGraphProperties properties;
+    private final KernelProviderScope providerScope;
 
     /**
-     * Creates a graph template.
+     * Creates a graph template that re-binds no kernel provider slots. Template calls work only
+     * from a thread that already has the kernel providers its graph backend reads bound.
      *
      * @param engineSupplier supplier for the kernel graph engine
      * @param properties     graph configuration properties
      */
     public ExerisGraphTemplate(GraphEngineSupplier engineSupplier, ExerisGraphProperties properties) {
+        this(engineSupplier, properties, KernelProviderScope.noop());
+    }
+
+    /**
+     * Creates a graph template that runs every session inside {@code providerScope}.
+     *
+     * @param engineSupplier supplier for the kernel graph engine
+     * @param properties     graph configuration properties
+     * @param providerScope  scope re-binding the kernel provider slots the graph backend reads
+     * @since 0.8
+     */
+    public ExerisGraphTemplate(GraphEngineSupplier engineSupplier, ExerisGraphProperties properties,
+                               KernelProviderScope providerScope) {
         this.engineSupplier = Objects.requireNonNull(engineSupplier, "engineSupplier must not be null");
         this.properties = Objects.requireNonNull(properties, "properties must not be null");
+        this.providerScope = Objects.requireNonNull(providerScope, "providerScope must not be null");
     }
 
     /**
@@ -79,23 +106,27 @@ public final class ExerisGraphTemplate {
      * {@code GraphQueryException} (and other {@code EX-GRPH-*} codes) reach the caller without
      * an extra wrapper layer.
      *
+     * <p>The session is opened, used and closed inside the template's {@link KernelProviderScope}.
+     *
      * @param <T>    the result type
      * @param action the session callback to execute
      * @return the result of executing the callback
      */
     public <T> T execute(ExerisGraphSessionCallback<T> action) {
         Objects.requireNonNull(action, "action must not be null");
-        GraphEngine engine = resolveEngine();
-        try (GraphSession session = engine.openSession()) {
-            try {
-                return action.withSession(session);
-            } catch (RuntimeException re) {
-                throw re;
-            } catch (Exception ex) {
-                throw new GraphTemplateExecutionException(
-                        "ExerisGraphSessionCallback threw a checked exception", ex);
+        return providerScope.call(() -> {
+            GraphEngine engine = resolveEngine();
+            try (GraphSession session = engine.openSession()) {
+                try {
+                    return action.withSession(session);
+                } catch (RuntimeException re) {
+                    throw re;
+                } catch (Exception ex) {
+                    throw new GraphTemplateExecutionException(
+                            "ExerisGraphSessionCallback threw a checked exception", ex);
+                }
             }
-        }
+        });
     }
 
     /**
@@ -115,7 +146,8 @@ public final class ExerisGraphTemplate {
      * <p><strong>Caller owns the returned {@link LoanedBuffer}.</strong> Use try-with-resources:
      * {@snippet lang="java" :
      * try (LoanedBuffer buffer = template.streamBfsJson(traversal)) {
-     *     // consume buffer.segment() ...
+     *     // the segment spans capacity(); the payload is its first size() bytes
+     *     MemorySegment json = buffer.segment().asSlice(0, buffer.size());
      * }
      * }
      * The template does not retain a reference to the returned buffer and does not transfer

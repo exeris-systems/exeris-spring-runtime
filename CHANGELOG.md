@@ -125,6 +125,16 @@ do not change. The items below reach you through this runtime's own paths.
   `[EX-BOOT-0002] subsystem 'security' failed in INITIALIZE: security.jwks.uri is not set…`. Before, it
   ended at the kernel's constant "Subsystem lifecycle failure".
 
+### Fixes
+
+- **`ExerisGraphTemplate` works from a Spring thread.** It now runs each session in a
+  `KernelProviderScope` that binds the kernel persistence engine and memory allocator. Before, on the
+  SQL/PGQ backend, `traverseBfs` and `inTransaction` failed with `GraphQueryException` (`ACCESS`, "no
+  ScopedValue binding"). `streamBfsJson` and `@ExerisGraphQuery` methods returning `LoanedBuffer` also
+  failed on Neo4j. The scope binds only unbound slots, so a caller already in a kernel scope keeps its
+  own bindings. A `LoanedBuffer` segment spans `capacity()`, so read the payload as
+  `segment().asSlice(0, size())`.
+
 ### Distribution and metadata
 
 - **Maven Central (ADR-107, which supersedes ADR-067).** Each module's main jar is the one SB3-compiled
