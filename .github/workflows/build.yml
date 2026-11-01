@@ -147,8 +147,8 @@ jobs:
           if not deps:
               problems.append('the published BOM manages no coordinate')
           for d in deps:
-              g = d.findtext('m:groupId', namespaces=ns)
-              a = d.findtext('m:artifactId', namespaces=ns)
+              g = d.findtext('m:groupId', default='', namespaces=ns)
+              a = d.findtext('m:artifactId', default='', namespaces=ns)
               if g != 'eu.exeris' or not a.startswith('exeris-spring-'):
                   problems.append(f'the published BOM manages {g}:{a}')
           print(f'{len(deps)} coordinates managed by the published BOM')
