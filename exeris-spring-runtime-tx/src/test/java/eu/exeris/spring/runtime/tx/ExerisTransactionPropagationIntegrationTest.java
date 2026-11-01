@@ -4,10 +4,14 @@
  */
 package eu.exeris.spring.runtime.tx;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import eu.exeris.kernel.community.persistence.PersistenceSessionBox;
 import eu.exeris.kernel.spi.context.KernelProviders;
@@ -21,13 +25,17 @@ import eu.exeris.spring.boot.autoconfigure.ExerisSpringConfigProvider;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.springframework.mock.env.MockEnvironment;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.UnexpectedRollbackException;
 import org.springframework.transaction.support.DefaultTransactionDefinition;
+import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -299,6 +307,139 @@ class ExerisTransactionPropagationIntegrationTest {
     }
 
     // ---------------------------------------------------------------------
+    // From a completion callback: the transaction is committed but still bound
+    // ---------------------------------------------------------------------
+
+    @Test
+    void requiresNew_fromAfterCommit_offTheRequestPath_runsInANewTransaction() {
+        assertRequiresNewFromAfterCommitRunsInANewTransaction(false);
+    }
+
+    @Test
+    void requiresNew_fromAfterCommit_onARequest_runsInANewTransaction() {
+        assertRequiresNewFromAfterCommitRunsInANewTransaction(true);
+    }
+
+    @Test
+    void required_fromAfterCommit_offTheRequestPath_refusesToJoinTheCompletedTransaction() {
+        assertRequiredFromAfterCommitIsRefused(false);
+    }
+
+    @Test
+    void required_fromAfterCommit_onARequest_refusesToJoinTheCompletedTransaction() {
+        assertRequiredFromAfterCommitIsRefused(true);
+    }
+
+    private static void assertRequiresNewFromAfterCommitRunsInANewTransaction(boolean onRequest) {
+        withRealEngine(onRequest, fixture -> {
+            TransactionTemplate outer = fixture.template(TransactionDefinition.PROPAGATION_REQUIRED);
+            TransactionTemplate inner = fixture.template(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+            AtomicReference<Throwable> innerFailure = new AtomicReference<>();
+
+            outer.executeWithoutResult(_ -> {
+                fixture.insert(1, "outer");
+                afterCommit(() -> innerFailure.set(catchThrowable(() -> inner.executeWithoutResult(status -> {
+                    assertThat(status.isNewTransaction()).isTrue();
+                    fixture.insert(2, "after-commit");
+                }))));
+            });
+
+            assertThat(innerFailure.get()).isNull();
+            assertThat(fixture.openedConnections()).hasSize(2);
+            assertThat(countRows(fixture.engine())).isEqualTo(2);
+            assertThat(readLabel(fixture.engine(), 2)).isEqualTo("after-commit");
+        });
+    }
+
+    private static void assertRequiredFromAfterCommitIsRefused(boolean onRequest) {
+        withRealEngine(onRequest, fixture -> {
+            TransactionTemplate outer = fixture.template(TransactionDefinition.PROPAGATION_REQUIRED);
+            TransactionTemplate inner = fixture.template(TransactionDefinition.PROPAGATION_REQUIRED);
+            AtomicReference<Throwable> innerFailure = new AtomicReference<>();
+
+            outer.executeWithoutResult(_ -> {
+                fixture.insert(1, "outer");
+                afterCommit(() -> innerFailure.set(catchThrowable(() ->
+                        inner.executeWithoutResult(_ -> fixture.insert(2, "joined-after-commit")))));
+            });
+
+            assertThat(innerFailure.get())
+                    .isInstanceOf(IllegalTransactionStateException.class)
+                    .hasMessageContaining("already committed or rolled back");
+            assertThat(fixture.openedConnections()).hasSize(1);
+            assertThat(countRows(fixture.engine())).isEqualTo(1);
+        });
+    }
+
+    private static void afterCommit(Runnable callback) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                callback.run();
+            }
+        });
+    }
+
+    // ---------------------------------------------------------------------
+    // Failure paths that must not strand a connection
+    // ---------------------------------------------------------------------
+
+    @Test
+    void begin_whenTheManagerKeyIsAlreadyBound_releasesTheConnectionAndThrows() {
+        withRealEngine(false, fixture -> {
+            int baseline = fixture.engine().stats().activeConnections();
+            TransactionSynchronizationManager.bindResource(fixture.txManager(), "foreign resource");
+            try {
+                assertThatThrownBy(() -> fixture.template(TransactionDefinition.PROPAGATION_REQUIRED)
+                        .executeWithoutResult(_ -> { }))
+                        .isInstanceOf(IllegalTransactionStateException.class)
+                        .hasMessageContaining("already bound");
+                assertThat(fixture.engine().stats().activeConnections())
+                        .as("the connection opened for the refused transaction must go back to the pool")
+                        .isEqualTo(baseline);
+            } finally {
+                TransactionSynchronizationManager.unbindResourceIfPossible(fixture.txManager());
+            }
+        });
+    }
+
+    /**
+     * Off the request route, suspension borrows one pooled connection to prove a second one
+     * exists. With no free slot it must fail within the pool's connection timeout, not hang. The
+     * kernel rejects a pool smaller than two, so the test occupies the second slot itself and the
+     * outer transaction holds the first.
+     */
+    @Test
+    @Timeout(value = 30, unit = TimeUnit.SECONDS)
+    void notSupported_offTheRequestPath_withNoFreePoolSlot_failsWithinTheConnectionTimeout() {
+        Map<String, String> exhaustiblePool = Map.of(
+                "exeris.runtime.persistence.max-pool-size", "2",
+                "exeris.runtime.persistence.min-pool-size", "1",
+                "exeris.runtime.persistence.connection-timeout-ms", "500");
+        withRealEngine(false, exhaustiblePool, fixture -> {
+            TransactionTemplate outer = fixture.template(TransactionDefinition.PROPAGATION_REQUIRED);
+            TransactionTemplate inner = fixture.template(TransactionDefinition.PROPAGATION_NOT_SUPPORTED);
+
+            try (PersistenceConnection occupant = fixture.engine().openConnection()) {
+                assertThat(occupant.isOpen()).isTrue();
+                outer.executeWithoutResult(_ -> {
+                    fixture.insert(1, "outer");
+                    long started = System.nanoTime();
+                    assertThatThrownBy(() -> inner.executeWithoutResult(_ -> { }))
+                            .isInstanceOf(CannotCreateTransactionException.class)
+                            .hasMessageContaining("suspend the current transaction onto");
+                    assertThat(Duration.ofNanos(System.nanoTime() - started))
+                            .as("the refusal is bounded by the 500 ms connection timeout")
+                            .isLessThan(Duration.ofSeconds(5));
+                    fixture.insert(2, "outer-after-refusal");
+                });
+            }
+
+            assertThat(countRows(fixture.engine())).isEqualTo(2);
+        });
+    }
+
+    // ---------------------------------------------------------------------
     // Harness
     // ---------------------------------------------------------------------
 
@@ -333,6 +474,10 @@ class ExerisTransactionPropagationIntegrationTest {
             return engine;
         }
 
+        ExerisPlatformTransactionManager txManager() {
+            return txManager;
+        }
+
         TransactionTemplate template(int propagation) {
             DefaultTransactionDefinition definition = new DefaultTransactionDefinition();
             definition.setPropagationBehavior(propagation);
@@ -365,8 +510,13 @@ class ExerisTransactionPropagationIntegrationTest {
      * {@code PROMPT} route, and releases it afterwards as the dispatcher does on completion.
      */
     private static void withRealEngine(boolean onRequest, EngineTest body) {
+        withRealEngine(onRequest, Map.of(), body);
+    }
+
+    private static void withRealEngine(boolean onRequest, Map<String, String> extraProperties, EngineTest body) {
         String db = "exeris_tx_propagation_it_" + DB_COUNTER.incrementAndGet();
-        ExerisRuntimeLifecycle lifecycle = newLifecycle("jdbc:h2:mem:" + db + ";DB_CLOSE_DELAY=-1");
+        ExerisRuntimeLifecycle lifecycle =
+                newLifecycle("jdbc:h2:mem:" + db + ";DB_CLOSE_DELAY=-1", extraProperties);
 
         lifecycle.start();
         try {
@@ -395,7 +545,7 @@ class ExerisTransactionPropagationIntegrationTest {
         }
     }
 
-    private static ExerisRuntimeLifecycle newLifecycle(String jdbcUrl) {
+    private static ExerisRuntimeLifecycle newLifecycle(String jdbcUrl, Map<String, String> extraProperties) {
         ExerisRuntimeProperties properties = new ExerisRuntimeProperties(
                 true,
                 false,
@@ -409,6 +559,7 @@ class ExerisTransactionPropagationIntegrationTest {
                 .withProperty("exeris.runtime.persistence.username", "sa")
                 .withProperty("exeris.runtime.persistence.password", "")
                 .withProperty("exeris.runtime.persistence.run-migrations", "false");
+        extraProperties.forEach(env::setProperty);
         return new ExerisRuntimeLifecycle(
                 properties,
                 new ExerisSpringConfigProvider(env),

@@ -138,13 +138,24 @@ do not change. The items below reach you through this runtime's own paths.
   route the kernel holds one connection for the whole request, so there is no second connection to
   suspend onto. There both fail with `IllegalTransactionStateException` before the inner work runs,
   and the outer transaction stays usable. `NESTED` still throws `UnsupportedOperationException`, now
-  inside a transaction too. The matrix is in `docs/phases/phase-3-invariants.md` #4.
-- **`JdbcTemplate` works over `ExerisDataSource`.** The data source bound its connection proxy where
-  Spring's `DataSourceUtils` expects a `ConnectionHolder`, so `JdbcTemplate` inside an Exeris
-  transaction threw `ClassCastException`, and so did `getConnection()` under Spring's
-  `JdbcTransactionManager`. The proxy is now bound under a key private to the data source;
-  `JdbcTemplate` joins the Exeris transaction, and a `ConnectionHolder` bound by another manager is
-  left to that manager.
+  inside a transaction too. The matrix is defined by ADR-109 (amending ADR-017) and stated in
+  `docs/phases/phase-3-invariants.md` #4.
+- **Suspending off the request path needs a free pool slot.** To detect a request route, every
+  suspension borrows and returns one pooled connection, so `NOT_SUPPORTED` inside a transaction needs
+  a free slot as `REQUIRES_NEW` does. With none free it fails with `CannotCreateTransactionException`
+  after `exeris.runtime.persistence.connection-timeout-ms`. A kernel SPI signal is requested to
+  replace this check.
+- **From `afterCommit` / `afterCompletion` callbacks**, `REQUIRES_NEW` starts a new transaction, and
+  `REQUIRED`, `SUPPORTS` and `MANDATORY` fail with `IllegalTransactionStateException` instead of
+  joining the transaction that has just ended.
+- **`JdbcTemplate` works over `ExerisDataSource` inside an Exeris transaction.** The data source bound
+  its connection proxy where Spring's `DataSourceUtils` expects a `ConnectionHolder`, so `JdbcTemplate`
+  threw `ClassCastException`. The proxy is now bound under a key private to the data source, and
+  `JdbcTemplate` joins the Exeris transaction.
+- **`JdbcTransactionManager` over `ExerisDataSource` is not a supported pairing.** It no longer throws
+  `ClassCastException` from `getConnection()`, but it lets Spring demarcate raw JDBC transactions on an
+  Exeris-owned connection, bypassing `PersistenceConnection.beginTransaction` / `commit`. ADR-017
+  rejects that split ownership. Use `ExerisPlatformTransactionManager` (`exeris.runtime.tx.enabled`).
 
 ### Distribution and metadata
 

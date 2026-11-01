@@ -29,6 +29,8 @@ final class ExerisTransactionObject {
     private final PersistenceConnection connection;
     private final boolean newConnection;
     private boolean rollbackOnly;
+    private boolean transactionActive;
+    private boolean completed;
 
     ExerisTransactionObject(PersistenceConnection connection, boolean newConnection) {
         this.connection = Objects.requireNonNull(connection, "connection must not be null");
@@ -43,8 +45,30 @@ final class ExerisTransactionObject {
         return newConnection;
     }
 
-    boolean hasActiveConnection() {
-        return connection.isOpen();
+    /**
+     * Whether the transaction still owns the thread: from {@code doBegin} until
+     * {@code doCleanupAfterCompletion}. Deliberately not derived from the connection — a
+     * connection closed by commit is still the bound transaction's until cleanup, and a kernel
+     * request connection stays open after its transaction has ended.
+     */
+    boolean isTransactionActive() {
+        return transactionActive;
+    }
+
+    void setTransactionActive(boolean transactionActive) {
+        this.transactionActive = transactionActive;
+    }
+
+    /**
+     * Whether commit or rollback has already run. Between that point and cleanup the
+     * transaction is still bound, so completion callbacks see it, but nothing can join it.
+     */
+    boolean isCompleted() {
+        return completed;
+    }
+
+    void markCompleted() {
+        this.completed = true;
     }
 
     /**

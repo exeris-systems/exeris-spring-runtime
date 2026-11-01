@@ -38,9 +38,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * connection through {@code DataSourceUtils} — against a live kernel {@code PersistenceEngine}
  * on H2, off the request path.
  *
- * <p>Covers both managers an application can put in front of the data source: the Exeris
- * transaction manager wired through {@code ExerisJdbcResourceCallback} as
- * {@code ExerisDataAutoConfiguration} wires it, and Spring's own {@link JdbcTransactionManager}.
+ * <p>The supported manager is the Exeris transaction manager, wired through
+ * {@code ExerisJdbcResourceCallback} as {@code ExerisDataAutoConfiguration} wires it. Spring's
+ * {@link JdbcTransactionManager} appears only in a regression guard; see that test.
  *
  * <h2>Mode</h2>
  * <p>COMPATIBILITY_MODE — the JDBC bridge of ADR-017 over kernel-owned persistence.
@@ -119,6 +119,14 @@ class ExerisDataSourceTransactionIntegrationTest {
         });
     }
 
+    /**
+     * Regression guard only: {@code getConnection()} must not cast a {@code ConnectionHolder}
+     * another manager bound under the data-source key. {@link JdbcTransactionManager} over
+     * {@link ExerisDataSource} is <strong>not a supported pairing</strong> — it demarcates raw
+     * JDBC transactions on an Exeris-owned connection, bypassing
+     * {@code PersistenceConnection.beginTransaction} / {@code commit}, a split ownership ADR-017
+     * rejects. Passing here does not make it supported.
+     */
     @Test
     void jdbcTransactionManager_overExerisDataSource_getConnectionDoesNotFail() {
         withRealEngine(fixture -> {

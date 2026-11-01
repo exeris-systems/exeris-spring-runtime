@@ -83,12 +83,29 @@ time, so there is nothing to suspend onto. The manager checks for this when it s
 any inner work runs, and fails with `IllegalTransactionStateException` instead of letting the
 inner work run inside the outer transaction. The outer transaction stays active and usable.
 
-Adding support for `NESTED`, or for suspension on a request route, requires a new ADR that
-documents the kernel API surface relied on (savepoints, a second request-path connection) and the
-connection-lifecycle implications.
+**Cost of the check.** To tell the two cases apart, every suspension opens one connection from the
+engine and closes it again. On a request route that is the request's own connection and costs
+nothing. Off the request route every suspension borrows and returns one pooled connection, so
+`NOT_SUPPORTED` — which otherwise needs no connection — needs a free pool slot besides the one the
+suspended transaction holds, as `REQUIRES_NEW` does. With none free, the suspension waits for the
+pool's connection timeout (`exeris.runtime.persistence.connection-timeout-ms`) and then fails with
+`CannotCreateTransactionException`; the outer transaction stays usable. A kernel SPI signal that
+names the request-scoped connection is requested; it would replace the probe.
+
+**Completion callbacks.** A transaction stays bound to the thread from begin until cleanup, which
+runs after `afterCommit` / `afterCompletion` callbacks (and `@TransactionalEventListener` phases).
+Whether a transaction exists is decided by that binding, not by whether its connection is open. From
+such a callback, `REQUIRES_NEW` gets a new transaction — off the request route on a second
+connection, on a request route on the request's connection, which the completed transaction no
+longer uses. A joining propagation (`REQUIRED`, `SUPPORTS`, `MANDATORY`) fails with
+`IllegalTransactionStateException` rather than running in a transaction that has already ended.
+
+The matrix above is defined by ADR-109, which amends ADR-017. **Any change to the propagation
+matrix requires an ADR.**
 
 - **Guards:** `ExerisTransactionPropagationIntegrationTest` covers every row against a live
-  kernel engine, both off the request path and on a request-session-bound thread;
+  kernel engine, both off the request path and on a request-session-bound thread, plus the
+  completion-callback cases, the exhausted-pool suspension and the begin-time binding conflict;
   `ExerisPlatformTransactionManagerTest` covers the `NESTED` and no-transaction `NOT_SUPPORTED`
   paths.
 

@@ -67,6 +67,24 @@ import java.util.Objects;
  * transaction stays active and usable. Work that must commit independently of the request's
  * transaction has to run off the request path.
  *
+ * <p>To tell the two cases apart, every suspension opens one connection from the engine and
+ * closes it again. On a request route that is the request's own connection and costs nothing.
+ * Off the request route it borrows and returns one pooled connection, so a suspension —
+ * {@code NOT_SUPPORTED} included, which otherwise needs no connection — needs a free pool slot
+ * besides the one the suspended transaction holds. With none free, the suspension waits for the
+ * pool's connection timeout and then fails with {@code CannotCreateTransactionException}; the
+ * outer transaction stays usable. A kernel SPI signal that names the request-scoped connection is
+ * requested, and would replace this probe.
+ *
+ * <h2>Completion callbacks</h2>
+ * <p>A transaction stays bound to the thread after its commit or rollback, until cleanup, so
+ * {@code afterCommit} and {@code afterCompletion} callbacks still see it. A callback that starts
+ * {@code REQUIRES_NEW} gets a new transaction: off the request route on a second connection, on
+ * a request route on the request's connection, which the completed transaction no longer uses.
+ * A callback that would join it ({@code REQUIRED}, {@code SUPPORTS}, {@code MANDATORY}) fails
+ * with {@code IllegalTransactionStateException} instead of running in a transaction that has
+ * already ended.
+ *
  * <h2>Retry Gap</h2>
  * <p>Unlike {@link eu.exeris.kernel.spi.persistence.TransactionalExecutor#executeManaged},
  * this manager does NOT automatically retry on {@code 40001} / {@code 40P01}
@@ -143,12 +161,14 @@ public final class ExerisPlatformTransactionManager extends AbstractPlatformTran
     }
 
     /**
-     * Returns {@code true} if the supplied transaction holder has an active connection.
+     * Returns {@code true} if the supplied holder joined a transaction that still owns the
+     * thread — begun and not yet cleaned up, including after its commit or rollback while
+     * completion callbacks run.
      */
     @Override
     protected boolean isExistingTransaction(@NonNull Object transaction) {
         if (transaction instanceof ExerisTransactionObjectHolder holder) {
-            return holder.hasObject() && holder.object().hasActiveConnection();
+            return holder.hasObject() && holder.object().isTransactionActive();
         }
         return false;
     }
@@ -193,6 +213,7 @@ public final class ExerisPlatformTransactionManager extends AbstractPlatformTran
     @Override
     protected void doCleanupAfterCompletion(@NonNull Object transaction) {
         if (transaction instanceof ExerisTransactionObjectHolder holder && holder.isNewTransaction()) {
+            holder.object().setTransactionActive(false);
             TransactionSynchronizationManager.unbindResourceIfPossible(this);
         }
     }
@@ -240,10 +261,21 @@ public final class ExerisPlatformTransactionManager extends AbstractPlatformTran
         }
 
         ExerisTransactionObject txObject = new ExerisTransactionObject(connection, true);
+        try {
+            TransactionSynchronizationManager.bindResource(this, txObject);
+        } catch (IllegalStateException ex) {
+            // Something other than this manager's live transaction holds the key. The connection
+            // is already in a transaction and nothing would ever complete it: end it here.
+            rollbackQuietly(connection);
+            closeQuietly(connection);
+            throw new IllegalTransactionStateException(
+                    "Cannot begin an Exeris transaction: a resource is already bound to this "
+                    + "transaction manager on the current thread", ex);
+        }
+        txObject.setTransactionActive(true);
         if (transaction instanceof ExerisTransactionObjectHolder holder) {
             holder.begin(txObject);
         }
-        TransactionSynchronizationManager.bindResource(this, txObject);
     }
 
     /**
@@ -257,6 +289,7 @@ public final class ExerisPlatformTransactionManager extends AbstractPlatformTran
         } catch (PersistenceProviderException ex) {
             throw new TransactionSystemException("Exeris commit failed", ex);
         } finally {
+            txObject.markCompleted();
             closeQuietly(txObject.connection());
         }
     }
@@ -274,6 +307,7 @@ public final class ExerisPlatformTransactionManager extends AbstractPlatformTran
         } catch (PersistenceProviderException ex) {
             throw new TransactionSystemException("Exeris rollback failed", ex);
         } finally {
+            txObject.markCompleted();
             closeQuietly(txObject.connection());
         }
     }
@@ -295,10 +329,23 @@ public final class ExerisPlatformTransactionManager extends AbstractPlatformTran
      * {@code doBegin} — synchronization IS active at this point. Registration is skipped
      * if this is not a new transaction (existing transaction joined) or if no connection
      * was bound (e.g. no engine was found, which would have already thrown).
+     *
+     * @throws IllegalTransactionStateException if the call joins a transaction whose commit or
+     *         rollback has already run (a completion callback using a joining propagation)
      */
     @Override
     protected void prepareSynchronization(@NonNull DefaultTransactionStatus status,
                                            @NonNull TransactionDefinition definition) {
+        if (!status.isNewTransaction()
+                && status.hasTransaction()
+                && status.getTransaction() instanceof ExerisTransactionObjectHolder joined
+                && joined.hasObject()
+                && joined.object().isCompleted()) {
+            throw new IllegalTransactionStateException(
+                    "Cannot join the current Exeris transaction: it has already committed or rolled "
+                    + "back, and its completion callbacks are running. Use PROPAGATION_REQUIRES_NEW "
+                    + "for transactional work started from afterCommit or afterCompletion.");
+        }
         super.prepareSynchronization(status, definition);
         if (status.isNewTransaction()
                 && status.getTransaction() instanceof ExerisTransactionObjectHolder holder
@@ -355,6 +402,10 @@ public final class ExerisPlatformTransactionManager extends AbstractPlatformTran
      * suspended. A freshly opened connection is never already in a transaction; one that is, is
      * the suspended transaction's own connection handed back again, because the kernel serves a
      * request route with one connection.
+     *
+     * <p>Off the request route the probe borrows and returns one pooled connection, and waits for
+     * the pool's connection timeout when no slot is free; see the class Javadoc. It stands in for
+     * a kernel SPI signal that is requested and not yet available.
      */
     private static void requireIndependentConnection() {
         if (!KernelProviders.PERSISTENCE_ENGINE.isBound()) {
@@ -394,6 +445,18 @@ public final class ExerisPlatformTransactionManager extends AbstractPlatformTran
             case TransactionDefinition.ISOLATION_SERIALIZABLE     -> TransactionIsolation.SERIALIZABLE;
             default -> TransactionIsolation.READ_COMMITTED; // ISOLATION_DEFAULT = -1
         };
+    }
+
+    private static void rollbackQuietly(PersistenceConnection connection) {
+        try {
+            if (connection.inTransaction()) {
+                connection.rollback();
+            }
+        } catch (RuntimeException ex) {
+            // The failure that prompted the rollback is the one the caller must see.
+            LOGGER.log(System.Logger.Level.DEBUG,
+                    "Failed to roll back PersistenceConnection after a failed transaction begin", ex);
+        }
     }
 
     private static void closeQuietly(@Nullable PersistenceConnection connection) {
@@ -452,10 +515,6 @@ public final class ExerisPlatformTransactionManager extends AbstractPlatformTran
                 throw new IllegalStateException("No transaction object bound");
             }
             return txObject;
-        }
-
-        boolean hasActiveConnection() {
-            return txObject != null && txObject.hasActiveConnection();
         }
 
         @Override

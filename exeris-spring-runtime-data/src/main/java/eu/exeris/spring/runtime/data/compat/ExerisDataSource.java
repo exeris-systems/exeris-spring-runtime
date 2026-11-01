@@ -41,7 +41,10 @@ import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
  * own {@code ConnectionHolder} under the data-source key: it finds nothing there on first use,
  * asks {@link #getConnection()}, receives the transaction's proxy, and holds that for the rest of
  * the transaction. A {@code ConnectionHolder} another transaction manager bound under the
- * data-source key is likewise left to that manager.
+ * data-source key is never read here. Such a manager — Spring's {@code JdbcTransactionManager},
+ * for one — is not a supported pairing: it would demarcate raw JDBC transactions on an
+ * Exeris-owned connection, bypassing the {@code PersistenceConnection} transaction contract,
+ * which ADR-017 rejects.
  *
  * <h2>Non-transactional path</h2>
  * <p>Outside an Exeris-managed transaction, each {@link #getConnection()} call opens
