@@ -21,6 +21,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.context.annotation.Bean;
 
 import eu.exeris.kernel.spi.telemetry.TelemetryConfig;
@@ -113,6 +114,19 @@ public class ExerisWebAutoConfiguration {
                 routeRegistry.populate(collectRoutes(ctx));
             }
         };
+    }
+
+    /**
+     * Fails context start when the route registry is still unpopulated, before the kernel binds
+     * ingress.
+     *
+     * @param routeRegistry the registry the dispatcher routes through
+     * @return the start-time guard
+     */
+    @Bean
+    @SuppressWarnings("unused")
+    SmartLifecycle exerisRouteRegistryPopulatedGuard(ExerisRouteRegistry routeRegistry) {
+        return new RouteRegistryPopulatedGuard(routeRegistry);
     }
 
     private static ExerisRouteRegistry.Builder collectRoutes(ApplicationContext ctx) {

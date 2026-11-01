@@ -16,13 +16,18 @@ import java.util.function.Supplier;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.core.env.MapPropertySource;
+import org.springframework.core.env.StandardEnvironment;
 
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.http.HttpExchange;
@@ -33,6 +38,9 @@ import eu.exeris.kernel.spi.telemetry.KernelEvent;
 import eu.exeris.kernel.spi.telemetry.TelemetryConfig;
 import eu.exeris.kernel.spi.telemetry.TelemetryProvider;
 import eu.exeris.kernel.spi.telemetry.TelemetrySink;
+import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
+import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeProperties;
+import eu.exeris.spring.boot.autoconfigure.ExerisSpringConfigProvider;
 import eu.exeris.spring.runtime.web.ExerisHttpDispatcher;
 import eu.exeris.spring.runtime.web.ExerisRequestHandler;
 import eu.exeris.spring.runtime.web.ExerisRoute;
@@ -173,6 +181,60 @@ class ExerisWebAutoConfigurationTest {
                             .as("a registry the application built is not re-populated from the context")
                             .isNull();
                 });
+    }
+
+    @Test
+    void pureMode_failsContextStart_whenTheRouteRegistryIsNeverPopulated() {
+        AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
+        context.register(NeverPopulatedRegistryConfig.class);
+
+        assertThatThrownBy(context::refresh)
+                .hasRootCauseInstanceOf(IllegalStateException.class)
+                .rootCause()
+                .hasMessageContaining("route registry was never populated");
+        context.close();
+    }
+
+    @Test
+    void routeRegistryGuard_startsBeforeTheRuntimeLifecycle() {
+        ExerisRuntimeLifecycle lifecycle = new ExerisRuntimeLifecycle(
+                new ExerisRuntimeProperties(),
+                new ExerisSpringConfigProvider(new StandardEnvironment()),
+                Optional.empty());
+
+        assertThat(new RouteRegistryPopulatedGuard(ExerisRouteRegistry.deferred()).getPhase())
+                .as("the guard must start, and so fail, before the kernel binds ingress")
+                .isLessThan(lifecycle.getPhase());
+    }
+
+    @Test
+    void pureMode_populatesTheRegistry_underGlobalLazyInitialization() {
+        try (ConfigurableApplicationContext context = new SpringApplicationBuilder(
+                        TestConfig.class, ExerisWebAutoConfiguration.class)
+                .web(WebApplicationType.NONE)
+                .properties("spring.main.lazy-initialization=true", "exeris.runtime.web.mode=pure")
+                .run()) {
+            assertThat(context.getBeanFactory().getBeanDefinition("exerisRouteRegistry").isLazyInit())
+                    .as("the property must actually make the definitions lazy")
+                    .isTrue();
+            ExerisRouteRegistry routeRegistry = context.getBean(ExerisRouteRegistry.class);
+
+            assertThat(routeRegistry.isPopulated())
+                    .as("the populator must run even when every bean definition is lazy")
+                    .isTrue();
+            assertThat(routeRegistry.resolve(HttpMethod.GET, "/hello"))
+                    .isSameAs(context.getBean(HelloHandler.class));
+        }
+    }
+
+    @Configuration
+    static class NeverPopulatedRegistryConfig {
+
+        @Bean
+        @SuppressWarnings("unused")
+        SmartLifecycle routeRegistryPopulatedGuard() {
+            return new RouteRegistryPopulatedGuard(ExerisRouteRegistry.deferred());
+        }
     }
 
     @Configuration

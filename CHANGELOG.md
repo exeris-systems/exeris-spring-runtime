@@ -171,7 +171,8 @@ do not change. The items below reach you through this runtime's own paths.
   `HealthEndpoint`, with `exeris-spring-runtime-actuator` present) was left out of the route table
   without an error, and its path answered 404. The table is now filled once every singleton exists,
   before the kernel accepts a request. A handler bean that cannot be resolved fails startup and is
-  named. `ExerisRouteRegistry` gains `deferred()`, `populate(Builder)` and `isPopulated()` for this; a
+  named, and a table still unpopulated when the context starts fails startup before the kernel binds
+  ingress. `ExerisRouteRegistry` gains `deferred()`, `populate(Builder)` and `isPopulated()` for this; a
   registry the application builds itself is used as it is.
 - **Compatibility Mode starts with `exeris-spring-runtime-actuator` present.** The controller registry
   and the `@ControllerAdvice` resolver collected their beans while being created, inside the same

@@ -50,7 +50,7 @@ public final class ExerisExceptionHandlerResolver implements ApplicationContextA
 
     private final HandlerMethodArgumentResolverComposite argumentResolvers;
     private final List<HttpMessageConverter<?>> converters;
-    private List<ExceptionHandlerMethod> adviceHandlers = List.of();
+    private volatile List<ExceptionHandlerMethod> adviceHandlers = List.of();
     private ApplicationContext applicationContext;
 
     /**

@@ -11,15 +11,17 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Immutable route table mapping (method, path) pairs to Pure Mode handler beans.
+ * Route table mapping (method, path) pairs to Pure Mode handler beans, written once and immutable
+ * from then on.
  *
  * <p>Either built complete through {@link #builder()}, or created {@linkplain #deferred() deferred}
- * and {@linkplain #populate(Builder) populated} exactly once later. The runtime uses the deferred form:
- * the dispatcher holds the registry before the handler beans exist, so a handler may depend on beans
- * that themselves depend on the dispatcher, and the table is filled from every {@link ExerisRoute}
- * bean once the container has instantiated them all — before the kernel accepts a request. Route
- * resolution is {@code O(1)} via a pre-computed immutable map — no per-request allocation on the
- * lookup path.
+ * and {@linkplain #populate(Builder) populated} exactly once later. A deferred registry refuses
+ * {@link #resolve} until it is populated, so an empty table is never mistaken for a missing route.
+ * The runtime uses the deferred form: the dispatcher holds the registry before the handler beans
+ * exist, so a handler may depend on beans that themselves depend on the dispatcher, and the table is
+ * filled from every {@link ExerisRoute} bean once the container has instantiated them all — before
+ * the kernel accepts a request. Once written, route resolution is {@code O(1)} via an immutable map —
+ * no per-request allocation on the lookup path.
  *
  * <p><b>Routing Semantics:</b> Supports exact-match routes with query string normalisation.</p>
  *
@@ -31,7 +33,8 @@ public final class ExerisRouteRegistry {
             "The route registry was consulted before it was populated; a deferred registry must be "
                     + "populated before the first request is dispatched";
 
-    // Null only while a deferred registry awaits population; written once, then never again.
+    // Null only while a deferred registry awaits population; written once with an immutable map,
+    // and never replaced.
     private volatile Map<HttpMethod, Map<String, ExerisRequestHandler>> routes;
 
     private ExerisRouteRegistry(Map<HttpMethod, Map<String, ExerisRequestHandler>> routes) {
