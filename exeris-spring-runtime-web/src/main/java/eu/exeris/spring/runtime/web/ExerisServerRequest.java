@@ -80,7 +80,8 @@ public final class ExerisServerRequest {
     /**
      * Returns the request body as an off-heap {@code MemorySegment}.
      *
-     * <p>Zero allocation. The segment is valid only during handler execution.
+     * <p>The segment is a view over the loaned buffer and copies no bytes. It is valid only during handler
+     * execution.
      * Codecs that support {@code MemorySegment}-based reads should use this method.
      *
      * <p>The segment spans the body's {@code size()} bytes and no more. The kernel lends pooled
