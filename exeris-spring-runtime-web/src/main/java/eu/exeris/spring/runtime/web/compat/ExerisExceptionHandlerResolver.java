@@ -12,7 +12,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
-import org.springframework.beans.factory.InitializingBean;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 import org.springframework.core.ExceptionDepthComparator;
@@ -39,7 +39,7 @@ import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
  * No servlet types, no spring-webmvc.
  */
 @CompatibilityMode
-public final class ExerisExceptionHandlerResolver implements ApplicationContextAware, InitializingBean {
+public final class ExerisExceptionHandlerResolver implements ApplicationContextAware, SmartInitializingSingleton {
 
     private record ExceptionHandlerMethod(Object bean,
                                           Class<?> beanType,
@@ -55,7 +55,10 @@ public final class ExerisExceptionHandlerResolver implements ApplicationContextA
 
     /**
      * Creates a resolver. {@code @ControllerAdvice} handlers are discovered in
-     * {@link #afterPropertiesSet()}, not here.
+     * {@link #afterSingletonsInstantiated()}, not here: this resolver
+     * sits in the {@code ExerisRuntimeLifecycle} → dispatcher → bridge chain, so collecting the advice
+     * beans while it is being created would turn an advice that depends on a bean depending on the
+     * lifecycle into an unresolvable creation cycle.
      *
      * @param argumentResolvers resolves the arguments of the exception handler methods
      * @param converters message converters for writing a handler's return value; copied
@@ -72,7 +75,7 @@ public final class ExerisExceptionHandlerResolver implements ApplicationContextA
     }
 
     @Override
-    public void afterPropertiesSet() {
+    public void afterSingletonsInstantiated() {
         if (applicationContext == null) {
             this.adviceHandlers = List.of();
             return;

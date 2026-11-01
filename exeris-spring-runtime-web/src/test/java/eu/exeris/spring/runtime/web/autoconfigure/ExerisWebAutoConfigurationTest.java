@@ -14,10 +14,14 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.core.env.MapPropertySource;
 
 import eu.exeris.kernel.spi.context.KernelProviders;
@@ -143,6 +147,62 @@ class ExerisWebAutoConfigurationTest {
 
             assertThat(handler.telemetryBound()).isTrue();
             assertThat(supplierCalls).hasValue(1);
+        }
+    }
+
+    @Test
+    void pureMode_failsStartup_namingAHandlerThatCannotBeResolved() {
+        assertThatThrownBy(() -> createContext(
+                        Map.of("exeris.runtime.web.mode", "pure"),
+                        UnresolvableHandlerConfig.class).close())
+                .hasMessageContaining("brokenHandler")
+                .hasMessageContaining("/broken");
+    }
+
+    @Test
+    void pureMode_keepsAnApplicationSuppliedPopulatedRegistry() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(SuppliedRegistryConfig.class, TestConfig.class)
+                .withConfiguration(AutoConfigurations.of(ExerisWebAutoConfiguration.class))
+                .withPropertyValues("exeris.runtime.web.mode=pure")
+                .run(context -> {
+                    ExerisRouteRegistry routeRegistry = context.getBean(ExerisRouteRegistry.class);
+
+                    assertThat(routeRegistry.resolve(HttpMethod.GET, "/supplied")).isNotNull();
+                    assertThat(routeRegistry.resolve(HttpMethod.GET, "/hello"))
+                            .as("a registry the application built is not re-populated from the context")
+                            .isNull();
+                });
+    }
+
+    @Configuration
+    static class UnresolvableHandlerConfig {
+
+        @Bean
+        @Lazy
+        @SuppressWarnings("unused")
+        BrokenHandler brokenHandler() {
+            throw new IllegalStateException("handler construction failed");
+        }
+    }
+
+    @ExerisRoute(method = HttpMethod.GET, path = "/broken")
+    static class BrokenHandler implements ExerisRequestHandler {
+        @Override
+        public ExerisServerResponse handle(ExerisServerRequest request) {
+            return ExerisServerResponse.ok().body("broken");
+        }
+    }
+
+    @Configuration
+    static class SuppliedRegistryConfig {
+
+        @Bean
+        @SuppressWarnings("unused")
+        ExerisRouteRegistry suppliedRouteRegistry() {
+            return ExerisRouteRegistry.builder()
+                    .register(HttpMethod.GET, "/supplied", request -> ExerisServerResponse.ok().body("supplied"))
+                    .build();
         }
     }
 

@@ -79,4 +79,31 @@ class ExerisRouteRegistryTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Duplicate route registration");
     }
+
+    @Test
+    void deferred_refusesToResolve_untilPopulated() {
+        ExerisRequestHandler handler = request -> ExerisServerResponse.ok().body("hello");
+        ExerisRouteRegistry registry = ExerisRouteRegistry.deferred();
+
+        // An unpopulated table must not answer as if the route did not exist.
+        assertThat(registry.isPopulated()).isFalse();
+        assertThatThrownBy(() -> registry.resolve(HttpMethod.GET, "/hello"))
+                .isInstanceOf(IllegalStateException.class);
+
+        registry.populate(ExerisRouteRegistry.builder().register(HttpMethod.GET, "/hello", handler));
+
+        assertThat(registry.isPopulated()).isTrue();
+        assertThat(registry.resolve(HttpMethod.GET, "/hello")).isSameAs(handler);
+    }
+
+    @Test
+    void populate_isAllowedOnce() {
+        ExerisRouteRegistry deferred = ExerisRouteRegistry.deferred();
+        deferred.populate(ExerisRouteRegistry.builder());
+
+        assertThatThrownBy(() -> deferred.populate(ExerisRouteRegistry.builder()))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> ExerisRouteRegistry.builder().build().populate(ExerisRouteRegistry.builder()))
+                .isInstanceOf(IllegalStateException.class);
+    }
 }
