@@ -12,6 +12,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
@@ -39,7 +40,8 @@ import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
  * No servlet types, no spring-webmvc.
  */
 @CompatibilityMode
-public final class ExerisExceptionHandlerResolver implements ApplicationContextAware, SmartInitializingSingleton {
+public final class ExerisExceptionHandlerResolver
+        implements ApplicationContextAware, InitializingBean, SmartInitializingSingleton {
 
     private record ExceptionHandlerMethod(Object bean,
                                           Class<?> beanType,
@@ -50,7 +52,10 @@ public final class ExerisExceptionHandlerResolver implements ApplicationContextA
 
     private final HandlerMethodArgumentResolverComposite argumentResolvers;
     private final List<HttpMessageConverter<?>> converters;
-    private volatile List<ExceptionHandlerMethod> adviceHandlers = List.of();
+    // Null until afterSingletonsInstantiated() collects the advice; written once.
+    private volatile List<ExceptionHandlerMethod> adviceHandlers;
+    // Set by afterPropertiesSet(). Lets code that never calls afterSingletonsInstantiated() collect on first use.
+    private volatile boolean collectOnFirstUse;
     private ApplicationContext applicationContext;
 
     /**
@@ -75,16 +80,15 @@ public final class ExerisExceptionHandlerResolver implements ApplicationContextA
     }
 
     /**
-     * Collects the exception handlers from the application context. A container calls
-     * {@link #afterSingletonsInstantiated()} itself, once every singleton exists; this method remains
-     * for code that drives the resolver outside a container.
-     *
-     * @deprecated call {@link #afterSingletonsInstantiated()}; this delegate is removed in a later
-     *             release
+     * Does not collect. A container calls this while the resolver is still being created, inside the
+     * {@code ExerisRuntimeLifecycle} → dispatcher chain, where collecting would make any advice bean that
+     * depends on that chain an unresolvable creation cycle. A container collects in
+     * {@link #afterSingletonsInstantiated()} instead. Code that drives the resolver outside a container
+     * and never calls that method gets the advice beans collected on first use.
      */
-    @Deprecated(since = "0.8", forRemoval = true)
+    @Override
     public void afterPropertiesSet() {
-        afterSingletonsInstantiated();
+        collectOnFirstUse = true;
     }
 
     @Override
@@ -109,6 +113,19 @@ public final class ExerisExceptionHandlerResolver implements ApplicationContextA
                 .thenComparing(handler -> handler.beanType().getName())
                 .thenComparing(handler -> handler.method().toGenericString()));
         this.adviceHandlers = List.copyOf(discovered);
+    }
+
+    private List<ExceptionHandlerMethod> adviceHandlers() {
+        List<ExceptionHandlerMethod> handlers = adviceHandlers;
+        if (handlers == null && collectOnFirstUse) {
+            synchronized (this) {
+                if (adviceHandlers == null) {
+                    afterSingletonsInstantiated();
+                }
+            }
+            handlers = adviceHandlers;
+        }
+        return handlers != null ? handlers : List.of();
     }
 
     /**
@@ -145,7 +162,7 @@ public final class ExerisExceptionHandlerResolver implements ApplicationContextA
             return;
         }
 
-        ExceptionHandlerMethod adviceHandler = findBestMatch(ex, adviceHandlers, true);
+        ExceptionHandlerMethod adviceHandler = findBestMatch(ex, adviceHandlers(), true);
         if (adviceHandler != null) {
             invoke(adviceHandler.bean(), adviceHandler.method(), ex, webRequest, springResponse);
             return;

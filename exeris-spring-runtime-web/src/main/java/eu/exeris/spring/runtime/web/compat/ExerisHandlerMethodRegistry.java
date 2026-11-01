@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
@@ -46,7 +47,8 @@ import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
  * so before the kernel accepts a request.
  */
 @CompatibilityMode
-public final class ExerisHandlerMethodRegistry implements ApplicationContextAware, SmartInitializingSingleton {
+public final class ExerisHandlerMethodRegistry
+        implements ApplicationContextAware, InitializingBean, SmartInitializingSingleton {
 
     /**
      * Creates an empty registry. Controller routes are discovered in {@link #afterSingletonsInstantiated()}.
@@ -66,6 +68,8 @@ public final class ExerisHandlerMethodRegistry implements ApplicationContextAwar
     private ApplicationContext applicationContext;
     // Null until afterSingletonsInstantiated() collects the controllers; written once.
     private volatile List<RouteEntry> routes;
+    // Set by afterPropertiesSet(). Lets code that never calls afterSingletonsInstantiated() collect on first use.
+    private volatile boolean collectOnFirstUse;
 
     private record RouteEntry(PathPattern pattern, Set<HttpMethod> methods, HandlerMethod handlerMethod) {}
 
@@ -83,16 +87,15 @@ public final class ExerisHandlerMethodRegistry implements ApplicationContextAwar
     }
 
     /**
-     * Collects the controller routes from the application context. A container calls
-     * {@link #afterSingletonsInstantiated()} itself, once every singleton exists; this method remains
-     * for code that drives the registry outside a container.
-     *
-     * @deprecated call {@link #afterSingletonsInstantiated()}; this delegate is removed in a later
-     *             release
+     * Does not collect. A container calls this while the registry is still being created, inside the
+     * {@code ExerisRuntimeLifecycle} → dispatcher chain, where collecting would make any controller that
+     * depends on that chain an unresolvable creation cycle. A container collects in
+     * {@link #afterSingletonsInstantiated()} instead. Code that drives the registry outside a container
+     * and never calls that method gets the controllers collected on first use.
      */
-    @Deprecated(since = "0.8", forRemoval = true)
+    @Override
     public void afterPropertiesSet() {
-        afterSingletonsInstantiated();
+        collectOnFirstUse = true;
     }
 
     @Override
@@ -189,6 +192,14 @@ public final class ExerisHandlerMethodRegistry implements ApplicationContextAwar
         record MatchCandidate(RouteEntry entry, PathPattern.PathMatchInfo info, int methodRank) {}
 
         List<RouteEntry> table = routes;
+        if (table == null && collectOnFirstUse) {
+            synchronized (this) {
+                if (routes == null) {
+                    afterSingletonsInstantiated();
+                }
+            }
+            table = routes;
+        }
         if (table == null) {
             throw new IllegalStateException("The handler method registry was consulted before the "
                     + "application context finished instantiating its singletons");

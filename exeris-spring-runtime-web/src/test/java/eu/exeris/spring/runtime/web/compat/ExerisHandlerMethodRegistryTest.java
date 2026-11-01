@@ -42,12 +42,11 @@ class ExerisHandlerMethodRegistryTest {
     }
 
     /**
-     * Code that drives the registry outside a container still populates it through the deprecated
-     * {@code afterPropertiesSet()} delegate.
+     * Code that drives the registry outside a container through {@code afterPropertiesSet()} alone gets
+     * the controllers collected on first use.
      */
     @Test
-    @SuppressWarnings("removal")
-    void deprecatedAfterPropertiesSet_populatesARegistryDrivenOutsideTheContainer() {
+    void afterPropertiesSetAlone_collectsOnFirstUse_outsideTheContainer() {
         try (var controllers = new AnnotationConfigApplicationContext(ControllersOnlyConfig.class)) {
             ExerisHandlerMethodRegistry registry = new ExerisHandlerMethodRegistry();
             registry.setApplicationContext(controllers);

@@ -183,9 +183,8 @@ do not change. The items below reach you through this runtime's own paths.
   and the `@ControllerAdvice` resolver collected their beans while being created, inside the same
   lifecycle chain, so the actuator's own compat controller, and any controller or advice that depended
   on the lifecycle, made startup fail with a circular-reference error. Both now collect once every
-  singleton exists. `ExerisHandlerMethodRegistry` and `ExerisExceptionHandlerResolver` therefore no
-  longer implement `InitializingBean`; their `afterPropertiesSet()` stays, deprecated for removal, as a
-  delegate to `afterSingletonsInstantiated()` (`accepted-api-changes.json`).
+  singleton exists. Code that drives either class outside a container through
+  `afterPropertiesSet()` gets them collected on first use.
 
 ### Preview status — what 0.8.x does *not* promise
 
