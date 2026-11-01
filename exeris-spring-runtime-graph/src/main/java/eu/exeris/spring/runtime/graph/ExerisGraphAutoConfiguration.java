@@ -15,6 +15,7 @@ import org.springframework.context.annotation.Bean;
 import eu.exeris.kernel.spi.graph.GraphEngine;
 import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeAutoConfiguration;
 import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
+import eu.exeris.spring.boot.autoconfigure.KernelProviderScope;
 
 /**
  * Autoconfiguration for the Exeris Graph bridge module.
@@ -28,6 +29,8 @@ import eu.exeris.spring.boot.autoconfigure.ExerisRuntimeLifecycle;
  * <ul>
  *   <li>{@link GraphEngineSupplier} — deferred accessor wired to
  *       {@link ExerisRuntimeLifecycle#getGraphEngine()}.</li>
+ *   <li>{@link KernelProviderScope} — re-binds the kernel persistence engine and memory
+ *       allocator around each template session on threads outside the kernel scope.</li>
  *   <li>{@link ExerisGraphProperties} — two-property activation matrix
  *       ({@code enabled} + {@code require-engine}).</li>
  *   <li>{@link ExerisGraphTemplate} — imperative facade with
@@ -73,17 +76,34 @@ public class ExerisGraphAutoConfiguration {
     }
 
     /**
+     * Provider scope for template sessions. Kernel graph backends read the persistence engine
+     * and the memory allocator from their {@code ScopedValue} slots, which are unbound on Spring
+     * threads; the scope re-binds them from the lifecycle's captured references, read lazily at
+     * call time, and leaves already-bound slots untouched.
+     *
+     * @param lifecycle the runtime lifecycle holding the captured references
+     * @return the {@link KernelProviderScope}
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public KernelProviderScope exerisGraphKernelProviderScope(ExerisRuntimeLifecycle lifecycle) {
+        return KernelProviderScope.fromLifecycle(lifecycle);
+    }
+
+    /**
      * Imperative facade over the kernel {@link GraphEngine} / {@code GraphSession} SPI.
      *
      * @param engineSupplier supplier for the graph engine
      * @param properties     graph configuration properties
+     * @param providerScope  provider scope wrapping every template session
      * @return the configured graph template
      */
     @Bean
     @ConditionalOnMissingBean
     public ExerisGraphTemplate exerisGraphTemplate(GraphEngineSupplier engineSupplier,
-                                                    ExerisGraphProperties properties) {
-        return new ExerisGraphTemplate(engineSupplier, properties);
+                                                    ExerisGraphProperties properties,
+                                                    KernelProviderScope providerScope) {
+        return new ExerisGraphTemplate(engineSupplier, properties, providerScope);
     }
 
     /**

@@ -184,6 +184,13 @@ do not change. The items below reach you through this runtime's own paths.
 
 ### Fixes
 
+- **`ExerisGraphTemplate` works from a Spring thread.** It now runs each session in a
+  `KernelProviderScope` that binds the kernel persistence engine and memory allocator. Before, on the
+  SQL/PGQ backend, `traverseBfs` and `inTransaction` failed with `GraphQueryException`
+  ("PersistenceEngine is not available in this request scope"). `streamBfsJson` and `@ExerisGraphQuery` methods returning `LoanedBuffer` also
+  failed on Neo4j. The scope binds only unbound slots, so a caller already in a kernel scope keeps its
+  own bindings. A `LoanedBuffer` segment spans `capacity()`, so read the payload as
+  `segment().asSlice(0, size())`.
 - **The actuator's `exeris.events.*` gauges count events.** In 0.7.0 the actuator bridge registered
   them, but nothing delivered events to it, so they always read 0. The dispatcher builds the sink list
   it binds to `KernelProviders.TELEMETRY_SINKS` from `TelemetryProvider` beans, and the bridge was not

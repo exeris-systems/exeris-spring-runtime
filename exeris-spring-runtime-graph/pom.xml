@@ -21,7 +21,7 @@
         Key capabilities:
           - GraphEngineSupplier: deferred accessor pattern (tryGet + default requireEngine)
             mirroring EventEngineSupplier / FlowEngineSupplier — reads
-            KernelProviders.GRAPH_ENGINE captured by ExerisRuntimeLifecycle.
+            GraphKernelProviders.GRAPH_ENGINE captured by ExerisRuntimeLifecycle.
           - ExerisGraphProperties: enabled (default false) + requireEngine (default true)
             two-property configuration matrix.
           - ExerisGraphAutoConfiguration: @ConditionalOnProperty(enabled=true) gating;
@@ -110,11 +110,30 @@
             <scope>test</scope>
         </dependency>
         <!-- Runtime integration test: a real GraphProvider on the test classpath so the
-             kernel bootstrap discovers and binds KernelProviders.GRAPH_ENGINE. Production
+             kernel bootstrap discovers and binds GraphKernelProviders.GRAPH_ENGINE. Production
              classpath stays clean — community is test-scope only. -->
         <dependency>
             <groupId>eu.exeris</groupId>
             <artifactId>exeris-kernel-community</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Kernel graph integration test: the SQL/PGQ backend runs on the kernel persistence
+             engine against a real PostgreSQL. The kernel declares the driver optional.
+             Testcontainers versions come from the kernel BOM, imported ahead of the Boot BOM,
+             so both matrix lines resolve the same artifacts. -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
         <!-- PureModeClasspathGuardTest uses ArchUnit to enforce pure-mode and
