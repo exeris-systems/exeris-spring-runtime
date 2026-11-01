@@ -112,6 +112,19 @@ do not change. The items below reach you through this runtime's own paths.
 - **The graph engine is read from `GraphKernelProviders.GRAPH_ENGINE`.** The `KernelProviders` alias
   is deprecated in the kernel and refers to the same instance.
 
+### Startup failures
+
+- **A failed start reports its cause at once.** A failure before the kernel boot, such as a second
+  Exeris runtime started in a JVM where one already runs, used to stay on the runtime's own thread.
+  Startup then waited the whole `exeris.runtime.lifecycle.startup-timeout-seconds` and reported only a
+  timeout. It now fails the start immediately, with the original exception as its cause. One Exeris
+  runtime per JVM is supported; a runtime that stopped releases the JVM for the next one, so sequential
+  contexts and `@DirtiesContext` keep working.
+- **A kernel boot refusal names its error code and detail.** The start failure carries the kernel's
+  `EX-` code and, for a subsystem, its name, phase and detail, for example
+  `[EX-BOOT-0002] subsystem 'security' failed in INITIALIZE: security.jwks.uri is not set…`. Before, it
+  ended at the kernel's constant "Subsystem lifecycle failure".
+
 ### Distribution and metadata
 
 - **Maven Central (ADR-107, which supersedes ADR-067).** Each module's main jar is the one SB3-compiled

@@ -20,6 +20,8 @@ import eu.exeris.kernel.core.bootstrap.KernelBootstrap;
 import eu.exeris.kernel.spi.bootstrap.BootstrapSelector;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.events.EventEngine;
+import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
+import eu.exeris.kernel.spi.exceptions.SubsystemException;
 import eu.exeris.kernel.spi.flow.FlowEngine;
 import eu.exeris.kernel.spi.graph.GraphEngine;
 import eu.exeris.kernel.spi.graph.GraphKernelProviders;
@@ -441,14 +443,21 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
                                    CountDownLatch bootReady,
                                    CountDownLatch releaseSignal,
                                    AtomicReference<Exception> bootFailure) {
-        configProvider.prepareBootstrap();
+        // Every failure from here on, the per-JVM slot refusal included, reaches start() through
+        // bootFailure and bootReady; one that escaped this thread would leave start() waiting for a
+        // readiness signal that never comes. Only a slot this thread reserved is released.
+        boolean bootstrapPrepared = false;
         try {
+            configProvider.prepareBootstrap();
+            bootstrapPrepared = true;
             bootKernel(kernelBootstrap, bootReady, releaseSignal);
         } catch (KernelBootstrap.BootstrapException | RuntimeException ex) {
             bootFailure.set(ex);
         } finally {
             bootReady.countDown();
-            configProvider.clearBootstrap();
+            if (bootstrapPrepared) {
+                configProvider.clearBootstrap();
+            }
             capturedEventEngine.set(null);
             capturedFlowEngine.set(null);
             capturedGraphEngine.set(null);
@@ -647,6 +656,24 @@ public final class ExerisRuntimeLifecycle implements SmartLifecycle {
         } catch (RuntimeException ex) {
             cause.addSuppressed(ex);
         }
-        return new IllegalStateException("Exeris runtime startup failed", cause);
+        return new IllegalStateException("Exeris runtime startup failed: " + describeFailure(cause), cause);
+    }
+
+    /**
+     * Names what failed in operator terms. A kernel exception's message is a constant per type; its
+     * diagnosis is in the error code and, for a subsystem failure, in the subsystem, phase and detail,
+     * so those are read from the first kernel exception in the cause chain.
+     */
+    private static String describeFailure(Throwable failure) {
+        for (Throwable current = failure; current != null; current = current.getCause()) {
+            if (current instanceof SubsystemException subsystem) {
+                return "[" + subsystem.errorCode() + "] subsystem '" + subsystem.subsystemName()
+                        + "' failed in " + subsystem.phase() + ": " + subsystem.detail();
+            }
+            if (current instanceof ExerisKernelException kernel) {
+                return "[" + kernel.errorCode() + "] " + kernel.getMessage();
+            }
+        }
+        return String.valueOf(failure.getMessage());
     }
 }

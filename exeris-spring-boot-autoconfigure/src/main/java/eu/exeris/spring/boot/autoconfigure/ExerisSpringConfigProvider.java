@@ -96,10 +96,17 @@ public final class ExerisSpringConfigProvider implements ConfigProvider {
      * Makes this instance's {@link Environment} available for ServiceLoader-created instances
      * during the synchronous boot window.
      * Must be called immediately before {@code KernelBootstrap.boot()}.
+     *
+     * <p>The slot is per JVM. {@code boot()} returns only when the runtime stops, so the slot is held
+     * for the runtime's whole life and a second runtime started while one runs is refused.
+     *
+     * @throws IllegalStateException if another runtime in this JVM holds the slot
      */
     void prepareBootstrap() {
         if (!BOOTSTRAP_PREPARED.compareAndSet(false, true)) {
-            throw new IllegalStateException("Exeris bootstrap environment already prepared");
+            throw new IllegalStateException("Exeris bootstrap environment already prepared: another Exeris "
+                    + "runtime is running in this JVM. Only one Exeris runtime per JVM is supported; "
+                    + "stop the earlier runtime before starting another.");
         }
         BOOTSTRAP_ENVIRONMENT.set(this.environment);
         publishLegacyHttpAliases(this.environment);

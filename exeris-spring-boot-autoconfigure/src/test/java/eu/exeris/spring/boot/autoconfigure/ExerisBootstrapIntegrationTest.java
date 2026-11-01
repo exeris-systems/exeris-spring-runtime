@@ -524,6 +524,136 @@ class ExerisBootstrapIntegrationTest {
         });
     }
 
+    /**
+     * One Exeris runtime per JVM: the bootstrap environment is a single static slot held for the
+     * runtime's whole life. A second lifecycle started while the first runs must fail at once, as its
+     * start failure and with the reason, rather than wait out the startup timeout.
+     */
+    @Test
+    void secondLifecycleStartedWhileOneRuns_failsFastNamingTheCause() throws Exception {
+        int port = 0;
+        withKernelHttpSystemProperties(port, () -> {
+            try (var first = createContext(minimalRuntimeProperties("exeris_second_runtime_a"),
+                         LifecycleHandlerConfig.class);
+                 var second = createContext(minimalRuntimeProperties("exeris_second_runtime_b"),
+                         LifecycleHandlerConfig.class)) {
+                ExerisRuntimeLifecycle running = first.getBean(ExerisRuntimeLifecycle.class);
+                ExerisRuntimeLifecycle another = second.getBean(ExerisRuntimeLifecycle.class);
+                running.start();
+                try {
+                    assertThat(running.isRunning()).isTrue();
+
+                    long startedAt = System.nanoTime();
+                    assertThatThrownBy(another::start)
+                            .isInstanceOf(IllegalStateException.class)
+                            .hasMessageContaining("Exeris runtime startup failed")
+                            .hasMessageContaining("one Exeris runtime per JVM")
+                            .hasMessageContaining("stop the earlier runtime")
+                            .rootCause()
+                            .as("the original refusal is kept as the cause")
+                            .hasMessageContaining("one Exeris runtime per JVM");
+                    assertThat(Duration.ofNanos(System.nanoTime() - startedAt))
+                            .as("the refusal must be reported at once, not after the startup timeout")
+                            .isLessThan(Duration.ofSeconds(5));
+                    assertThat(another.isRunning()).isFalse();
+                    assertThat(running.isRunning())
+                            .as("the refused start must not disturb the runtime that holds the slot")
+                            .isTrue();
+                } finally {
+                    running.stop();
+                }
+            } catch (Exception ex) {
+                throw new RuntimeException(ex);
+            }
+        });
+    }
+
+    /**
+     * Stopping a runtime releases the per-JVM slot, so the same JVM can start a runtime again — the
+     * shape of sequential contexts and {@code @DirtiesContext} in a test suite.
+     */
+    @Test
+    void runtimeCanBeStartedStoppedAndStartedAgainInTheSameJvm() throws Exception {
+        int port = 0;
+        withKernelHttpSystemProperties(port, () -> {
+            try (var ctx = createContext(minimalRuntimeProperties("exeris_restart_same_instance"),
+                    LifecycleHandlerConfig.class)) {
+                ExerisRuntimeLifecycle lifecycle = ctx.getBean(ExerisRuntimeLifecycle.class);
+                lifecycle.start();
+                assertThat(lifecycle.isRunning()).isTrue();
+                lifecycle.stop();
+                assertThat(lifecycle.isRunning()).isFalse();
+
+                lifecycle.start();
+                try {
+                    assertThat(lifecycle.isRunning())
+                            .as("the same lifecycle starts again after a stop")
+                            .isTrue();
+                } finally {
+                    lifecycle.stop();
+                }
+            } catch (Exception ex) {
+                throw new RuntimeException(ex);
+            }
+            try (var next = createContext(minimalRuntimeProperties("exeris_restart_next_context"),
+                    LifecycleHandlerConfig.class)) {
+                ExerisRuntimeLifecycle lifecycle = next.getBean(ExerisRuntimeLifecycle.class);
+                lifecycle.start();
+                try {
+                    assertThat(lifecycle.isRunning())
+                            .as("a new context starts a runtime after the previous one stopped")
+                            .isTrue();
+                } finally {
+                    lifecycle.stop();
+                }
+            } catch (Exception ex) {
+                throw new RuntimeException(ex);
+            }
+        });
+    }
+
+    /**
+     * A kernel subsystem refusal carries its diagnosis in the error code and detail, not in the
+     * message, which is a constant. The start failure Spring reports must carry both. A partial
+     * edge-key set is the smallest refusal to reproduce: the security subsystem needs only memory.
+     */
+    @Test
+    void subsystemBootFailure_reportsTheKernelErrorCodeAndDetail() throws Exception {
+        int port = 0;
+        withKernelHttpSystemProperties(port, () -> {
+            Map<String, Object> properties = new LinkedHashMap<>();
+            properties.put("exeris.runtime.auto-start", "false");
+            properties.put("exeris.runtime.network.port", Integer.toString(port));
+            properties.put("exeris.runtime.subsystems", "memory,security");
+            properties.put("security.jwt.issuer", "https://issuer.example.test");
+            properties.put("security.jwt.audience", "exeris-boot-failure-test");
+            try (var ctx = createContext(properties)) {
+                ExerisRuntimeLifecycle lifecycle = ctx.getBean(ExerisRuntimeLifecycle.class);
+
+                long startedAt = System.nanoTime();
+                assertThatThrownBy(lifecycle::start)
+                        .isInstanceOf(IllegalStateException.class)
+                        .hasMessageContaining("Exeris runtime startup failed")
+                        .hasMessageContaining("EX-BOOT-0002")
+                        .hasMessageContaining("security.jwks.uri is not set");
+                assertThat(Duration.ofNanos(System.nanoTime() - startedAt)).isLessThan(Duration.ofSeconds(5));
+                assertThat(lifecycle.isRunning()).isFalse();
+            }
+        });
+    }
+
+    private static Map<String, Object> minimalRuntimeProperties(String database) {
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("exeris.runtime.auto-start", "false");
+        properties.put("exeris.runtime.network.port", "0");
+        properties.put("exeris.runtime.persistence.jdbc-url", "jdbc:h2:mem:" + database + ";DB_CLOSE_DELAY=-1");
+        properties.put("exeris.runtime.persistence.username", "sa");
+        properties.put("exeris.runtime.persistence.password", "");
+        properties.put("exeris.runtime.persistence.run-migrations", "false");
+        properties.put("exeris.runtime.subsystems", "memory,crypto");
+        return properties;
+    }
+
     private static boolean isClassPresent(String className) {
         try {
             Class.forName(className, false, ExerisBootstrapIntegrationTest.class.getClassLoader());
