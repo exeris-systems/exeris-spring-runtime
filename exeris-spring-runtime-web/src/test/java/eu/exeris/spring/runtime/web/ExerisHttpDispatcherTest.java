@@ -37,7 +37,7 @@ class ExerisHttpDispatcherTest {
     @BeforeEach
     @SuppressWarnings("unused")
     void resetWarningFlags() throws Exception {
-        resetAtomicBoolean("FALLBACK_WARNING_LOGGED");
+        resetAtomicBoolean("FALLBACK_BINDING_LOGGED");
         resetAtomicBoolean("FALLBACK_RESOLUTION_WARNING_LOGGED");
     }
 
@@ -120,7 +120,7 @@ class ExerisHttpDispatcherTest {
     }
 
     @Test
-    void fallbackTelemetryBinding_logsWarningOnlyOnce_whenFallbackSinksAreActuallyUsed() throws Exception {
+    void fallbackTelemetryBinding_logsOnlyOnce_whenFallbackSinksAreActuallyUsed() throws Exception {
         Logger julLogger = Logger.getLogger(ExerisHttpDispatcher.class.getName());
         Level previousLevel = julLogger.getLevel();
         julLogger.setLevel(Level.ALL);
@@ -138,15 +138,14 @@ class ExerisHttpDispatcherTest {
             dispatcher.handle(TestExchange.get(HttpMethod.GET, "/telemetry", anyHttpVersion()).proxy());
             dispatcher.handle(TestExchange.get(HttpMethod.GET, "/telemetry", anyHttpVersion()).proxy());
 
-            List<String> warnings = logHandler.messages().stream()
-                    .filter(message -> message.contains("fallback telemetry sinks") || message.contains("telemetry bootstrap"))
+            List<String> bindingMessages = logHandler.messages().stream()
+                    .filter(message -> message.contains("TELEMETRY_SINKS"))
                     .toList();
 
-            assertThat(warnings).hasSize(1);
-            assertThat(warnings.get(0))
-                    .contains("tests")
-                    .contains("compat")
-                    .contains("telemetry bootstrap");
+            assertThat(bindingMessages).hasSize(1);
+            assertThat(bindingMessages.get(0))
+                    .contains("telemetry sinks")
+                    .contains("each request");
         } finally {
             julLogger.removeHandler(logHandler);
             julLogger.setLevel(previousLevel);
@@ -374,7 +373,7 @@ class ExerisHttpDispatcherTest {
 
         @Override
         public void publish(LogRecord logEntry) {
-            if (logEntry != null && logEntry.getLevel().intValue() >= Level.WARNING.intValue()) {
+            if (logEntry != null && logEntry.getLevel().intValue() >= Level.INFO.intValue()) {
                 messages.add(logEntry.getMessage());
             }
         }

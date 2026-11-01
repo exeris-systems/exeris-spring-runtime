@@ -17,9 +17,13 @@ import java.util.concurrent.atomic.AtomicLong;
  * Micrometer {@link MeterBinder} that bridges Exeris kernel telemetry events to
  * Micrometer metrics.
  *
- * <p>Also implements {@link TelemetrySink} so that in non-kernel-scope paths
- * (testkit, development without a live kernel) Exeris telemetry calls are forwarded
- * to the Micrometer registry through this bridge.
+ * <h2>What It Receives</h2>
+ * <p>Also implements {@link TelemetrySink}. {@link ExerisActuatorTelemetryProvider} puts it in the
+ * sink list the Pure Mode dispatcher binds to {@code KernelProviders.TELEMETRY_SINKS} for the
+ * duration of each request, so it counts the {@link KernelEvent}s emitted through that slot while a
+ * Pure Mode handler runs. Nothing else reaches it: the kernel's own subsystems record Flight
+ * Recorder events directly rather than through a {@code TelemetrySink}, and a Compatibility Mode
+ * request runs outside that binding.
  *
  * <h2>ScopedValue Contract</h2>
  * <p>{@link #bindTo(MeterRegistry)} is called by Micrometer on the Spring context startup
@@ -90,7 +94,7 @@ public final class ExerisActuatorTelemetryBridge implements MeterBinder, Telemet
     }
 
     // =========================================================================
-    // TelemetrySink — receives events in non-kernel-scope fallback paths
+    // TelemetrySink — receives events emitted through TELEMETRY_SINKS during Pure Mode dispatch
     // =========================================================================
 
     @Override

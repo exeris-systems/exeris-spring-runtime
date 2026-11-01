@@ -35,8 +35,9 @@ import eu.exeris.spring.runtime.actuator.compat.ExerisCompatibilityActuatorContr
  *   <li>{@link ExerisCompatibilityActuatorController} — compatibility-mode HTTP diagnostics
  *       bridge exposing Spring Boot Actuator's standard {@code /actuator/health} and
  *       {@code /actuator/info} endpoint shape without requiring servlet or reactive ownership
- *   <li>{@link ExerisActuatorTelemetryBridge} — Micrometer event-level counter bridge
- *       (only when {@code io.micrometer.core.instrument.MeterRegistry} is present)
+ *   <li>{@link ExerisActuatorTelemetryBridge} — Micrometer event-level counter bridge, and the
+ *       {@link ExerisActuatorTelemetryProvider} that puts it in the Pure Mode request telemetry
+ *       scope (only when {@code io.micrometer.core.instrument.MeterRegistry} is present)
  * </ul>
  *
  * <h2>What This Does NOT Do</h2>
@@ -190,6 +191,17 @@ public class ExerisActuatorAutoConfiguration {
         @ConditionalOnMissingBean
         public ExerisActuatorTelemetryBridge exerisActuatorTelemetryBridge() {
             return new ExerisActuatorTelemetryBridge();
+        }
+
+        /**
+         * Feeds the bridge: the Pure Mode dispatcher builds the sink list it binds to
+         * {@code KernelProviders.TELEMETRY_SINKS} from {@code TelemetryProvider} beans.
+         */
+        @Bean
+        @ConditionalOnMissingBean
+        public ExerisActuatorTelemetryProvider exerisActuatorTelemetryProvider(
+                ExerisActuatorTelemetryBridge bridge) {
+            return new ExerisActuatorTelemetryProvider(bridge);
         }
     }
 }

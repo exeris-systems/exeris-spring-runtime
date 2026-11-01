@@ -34,7 +34,7 @@ HttpExchange             →    ExerisServerRequest/Response       →    Handle
 ConfigProvider           →    ExerisSpringConfigProvider         →    Spring Environment
 SubsystemProvider        →    SpringSubsystemBridge              →    ApplicationContext lifecycle
 KernelProviders          →    ExerisContextHolder                →    ScopedValue propagation
-TelemetryProvider        →    ExerisActuatorTelemetryBridge      →    Micrometer MeterRegistry
+TelemetrySink            →    ExerisActuatorTelemetryBridge      →    Micrometer MeterRegistry
 EventEngine / EventBus   →    ExerisEventPublisher/Registrar     →    @ExerisEventListener beans
 FlowEngine               →    ExerisFlowTemplate/Registrar       →    @ExerisFlowDefinition beans
 FlowChoreographyMapper   →    ExerisFlowChoreographyBridge       →    ExerisFlowChoreographyMapper beans
@@ -344,7 +344,7 @@ request path: unbound-only re-bind, `ScopedValue` only, mode-neutral.
 
 | Slot | Type | Spring integration |
 |:-----|:-----|:------------------|
-| `KernelProviders.TELEMETRY_SINKS` | `List<TelemetrySink>` | Read by actuator bridge |
+| `KernelProviders.TELEMETRY_SINKS` | `List<TelemetrySink>` | Bound by `ExerisHttpDispatcher` per Pure Mode request; carries the actuator bridge |
 | `KernelProviders.PERSISTENCE_ENGINE` | `PersistenceEngine` | Read by tx/data modules |
 | `HttpKernelProviders.HTTP_PROVIDER` | `HttpProvider` | Accessed by web module for engine ref |
 
@@ -375,16 +375,26 @@ explicitly isolated per request scope.
 
 **Integration strategy:**
 
-`ExerisActuatorTelemetryBridge implements MeterBinder` reads from the `TelemetrySink`
-available via `KernelProviders.TELEMETRY_SINKS` and bridges kernel metrics (counters,
-gauges, latencies) to Micrometer `MeterRegistry`.
+`ExerisActuatorTelemetryBridge` is both a `MeterBinder` and a `TelemetrySink`. It registers four
+gauges, `exeris.events.{info,warn,error,fatal}`, and counts each `KernelEvent` it is given by level.
+The actuator module also registers `ExerisActuatorTelemetryProvider`, a `TelemetryProvider` bean
+whose only sink is the bridge. `ExerisWebAutoConfiguration` builds the dispatcher's sink list from
+`TelemetryProvider` beans, and `ExerisHttpDispatcher` binds that list to
+`KernelProviders.TELEMETRY_SINKS` for the duration of each Pure Mode request.
 
 ```
-Micrometer MeterRegistry (Actuator)
-    ← ExerisActuatorTelemetryBridge.bindTo(registry)
-        ← KernelProviders.TELEMETRY_SINKS.get()
-            → TelemetrySink.counters() etc.
+event emitted through KernelProviders.TELEMETRY_SINKS inside a Pure Mode handler
+    → ExerisActuatorTelemetryBridge.emit(event)        (bound by ExerisHttpDispatcher)
+        → exeris.events.<level> gauge                  (registered by bindTo(registry))
 ```
+
+**What the bridge does not receive.** At kernel 0.13.1 the kernel neither binds
+`TELEMETRY_SINKS` nor emits through a `TelemetrySink`. Its subsystems record Flight Recorder
+events directly, so none of the kernel's own events reach the bridge. Nor do events in a
+Compatibility Mode request, which runs outside the dispatcher's binding. The bridge's
+`increment`, `gauge` and `latency` methods are no-ops: arbitrary metric names are not bridged.
+`ExerisActuatorTelemetryProvider` is a Spring bean, not a `ServiceLoader` registration, so the
+kernel never discovers it.
 
 The `TelemetrySink` is the Exeris telemetry model. The actuator module must not replace it,
 redefine event envelopes, or bypass `KernelEvent` encoding. It may only read and translate.
