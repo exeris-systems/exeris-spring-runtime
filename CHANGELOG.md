@@ -21,12 +21,14 @@ application framework; Exeris is the runtime owner. See [`docs/architecture/over
 **Status: preview**, as 0.7.0. Nothing in this release graduates a module. The section freezes when the
 tag is cut.
 
-0.8.0 adds three things to 0.7.0:
+0.8.0 adds four things to 0.7.0, and fixes defects that 0.7.0 shipped with (see [Fixes](#fixes)):
 
 - **Per-path route authorization** that the kernel enforces at admission (ADR-063). It closes the one
   gap in 0.7.0 with a security consequence.
 - **The kernel pin moves from 0.11.0 to 0.13.1.** This runtime now owns the stop sequence alone.
 - **Releases resolve from Maven Central** (ADR-107), with no repository entry and no credentials.
+- **Transaction propagation behaves as Spring defines it** inside an existing transaction, within the
+  limits a kernel request route sets (ADR-109).
 
 The 0.8.0 train in `docs/roadmap-1.0-trl9.md` was scheduled for the Spring Boot 4 dual matrix, but that
 shipped in 0.7.0. See the roadmap for what this train carries instead.
