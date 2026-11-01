@@ -111,9 +111,10 @@ class SpringBootHealthIndicatorFactoryTest {
         Object first = createIndicator(notRunningLifecycle());
         Object second = createIndicator(notRunningLifecycle());
 
-        assertThat(first).isEqualTo(first);
+        assertThat(first.equals(first)).as("equals is reflexive through the proxy handler").isTrue();
         assertThat(first).isNotEqualTo(second);
-        assertThat(first.hashCode()).isEqualTo(first.hashCode());
+        int hash = first.hashCode();
+        assertThat(first.hashCode()).as("hashCode is stable across calls").isEqualTo(hash);
         assertThat(first.toString()).contains("ExerisRuntimeHealthIndicator");
     }
 
