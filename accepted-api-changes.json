@@ -4,5 +4,11 @@
     "since": "0.8",
     "adr": "ADR-107",
     "justification": "Published BOM: it no longer manages any third-party coordinate. Up to 0.7.0 it inherited the parent's dependencyManagement, about 1600 coordinates: the Spring Boot 3.5.14 BOM, the kernel BOM and the parent's own pins. Importing it gave every consumer the SB3 line's versions, so a Spring Boot 4 application resolved Spring Framework 6.2.x and did not start (#90). From 0.8.0 the BOM is published flattened, with no parent, and manages only the eu.exeris module coordinates it declares (ADR-107 amendment 2026-10-31); build.yml fails the build if it manages anything else. An application that relied on the BOM for Spring or other third-party versions, with no spring-boot-starter-parent and no spring-boot-dependencies import of its own, imports org.springframework.boot:spring-boot-dependencies for its own Spring Boot line; the 0.8.0 CHANGELOG carries the upgrade step. No class or module pom changes."
+  },
+  {
+    "signature": "eu.exeris.spring.runtime.web.compat.ExerisHandlerMethodRegistry, eu.exeris.spring.runtime.web.compat.ExerisExceptionHandlerResolver (implements InitializingBean)",
+    "since": "0.8",
+    "adr": null,
+    "justification": "Both Compatibility Mode infrastructure classes no longer implement InitializingBean; they implement SmartInitializingSingleton and collect controllers and advice once every singleton exists. As InitializingBean the container called afterPropertiesSet() while the beans were still being created, inside the ExerisRuntimeLifecycle -> dispatcher chain, and any controller or advice that depended on a bean in that chain failed startup with BeanCurrentlyInCreationException. Keeping the interface would bring that back. The public afterPropertiesSet() method stays, deprecated for removal, as a delegate to afterSingletonsInstantiated(), so code that calls it keeps compiling and working; only code that uses either class as an InitializingBean is affected. Both classes are created by ExerisCompatAutoConfiguration, not by applications."
   }
 ]

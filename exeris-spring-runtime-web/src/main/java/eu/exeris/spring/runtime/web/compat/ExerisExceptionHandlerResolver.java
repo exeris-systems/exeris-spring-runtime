@@ -74,6 +74,19 @@ public final class ExerisExceptionHandlerResolver implements ApplicationContextA
         this.applicationContext = applicationContext;
     }
 
+    /**
+     * Collects the exception handlers from the application context. A container calls
+     * {@link #afterSingletonsInstantiated()} itself, once every singleton exists; this method remains
+     * for code that drives the resolver outside a container.
+     *
+     * @deprecated call {@link #afterSingletonsInstantiated()}; this delegate is removed in a later
+     *             release
+     */
+    @Deprecated(since = "0.8", forRemoval = true)
+    public void afterPropertiesSet() {
+        afterSingletonsInstantiated();
+    }
+
     @Override
     public void afterSingletonsInstantiated() {
         if (applicationContext == null) {

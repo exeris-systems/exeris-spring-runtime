@@ -82,6 +82,19 @@ public final class ExerisHandlerMethodRegistry implements ApplicationContextAwar
         this.applicationContext = applicationContext;
     }
 
+    /**
+     * Collects the controller routes from the application context. A container calls
+     * {@link #afterSingletonsInstantiated()} itself, once every singleton exists; this method remains
+     * for code that drives the registry outside a container.
+     *
+     * @deprecated call {@link #afterSingletonsInstantiated()}; this delegate is removed in a later
+     *             release
+     */
+    @Deprecated(since = "0.8", forRemoval = true)
+    public void afterPropertiesSet() {
+        afterSingletonsInstantiated();
+    }
+
     @Override
     public void afterSingletonsInstantiated() {
         PathPatternParser parser = PathPatternParser.defaultInstance;

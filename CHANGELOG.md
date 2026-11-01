@@ -164,8 +164,6 @@ do not change. The items below reach you through this runtime's own paths.
   binding measures 312 B, and the dispatcher's allocation baseline now holds both cases to its 1 KiB
   budget.
 
-### Fixed
-
 - **Every `@ExerisRoute` handler is routed, whatever it depends on.** A Pure Mode handler that depended,
   directly or transitively, on a bean that depends on `ExerisRuntimeLifecycle` (for example on
   `HealthEndpoint`, with `exeris-spring-runtime-actuator` present) was left out of the route table
@@ -178,7 +176,9 @@ do not change. The items below reach you through this runtime's own paths.
   and the `@ControllerAdvice` resolver collected their beans while being created, inside the same
   lifecycle chain, so the actuator's own compat controller, and any controller or advice that depended
   on the lifecycle, made startup fail with a circular-reference error. Both now collect once every
-  singleton exists.
+  singleton exists. `ExerisHandlerMethodRegistry` and `ExerisExceptionHandlerResolver` therefore no
+  longer implement `InitializingBean`; their `afterPropertiesSet()` stays, deprecated for removal, as a
+  delegate to `afterSingletonsInstantiated()` (`accepted-api-changes.json`).
 
 ### Preview status — what 0.8.x does *not* promise
 

@@ -87,11 +87,12 @@ public class ExerisWebAutoConfiguration {
      * Creates the route registry, populated from {@link ExerisRoute} annotated handler beans by
      * {@link #exerisRouteRegistryPopulator} once all singletons are instantiated.
      *
+     * @param ctx the application context; the populator reads it, so this method does not
      * @return a deferred route registry
      */
     @Bean
     @ConditionalOnMissingBean
-    public ExerisRouteRegistry exerisRouteRegistry() {
+    public ExerisRouteRegistry exerisRouteRegistry(ApplicationContext ctx) {
         return ExerisRouteRegistry.deferred();
     }
 

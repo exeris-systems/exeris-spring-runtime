@@ -41,6 +41,34 @@ class ExerisHandlerMethodRegistryTest {
         }
     }
 
+    /**
+     * Code that drives the registry outside a container still populates it through the deprecated
+     * {@code afterPropertiesSet()} delegate.
+     */
+    @Test
+    @SuppressWarnings("removal")
+    void deprecatedAfterPropertiesSet_populatesARegistryDrivenOutsideTheContainer() {
+        try (var controllers = new AnnotationConfigApplicationContext(ControllersOnlyConfig.class)) {
+            ExerisHandlerMethodRegistry registry = new ExerisHandlerMethodRegistry();
+            registry.setApplicationContext(controllers);
+
+            registry.afterPropertiesSet();
+
+            var resolved = registry.resolve(HttpMethod.GET, "/compat-routes/fixed");
+            assertThat(resolved).isPresent();
+            assertThat(resolved.orElseThrow().handlerMethod().getMethod().getName()).isEqualTo("fixedRoute");
+        }
+    }
+
+    @Configuration
+    static class ControllersOnlyConfig {
+
+        @Bean
+        SpecificRouteController specificRouteController() {
+            return new SpecificRouteController();
+        }
+    }
+
     @Configuration
     static class RouteConfig {
 
