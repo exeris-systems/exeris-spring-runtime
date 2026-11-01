@@ -57,20 +57,25 @@ without HikariCP or `DataSource.getConnection()` as the canonical entry point.
 | Spring propagation | Status |
 |:---|:---|
 | `REQUIRED` | ✅ Joins existing transaction or starts new |
-| `REQUIRES_NEW` | ✅ Always opens a second independent connection |
-| `MANDATORY` | ✅ Requires active transaction; throws if none |
-| `NESTED` | ❌ `UnsupportedOperationException` (Phase 3 scope limit; needs kernel savepoint support) |
-| `NOT_SUPPORTED` | ❌ `UnsupportedOperationException` (would require connection suspension; deferred) |
 | `SUPPORTS` | ✅ Joins if present, runs without transaction otherwise |
-| `NEVER` | ✅ Throws if active transaction present |
+| `MANDATORY` | ✅ Joins if present; `IllegalTransactionStateException` if none |
+| `NEVER` | ✅ `IllegalTransactionStateException` if a transaction is active |
+| `REQUIRES_NEW` | ✅ Off the request path: suspends, runs on a second connection, resumes. ❌ On a kernel request route: `IllegalTransactionStateException` |
+| `NOT_SUPPORTED` | ✅ Off the request path: suspends and runs without a transaction. ❌ On a kernel request route: `IllegalTransactionStateException` |
+| `NESTED` | ❌ `UnsupportedOperationException` (Phase 3 scope limit; needs kernel savepoint support) |
+
+On a kernel request route the kernel holds one connection for the whole request, so there is no
+second connection to suspend onto; the manager refuses before the inner work runs and the outer
+transaction stays usable. See `phase-3-invariants.md` invariant #4.
 
 ### Divergence from original plan
 
 The original plan proposed a hybrid `ScopedValue` + Spring `TransactionSynchronizationManager`
 dual binding for the active connection. The implementation took a cleaner path: the
 `PersistenceConnection` travels inside Spring's transaction infrastructure (via
-`ExerisTransactionObject` carried in `DefaultTransactionStatus`) and is **not**
-duplicated into a `ScopedValue` slot. The `KernelProviders.PERSISTENCE_ENGINE` `ScopedValue`
+`ExerisTransactionObject`, carried in `DefaultTransactionStatus` and bound to
+`TransactionSynchronizationManager` under the transaction manager for the transaction's
+duration) and is **not** duplicated into a `ScopedValue` slot. The `KernelProviders.PERSISTENCE_ENGINE` `ScopedValue`
 is read at `doBegin(...)` time (not at bean construction), preserving the kernel
 ScopedValue contract for engine resolution. Connection lifetime is bounded by the
 Spring transaction boundary; no separate ScopedValue-bound connection state exists,
@@ -272,7 +277,7 @@ The plan defined four kill criteria for Phase 3. None triggered:
 | Risk | Resolution |
 |:-----|:-----------|
 | Kernel `PersistenceEngine` API not yet public in 0.5.0-SNAPSHOT | Accessed via `KernelProviders.PERSISTENCE_ENGINE` ScopedValue at transaction-begin time; kernel API is now stable enough for this contract. |
-| Nested transaction semantics mismatch | Documented as `UnsupportedOperationException` for `NESTED` and `NOT_SUPPORTED`; `REQUIRED`, `REQUIRES_NEW`, `MANDATORY`, `SUPPORTS`, `NEVER` all supported. |
+| Nested transaction semantics mismatch | `NESTED` throws `UnsupportedOperationException`; `REQUIRED`, `SUPPORTS`, `MANDATORY`, `NEVER` supported; `REQUIRES_NEW` and `NOT_SUPPORTED` supported off the request path and refused with `IllegalTransactionStateException` on a kernel request route. |
 | VT `ThreadLocal` interaction with Spring AOP proxy creation | Tested in `ExerisTransactionalAopIntegrationTest`; AOP proxy creation occurs off-VT during context refresh, not on the request VT. |
-| Suspension/resume in Exeris kernel not implemented | Mitigated by treating REQUIRED + REQUIRES_NEW as the supported propagation set; `REQUIRES_NEW` opens a second connection rather than suspending the first. |
+| Suspension/resume in Exeris kernel not implemented | Suspension is Spring-side: the manager unbinds the outer transaction from the thread and binds it back on resume, while the kernel connection stays open. It needs the engine to hand out a second connection, which it does off the request path and not on a kernel request route; there the manager refuses `REQUIRES_NEW` and `NOT_SUPPORTED` with `IllegalTransactionStateException`. |
 | JDBC gravity well | Mitigated by ADR-017 boundaries + `DataModuleBoundaryTest` ArchUnit enforcement (JDBC adapter classes must reside in `*.data.compat.*`). |

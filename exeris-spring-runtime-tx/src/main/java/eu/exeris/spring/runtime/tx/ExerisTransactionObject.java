@@ -12,9 +12,10 @@ import java.util.Objects;
  * Transaction object carrying the active {@link PersistenceConnection} within
  * a Spring-managed transaction scope.
  *
- * <p>Stored as the transaction object inside Spring's {@code DefaultTransactionStatus}.
- * One instance per active transaction. NOT stored in any {@code ThreadLocal} or
- * {@code ScopedValue} — it travels inside the Spring transaction infrastructure only.
+ * <p>One instance per physical transaction. It is bound to Spring's
+ * {@code TransactionSynchronizationManager} for the duration of that transaction, so that a
+ * participating call finds and joins it, and travels inside {@code DefaultTransactionStatus}.
+ * It is not stored in a {@code ScopedValue} of its own.
  *
  * <h2>Ownership</h2>
  * <p>{@link ExerisPlatformTransactionManager} creates and owns the lifecycle.
@@ -27,6 +28,7 @@ final class ExerisTransactionObject {
 
     private final PersistenceConnection connection;
     private final boolean newConnection;
+    private boolean rollbackOnly;
 
     ExerisTransactionObject(PersistenceConnection connection, boolean newConnection) {
         this.connection = Objects.requireNonNull(connection, "connection must not be null");
@@ -43,5 +45,17 @@ final class ExerisTransactionObject {
 
     boolean hasActiveConnection() {
         return connection.isOpen();
+    }
+
+    /**
+     * Marks the physical transaction rollback-only. Shared by every participant that joined it,
+     * so a participant's rollback decides the outcome of the transaction it joined.
+     */
+    void setRollbackOnly() {
+        this.rollbackOnly = true;
+    }
+
+    boolean isRollbackOnly() {
+        return rollbackOnly;
     }
 }

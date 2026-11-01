@@ -111,6 +111,8 @@ class ExerisPlatformTransactionManagerTest {
             assertThat(status.isNewTransaction()).isFalse();
             // No connection was opened
             assertThat(engine.lastConnection()).isNull();
+            // Complete the empty transaction so its synchronization does not outlive the test
+            txManager.commit(status);
         });
     }
 

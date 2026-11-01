@@ -30,15 +30,15 @@ class ExerisDataSourceTest {
     @Test
     void getConnection_withTransactionBoundProxy_returnsItWithoutOpening() throws SQLException {
         // Simulate an active ExerisPlatformTransactionManager transaction: a proxy is already
-        // bound to the dataSource key. getConnection() must return that proxy (one connection
+        // bound to the data source's transaction key. getConnection() must return that proxy (one connection
         // per transaction) instead of opening a new PersistenceConnection.
         var bound = new ExerisConnectionProxy(
                 mock(java.sql.Connection.class), new StubJdbcPersistenceConnection(), true);
-        TransactionSynchronizationManager.bindResource(dataSource, bound);
+        TransactionSynchronizationManager.bindResource(dataSource.transactionConnectionKey(), bound);
         try {
             assertThat(dataSource.getConnection()).isSameAs(bound);
         } finally {
-            TransactionSynchronizationManager.unbindResourceIfPossible(dataSource);
+            TransactionSynchronizationManager.unbindResourceIfPossible(dataSource.transactionConnectionKey());
             // Deterministic cleanup. close() is a no-op here (transactionActive=true), but
             // asserting no-throw keeps intent explicit and quiets resource-leak analysis.
             assertThatCode(bound::close).doesNotThrowAnyException();
@@ -123,30 +123,30 @@ class ExerisDataSourceTest {
             var stubConn = new StubJdbcPersistenceConnection();
             dataSource.bindTransactionConnection(stubConn);
 
-            // Proxy is now bound to the dataSource key and a completion sync is registered.
-            assertThat(TransactionSynchronizationManager.getResource(dataSource))
+            // Proxy is now bound to the data source's transaction key and a completion sync is registered.
+            assertThat(TransactionSynchronizationManager.getResource(dataSource.transactionConnectionKey()))
                     .isInstanceOf(ExerisConnectionProxy.class);
             var syncs = TransactionSynchronizationManager.getSynchronizations();
             assertThat(syncs).isNotEmpty();
 
             // Drive UnbindOnCompletionSynchronization.afterCompletion → resource is unbound.
             syncs.forEach(s -> s.afterCompletion(TransactionSynchronization.STATUS_COMMITTED));
-            assertThat(TransactionSynchronizationManager.getResource(dataSource)).isNull();
+            assertThat(TransactionSynchronizationManager.getResource(dataSource.transactionConnectionKey())).isNull();
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
-            TransactionSynchronizationManager.unbindResourceIfPossible(dataSource);
+            TransactionSynchronizationManager.unbindResourceIfPossible(dataSource.transactionConnectionKey());
         }
     }
 
     @Test
     void bindTransactionConnection_closesConnection_whenBindResourceFails() {
-        // Pre-bind a resource to the dataSource key so the subsequent bindResource() in
+        // Pre-bind a resource to the data source's transaction key so the subsequent bindResource() in
         // bindTransactionConnection throws IllegalStateException ("already bound"). The guard
         // must then release the freshly opened PersistenceConnection rather than orphan it.
         // (transactionActive=true makes ExerisConnectionProxy.close() a no-op, so the connection
         // is closed directly — this test would fail if the guard called proxy.close() instead.)
         var stubConn = new StubJdbcPersistenceConnection();
-        TransactionSynchronizationManager.bindResource(dataSource, new Object());
+        TransactionSynchronizationManager.bindResource(dataSource.transactionConnectionKey(), new Object());
         try {
             assertThatThrownBy(() -> dataSource.bindTransactionConnection(stubConn))
                     .isInstanceOf(IllegalStateException.class);
@@ -154,7 +154,7 @@ class ExerisDataSourceTest {
                     .as("PersistenceConnection must be closed on the bindResource failure path")
                     .isTrue();
         } finally {
-            TransactionSynchronizationManager.unbindResourceIfPossible(dataSource);
+            TransactionSynchronizationManager.unbindResourceIfPossible(dataSource.transactionConnectionKey());
         }
     }
 }

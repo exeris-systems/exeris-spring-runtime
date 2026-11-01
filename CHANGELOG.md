@@ -125,6 +125,27 @@ do not change. The items below reach you through this runtime's own paths.
   `[EX-BOOT-0002] subsystem 'security' failed in INITIALIZE: security.jwks.uri is not set…`. Before, it
   ended at the kernel's constant "Subsystem lifecycle failure".
 
+### Transactions — propagation inside an existing transaction
+
+- **`ExerisPlatformTransactionManager` now recognises a transaction that is already active.** In
+  0.7.0 every call started a new one: `REQUIRED` and `REQUIRES_NEW` inside a transaction failed (on
+  a request with SQLState `25001`, off it with `Cannot activate transaction synchronization`, which
+  left the thread's bindings behind), `MANDATORY` always threw, and `SUPPORTS`, `NEVER` and
+  `NOT_SUPPORTED` ran inside the outer transaction. Now `REQUIRED`, `SUPPORTS` and `MANDATORY` join
+  it, `NEVER` throws, and a joined participant that rolls back makes the outer commit fail with
+  `UnexpectedRollbackException`.
+- **`REQUIRES_NEW` and `NOT_SUPPORTED` suspend and resume off the request path.** On a kernel request
+  route the kernel holds one connection for the whole request, so there is no second connection to
+  suspend onto. There both fail with `IllegalTransactionStateException` before the inner work runs,
+  and the outer transaction stays usable. `NESTED` still throws `UnsupportedOperationException`, now
+  inside a transaction too. The matrix is in `docs/phases/phase-3-invariants.md` #4.
+- **`JdbcTemplate` works over `ExerisDataSource`.** The data source bound its connection proxy where
+  Spring's `DataSourceUtils` expects a `ConnectionHolder`, so `JdbcTemplate` inside an Exeris
+  transaction threw `ClassCastException`, and so did `getConnection()` under Spring's
+  `JdbcTransactionManager`. The proxy is now bound under a key private to the data source;
+  `JdbcTemplate` joins the Exeris transaction, and a `ConnectionHolder` bound by another manager is
+  left to that manager.
+
 ### Distribution and metadata
 
 - **Maven Central (ADR-107, which supersedes ADR-067).** Each module's main jar is the one SB3-compiled

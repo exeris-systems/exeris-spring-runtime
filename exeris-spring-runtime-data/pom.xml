@@ -109,6 +109,15 @@
         -->
 
         <!-- Test scope -->
+
+        <!-- spring-jdbc — test scope only: JdbcTemplate / DataSourceUtils and
+             JdbcTransactionManager drive ExerisDataSource the way an application does. The
+             main code stays free of it (see the commented-out entry above). -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-jdbc</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>

@@ -33,10 +33,18 @@ import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
  * <p>When {@code ExerisPlatformTransactionManager} starts a new transaction, it calls
  * {@link #bindTransactionConnection} via the registered {@code ExerisJdbcResourceCallback}.
  * Subsequent calls to {@link #getConnection()} within the same transaction return the
- * already-bound proxy (one connection per transaction).
+ * already-bound proxy (one connection per transaction). When the transaction is suspended the
+ * proxy is unbound with it, and bound again when it resumes.
+ *
+ * <p>The proxy is bound under a key private to this data source, not under the data source
+ * itself. Spring's JDBC support ({@code DataSourceUtils}, and so {@code JdbcTemplate}) keeps its
+ * own {@code ConnectionHolder} under the data-source key: it finds nothing there on first use,
+ * asks {@link #getConnection()}, receives the transaction's proxy, and holds that for the rest of
+ * the transaction. A {@code ConnectionHolder} another transaction manager bound under the
+ * data-source key is likewise left to that manager.
  *
  * <h2>Non-transactional path</h2>
- * <p>Outside a Spring-managed transaction, each {@link #getConnection()} call opens
+ * <p>Outside an Exeris-managed transaction, each {@link #getConnection()} call opens
  * a new {@link PersistenceConnection}. The caller is responsible for closing it.
  *
  * <h2>Community tier only</h2>
@@ -53,6 +61,13 @@ import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
 public final class ExerisDataSource implements DataSource {
 
     /**
+     * Key under which the transaction's proxy is bound. Private to this instance, so it can
+     * never collide with the {@code ConnectionHolder} Spring's JDBC support binds under the data
+     * source itself.
+     */
+    private final Object transactionConnectionKey = new TransactionConnectionKey();
+
+    /**
      * Default constructor for compatibility DataSource.
      */
     public ExerisDataSource() {
@@ -65,9 +80,8 @@ public final class ExerisDataSource implements DataSource {
     @Override
     public Connection getConnection() throws SQLException {
         // 1. Check for active transaction-bound proxy
-        ExerisConnectionProxy bound =
-                (ExerisConnectionProxy) TransactionSynchronizationManager.getResource(this);
-        if (bound != null) {
+        if (TransactionSynchronizationManager.getResource(transactionConnectionKey)
+                instanceof ExerisConnectionProxy bound) {
             JpaConnectionBoundEvent.emit();
             return bound;
         }
@@ -132,14 +146,14 @@ public final class ExerisDataSource implements DataSource {
         // will ever complete, so we must release the underlying connection ourselves.
         boolean bound = false;
         try {
-            TransactionSynchronizationManager.bindResource(this, proxy);
+            TransactionSynchronizationManager.bindResource(transactionConnectionKey, proxy);
             bound = true;
             TransactionSynchronizationManager.registerSynchronization(
-                    new UnbindOnCompletionSynchronization(this));
+                    new TransactionConnectionSynchronization(transactionConnectionKey, proxy));
             JpaConnectionBoundEvent.emit();
         } catch (RuntimeException ex) {
-            if (bound && TransactionSynchronizationManager.hasResource(this)) {
-                TransactionSynchronizationManager.unbindResource(this);
+            if (bound && TransactionSynchronizationManager.hasResource(transactionConnectionKey)) {
+                TransactionSynchronizationManager.unbindResource(transactionConnectionKey);
             }
             try {
                 connection.close();
@@ -234,16 +248,45 @@ public final class ExerisDataSource implements DataSource {
                 "Enterprise-tier JDBC compatibility requires exeris-spring-runtime-enterprise.");
     }
 
+    /**
+     * The key the transaction's proxy is bound under; exposed for tests in this package.
+     */
+    Object transactionConnectionKey() {
+        return transactionConnectionKey;
+    }
+
     // =========================================================================
-    // Inner class
+    // Inner classes
     // =========================================================================
 
-    private record UnbindOnCompletionSynchronization(ExerisDataSource dataSource)
+    private static final class TransactionConnectionKey {
+
+        @Override
+        public String toString() {
+            return "ExerisDataSource transaction connection";
+        }
+    }
+
+    /**
+     * Keeps the proxy bound for exactly as long as its transaction is the thread's current one:
+     * unbound on suspend and on completion, bound again on resume.
+     */
+    private record TransactionConnectionSynchronization(Object key, ExerisConnectionProxy proxy)
             implements TransactionSynchronization {
 
         @Override
+        public void suspend() {
+            TransactionSynchronizationManager.unbindResourceIfPossible(key);
+        }
+
+        @Override
+        public void resume() {
+            TransactionSynchronizationManager.bindResource(key, proxy);
+        }
+
+        @Override
         public void afterCompletion(int status) {
-            TransactionSynchronizationManager.unbindResourceIfPossible(dataSource);
+            TransactionSynchronizationManager.unbindResourceIfPossible(key);
         }
     }
 }
