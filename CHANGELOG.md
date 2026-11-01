@@ -137,6 +137,20 @@ do not change. The items below reach you through this runtime's own paths.
   optional resource-server starter of the web module. The pin is not part of the published BOM, so
   your logback version is your Spring Boot line's unless you manage it yourself.
 
+### Fixes
+
+- **The actuator's `exeris.events.*` gauges count events.** In 0.7.0 the actuator bridge registered
+  them, but nothing delivered events to it, so they always read 0. The dispatcher builds the sink list
+  it binds to `KernelProviders.TELEMETRY_SINKS` from `TelemetryProvider` beans, and the bridge was not
+  one. The actuator module now registers `ExerisActuatorTelemetryProvider`, whose only sink is the
+  bridge. A `KernelEvent` emitted through `TELEMETRY_SINKS` inside a Pure Mode handler now moves the
+  gauge for its level. This is verified over a socket against a real kernel. The kernel's own events
+  still do not arrive: at 0.13.1 the kernel does not emit through a `TelemetrySink`, and records Flight
+  Recorder events instead. Compatibility Mode requests run outside this binding. With the actuator
+  and Micrometer present, every Pure Mode request now runs inside the binding. A dispatch with the
+  binding measures 312 B, and the dispatcher's allocation baseline now holds both cases to its 1 KiB
+  budget.
+
 ### Preview status — what 0.8.x does *not* promise
 
 Everything in 0.7.0's [Preview status](#preview-status--what-07x-does-not-promise) still holds. The
@@ -318,8 +332,9 @@ capability.
 over the kernel `GraphEngine`, with graceful stand-down when no engine is bound. No Spring Data Neo4j —
 `org.springframework.data..` is banned by `GraphModuleBoundaryTest`. Concrete drivers are test-scope only.
 
-**Actuator bridge.** Health, info, and a Micrometer `MeterBinder` over the kernel `TelemetrySink`.
-Read-only observability; it never owns a data-plane path.
+**Actuator bridge.** Health, info, and a Micrometer `MeterBinder` that is also a kernel `TelemetrySink`,
+counting `KernelEvent`s by level in `exeris.events.*` gauges. In 0.7.0 nothing delivered events to it,
+so the gauges stayed at 0 (fixed in 0.8.0). Read-only observability; it never owns a data-plane path.
 
 **Subsystem selection (`exeris.runtime.subsystems`).** Restrict which kernel subsystems boot, so an
 application does not pay for what it does not use.

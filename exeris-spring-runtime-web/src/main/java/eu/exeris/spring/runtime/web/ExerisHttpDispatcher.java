@@ -43,23 +43,22 @@ import eu.exeris.spring.runtime.web.scope.RequestScopeBinder;
  * ({@code @RestController} / {@code @RequestMapping} dispatch) is implemented in
  * {@code eu.exeris.spring.runtime.web.compat.ExerisCompatDispatcher}.
  *
- * <h2>Telemetry Fallback</h2>
- * <p>In production, {@code KernelProviders.TELEMETRY_SINKS} is always bound by the kernel
- * bootstrap scope and inherited by every handler virtual thread. In non-kernel-scope contexts
- * (testkit, unit tests) where the acceptor platform thread does not propagate the bootstrap
- * ScopedValue, this dispatcher may receive a pre-built {@code fallbackSinks} list at construction
- * time. When {@code TELEMETRY_SINKS} is not already bound and {@code fallbackSinks} is non-empty,
- * the dispatcher binds {@code fallbackSinks} for the duration of the handler call via
- * {@link ScopedValue#where(ScopedValue, Object) ScopedValue.where(...).run(...)}. This restores
- * the expected telemetry availability for test and compatibility paths without touching the
- * production hot path.
+ * <h2>Telemetry Sinks</h2>
+ * <p>The kernel bootstrap does not bind {@code KernelProviders.TELEMETRY_SINKS}, so a handler sees
+ * the slot bound only when the dispatcher binds it. The dispatcher may receive a {@code fallbackSinks}
+ * list at construction time, built from the Spring context's {@code TelemetryProvider} beans. When
+ * {@code TELEMETRY_SINKS} is not already bound and {@code fallbackSinks} is non-empty, the dispatcher
+ * binds {@code fallbackSinks} for the duration of the handler call via
+ * {@link ScopedValue#where(ScopedValue, Object) ScopedValue.where(...).run(...)}. A binding that is
+ * already present, such as one a host opens around this handler, is left untouched. With no sinks
+ * the dispatch runs without the binding and pays nothing for it.
  *
  * @since 0.1
  */
 public final class ExerisHttpDispatcher implements HttpHandler {
 
     private static final System.Logger LOGGER = System.getLogger(ExerisHttpDispatcher.class.getName());
-    private static final AtomicBoolean FALLBACK_WARNING_LOGGED = new AtomicBoolean(false);
+    private static final AtomicBoolean FALLBACK_BINDING_LOGGED = new AtomicBoolean(false);
     private static final AtomicBoolean FALLBACK_RESOLUTION_WARNING_LOGGED = new AtomicBoolean(false);
 
     private final ExerisRouteRegistry routeRegistry;
@@ -169,7 +168,7 @@ public final class ExerisHttpDispatcher implements HttpHandler {
             return;
         }
 
-        logFallbackBindingWarningOnce();
+        logFallbackBindingOnce();
         ScopedValue.where(KernelProviders.TELEMETRY_SINKS, fallbackSinks)
                 .run(() -> dispatchWithScope(exchange));
     }
@@ -194,12 +193,11 @@ public final class ExerisHttpDispatcher implements HttpHandler {
         return fallbackSinksSupplier.get();
     }
 
-    private static void logFallbackBindingWarningOnce() {
-        if (FALLBACK_WARNING_LOGGED.compareAndSet(false, true)) {
-            LOGGER.log(System.Logger.Level.WARNING,
-                    "ExerisHttpDispatcher is binding fallback telemetry sinks because TELEMETRY_SINKS is unbound. "
-                            + "This is expected only in tests, compatibility tooling, or when telemetry bootstrap "
-                            + "is missing.");
+    private static void logFallbackBindingOnce() {
+        if (FALLBACK_BINDING_LOGGED.compareAndSet(false, true)) {
+            LOGGER.log(System.Logger.Level.INFO,
+                    "ExerisHttpDispatcher binds the Spring-provided telemetry sinks to TELEMETRY_SINKS for "
+                            + "each request, because no binding is present on the handler thread.");
         }
     }
 

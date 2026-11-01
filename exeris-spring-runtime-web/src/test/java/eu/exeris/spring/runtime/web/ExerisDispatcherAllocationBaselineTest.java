@@ -17,6 +17,8 @@ import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpVersion;
+import eu.exeris.kernel.spi.telemetry.KernelEvent;
+import eu.exeris.kernel.spi.telemetry.TelemetrySink;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -44,6 +46,27 @@ class ExerisDispatcherAllocationBaselineTest {
 
     @Test
     void emptyBodyDispatch_meanAllocation_perRequest_doesNotExceedHardBudget() {
+        assertDispatchWithinBudget(new ExerisHttpDispatcher(routes(), new ExerisErrorMapper()), "no sinks");
+    }
+
+    /**
+     * The same budget holds when the dispatcher binds a telemetry sink list around the handler, which
+     * is every request once a {@code TelemetryProvider} bean such as the actuator bridge's is present.
+     */
+    @Test
+    void emptyBodyDispatch_withTelemetrySinksBound_meanAllocation_perRequest_doesNotExceedHardBudget() {
+        List<TelemetrySink> sinks = List.of(new IdleSink());
+        assertDispatchWithinBudget(
+                new ExerisHttpDispatcher(routes(), new ExerisErrorMapper(), sinks), "telemetry sinks bound");
+    }
+
+    private static ExerisRouteRegistry routes() {
+        return ExerisRouteRegistry.builder()
+                .register(HttpMethod.GET, "/alloc", request -> ExerisServerResponse.ok())
+                .build();
+    }
+
+    private static void assertDispatchWithinBudget(ExerisHttpDispatcher dispatcher, String variant) {
         ThreadMXBean threadMx = (ThreadMXBean) ManagementFactory.getThreadMXBean();
         Assumptions.assumeTrue(threadMx.isThreadAllocatedMemorySupported(),
                 "ThreadMXBean per-thread allocation accounting not supported on this JVM");
@@ -51,10 +74,6 @@ class ExerisDispatcherAllocationBaselineTest {
             threadMx.setThreadAllocatedMemoryEnabled(true);
         }
 
-        ExerisRouteRegistry routes = ExerisRouteRegistry.builder()
-                .register(HttpMethod.GET, "/alloc", request -> ExerisServerResponse.ok())
-                .build();
-        ExerisHttpDispatcher dispatcher = new ExerisHttpDispatcher(routes, new ExerisErrorMapper());
         HttpRequest request = HttpRequest.noBody(HttpMethod.GET, "/alloc", HttpVersion.HTTP_1_1, List.of());
         TestExchange exchange = new TestExchange(request);
 
@@ -83,11 +102,12 @@ class ExerisDispatcherAllocationBaselineTest {
         // Visibility-only: surfaced in test log, not asserted. Useful for trend tracking
         // across commits without committing to a brittle latency threshold.
         System.out.printf(Locale.ROOT,
-                "ExerisDispatcherAllocationBaseline: iterations=%d total_alloc=%d B mean=%.1f B/dispatch mean_latency=%.1f ns%n",
-                MEASURED_ITERATIONS, totalAllocatedBytes, bytesPerDispatch, meanLatencyNanos);
+                "ExerisDispatcherAllocationBaseline[%s]: iterations=%d total_alloc=%d B mean=%.1f B/dispatch mean_latency=%.1f ns%n",
+                variant, MEASURED_ITERATIONS, totalAllocatedBytes, bytesPerDispatch, meanLatencyNanos);
 
         assertThat(bytesPerDispatch)
-                .as("Pure Mode empty-body GET dispatch must allocate ≤ %d B/req on average; observed %.1f B/req over %d iterations (total %d B)",
+                .as("Pure Mode empty-body GET dispatch (%s) must allocate ≤ %d B/req on average; observed %.1f B/req over %d iterations (total %d B)",
+                        variant,
                         ALLOCATION_BUDGET_BYTES_PER_DISPATCH,
                         bytesPerDispatch,
                         MEASURED_ITERATIONS,
@@ -96,6 +116,35 @@ class ExerisDispatcherAllocationBaselineTest {
         assertThat(exchange.response())
                 .as("Dispatcher must have produced a response on the measurement loop")
                 .isNotNull();
+    }
+
+    /** A sink the handler never emits to; it only has to be present in the bound list. */
+    private static final class IdleSink implements TelemetrySink {
+
+        @Override
+        public void emit(KernelEvent event) {
+        }
+
+        @Override
+        public void increment(String name, long delta) {
+        }
+
+        @Override
+        public void gauge(String name, long value) {
+        }
+
+        @Override
+        public void latency(String name, long nanoseconds) {
+        }
+
+        @Override
+        public String sinkName() {
+            return "allocation-baseline";
+        }
+
+        @Override
+        public void close() {
+        }
     }
 
     /**

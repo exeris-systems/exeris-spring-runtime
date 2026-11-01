@@ -182,10 +182,10 @@ public class ExerisWebAutoConfiguration {
     /**
      * Discovers Spring-managed {@link TelemetryProvider} beans and creates their sinks.
      *
-     * <p>Used as the fallback telemetry sink list for {@link ExerisHttpDispatcher} when
-     * {@code KernelProviders.TELEMETRY_SINKS} is not bound (testkit / non-kernel-scope paths).
-     * In production the kernel always binds {@code TELEMETRY_SINKS} before handler invocation,
-     * so this list is never consulted on the production hot path.
+     * <p>Used as the sink list {@link ExerisHttpDispatcher} binds to
+     * {@code KernelProviders.TELEMETRY_SINKS} when no binding is present on the handler thread.
+     * The kernel bootstrap does not bind that slot, so in a running application this is the list a
+     * Pure Mode handler sees.
      *
      * <p>Returns an empty list when no {@link TelemetryProvider} beans are present in the context.
      */
