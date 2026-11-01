@@ -11,9 +11,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.jupiter.api.Test;
 
+import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.graph.GraphEngine;
 import eu.exeris.kernel.spi.graph.GraphSession;
 import eu.exeris.kernel.spi.graph.model.GraphTraversal;
+import eu.exeris.kernel.spi.memory.MemoryAllocator;
+import eu.exeris.kernel.spi.persistence.PersistenceEngine;
+import eu.exeris.spring.boot.autoconfigure.KernelProviderScope;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -158,5 +162,44 @@ class ExerisGraphTemplateTest {
         assertThatThrownBy(() -> template.dialect())
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("cannot operate without a kernel GraphEngine");
+    }
+
+    @Test
+    void execute_runsSessionInsideProviderScope_bindingCapturedProviders() {
+        when(engine.openSession()).thenAnswer(_ -> {
+            assertThat(KernelProviders.PERSISTENCE_ENGINE.isBound())
+                    .as("session is opened inside the provider scope")
+                    .isTrue();
+            return session;
+        });
+        PersistenceEngine persistence = mock(PersistenceEngine.class);
+        MemoryAllocator allocator = mock(MemoryAllocator.class);
+        var template = new ExerisGraphTemplate(presentSupplier, requireOn, KernelProviderScope.capturing(
+                () -> Optional.of(persistence), () -> Optional.of(allocator)));
+
+        template.execute(_ -> {
+            assertThat(KernelProviders.PERSISTENCE_ENGINE.get()).isSameAs(persistence);
+            assertThat(KernelProviders.MEMORY_ALLOCATOR.get()).isSameAs(allocator);
+            return null;
+        });
+
+        assertThat(KernelProviders.PERSISTENCE_ENGINE.isBound()).isFalse();
+        assertThat(KernelProviders.MEMORY_ALLOCATOR.isBound()).isFalse();
+    }
+
+    @Test
+    void execute_insideAnExistingKernelScope_keepsTheCallersBindings() {
+        when(engine.openSession()).thenReturn(session);
+        PersistenceEngine callers = mock(PersistenceEngine.class);
+        PersistenceEngine captured = mock(PersistenceEngine.class);
+        MemoryAllocator allocator = mock(MemoryAllocator.class);
+        var template = new ExerisGraphTemplate(presentSupplier, requireOn, KernelProviderScope.capturing(
+                () -> Optional.of(captured), () -> Optional.of(allocator)));
+
+        ScopedValue.where(KernelProviders.PERSISTENCE_ENGINE, callers).run(() -> template.execute(_ -> {
+            assertThat(KernelProviders.PERSISTENCE_ENGINE.get()).isSameAs(callers);
+            assertThat(KernelProviders.MEMORY_ALLOCATOR.get()).isSameAs(allocator);
+            return null;
+        }));
     }
 }
