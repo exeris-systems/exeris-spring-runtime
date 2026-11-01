@@ -63,4 +63,37 @@
         </dependencies>
     </dependencyManagement>
 
+    <build>
+        <plugins>
+            <!-- The published BOM carries only the coordinates declared above. Without flattening it
+                 inherits the parent's dependencyManagement, Spring Boot BOM import included, and a
+                 consumer importing it gets one Spring Boot line's versions whatever line it runs. -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>flatten-maven-plugin</artifactId>
+                <version>1.8.0</version>
+                <configuration>
+                    <flattenMode>bom</flattenMode>
+                    <updatePomFile>true</updatePomFile>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>flatten</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>flatten</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>flatten-clean</id>
+                        <phase>clean</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
 </project>

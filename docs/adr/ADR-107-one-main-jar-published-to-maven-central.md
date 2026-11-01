@@ -11,9 +11,9 @@ slug: adr/ADR-107
 
 | Attribute       | Value                                                                                                                                                                                                             |
 |:----------------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Status**      | **ACCEPTED** (drafted and accepted 2026-10-30; single decider — no future gating event; ratified by the PR that introduces this file). **Supersedes [ADR-067](ADR-067-binary-neutrality-of-the-published-artefact.md).** |
+| **Status**      | **ACCEPTED** (drafted and accepted 2026-10-30; **amended 2026-10-31** — see [Amendments](#amendments); single decider — no future gating event; ratified by the PR that introduces this file). **Supersedes [ADR-067](ADR-067-binary-neutrality-of-the-published-artefact.md).** |
 | **Deciders**    | Arkadiusz Przychocki                                                                                                                                                                                              |
-| **Date**        | 2026-10-30                                                                                                                                                                                                        |
+| **Date**        | 2026-10-30 (original); 2026-10-31 (amendment)                                                                                                                                                                     |
 | **Scope**       | spring/build (root `pom.xml` `release` profile, `.github/workflows/deploy.yml`, `.github/maven-settings.xml`; no runtime behaviour change)                                                                       |
 | **Owning Repo** | `exeris-spring-runtime`                                                                                                                                                                                           |
 | **Driven By**   | Publishing releases to Maven Central, which validates every jar coordinate for a sources jar, a javadoc jar and a signature on each file; and ADR-067 Engineering Protocol 4, which makes a profile or classifier on the publish path a supersession |
@@ -67,6 +67,9 @@ unchanged.**
 5. **The kernel resolves from Maven Central.** The build declares no `<repositories>` and needs no
    package credentials.
 
+*(Amended 2026-10-31: the published BOM manages this project's modules and nothing else — see
+[Amendments](#amendments).)*
+
 ## Scope and Non-Goals
 
 - **In scope:** what the release path publishes and where; the restated single-artefact premise.
@@ -119,6 +122,8 @@ unchanged.**
 ## Compliance / Verification
 
 - `binary-neutrality` job in `build.yml`, unchanged.
+- The "Published BOM manages only eu.exeris coordinates" step in `build.yml` fails the build if the
+  flattened BOM declares a parent or manages any coordinate outside `eu.exeris:exeris-spring-*`.
 - `mvn -P release,matrix-sb3 clean verify` produces, per jar module, the main jar plus `-sources` and
   `-javadoc` jars, and a signature on every file including the poms.
 - `deploy.yml` checks the Central bundle before anything is deployed to GitHub Packages or tagged:
@@ -138,6 +143,23 @@ unchanged.**
    amended.
 5. Adding a third Spring Boot line means adding a profile and extending the script's line list; the
    comparison generalises to pairwise diffs without changing shape.
+
+## Amendments
+
+Each amendment is marked in place at the text it changes, not rewritten (`adr-conventions.md`
+rule 7). This section indexes them.
+
+- **2026-10-31 — the published BOM manages this project's modules and nothing else.** The one-jar
+  premise covers the jars a consumer links against; the BOM is the other artefact a consumer reads,
+  and its contents decide which versions the consumer resolves. `exeris-spring-runtime-bom` inherited
+  the parent's `dependencyManagement`, which imports the Spring Boot BOM at the line the jars are built
+  on, so importing it handed every consumer that line's versions: a Spring Boot 4 application resolved
+  Spring Framework 6.2.x and did not start (exeris-spring-runtime#90). From 0.8.0 the BOM is published
+  flattened, with no parent, managing only the `eu.exeris` modules it declares, and `build.yml` fails
+  the build if it manages anything else. **This is a consumer-visible change:** an application that
+  relied on the BOM for Spring or other third-party versions, with no Spring Boot parent or
+  `spring-boot-dependencies` import of its own, now imports `spring-boot-dependencies` for its own
+  Spring Boot line.
 
 ## Cross-references
 
