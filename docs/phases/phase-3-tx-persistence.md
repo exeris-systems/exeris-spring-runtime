@@ -1,3 +1,12 @@
+---
+title: "Phase 3: Transactions, Context Propagation, and Persistence Integration"
+type: explanation
+visibility: public
+owning-repo: exeris-spring-runtime
+status: active
+last-verified: 2026-11-01
+---
+
 # Phase 3: Transactions, Context Propagation, and Persistence Integration
 
 **Status:** Closed (2026-05-09; 3A + 3C-L2 + 3D delivered, 3B explicitly deferred to 3.x)

@@ -1,3 +1,12 @@
+---
+title: "Phase 3 Invariants"
+type: reference
+visibility: public
+owning-repo: exeris-spring-runtime
+status: active
+last-verified: 2026-11-01
+---
+
 # Phase 3 Invariants
 
 **Status:** Locked-in (Phase 3 closed at sub-phases 3A + 3C-L2 + 3D; 3B originally deferred to 3.x — **graduated 2026-05-17 per ADR-029 (3B-α) and ADR-031 (3B-β/γ, reserved); see `phase-3b-alpha-invariants.md` for 3B-α-specific invariants**)
