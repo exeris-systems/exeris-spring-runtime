@@ -76,6 +76,21 @@ Conflict handling:
 - **Phase 2** adds explicitly scoped, opt-in Spring compatibility.
 - **Phase 3** expands into high-risk tx/context/persistence concerns.
 
+## Guides
+
+Start with [Getting started: your first Pure Mode application](docs/guides/getting-started.md).
+[`docs/guides/`](docs/guides/README.md) covers the rest:
+- migrating a Spring MVC application;
+- securing routes;
+- transactions and JDBC;
+- events and sagas;
+- graph queries;
+- health and shutdown in production;
+- every configuration property.
+
+Each guide quotes a runnable application under [`examples/`](examples), which CI builds and tests on
+every commit.
+
 ## Getting the artefacts
 
 **Releases** are published to **Maven Central** under `eu.exeris`. They need no repository entry

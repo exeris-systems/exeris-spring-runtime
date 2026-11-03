@@ -194,3 +194,37 @@ jobs:
 
       - name: Compare Spring call-site descriptors across both matrix lines
         run: ./.github/scripts/spring-binary-neutrality.sh
+
+  # The guides quote the applications under examples/. Each one is built the way a consumer builds
+  # it, against the runtime this commit produces, and its tests boot it and call it over a socket.
+  # A guide whose example no longer compiles or answers fails here rather than in a reader's hands.
+  examples:
+    name: examples (guides, JDK 25 LTS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      MAVEN_OPTS: '-Xmx2g'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 25 (LTS baseline)
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Guide code blocks match the examples they quote
+        run: python3 tools/check_guide_snippets.py
+
+      - name: Install the runtime into the local repository
+        run: mvn -B -ntp -s .github/maven-settings.xml -Pmatrix-sb3 install -DskipTests
+
+      - name: Build and test every example against it
+        run: |
+          version=$(mvn -B -q -ntp -s .github/maven-settings.xml help:evaluate -Dexpression=project.version -DforceStdout)
+          mvn -B -ntp -s .github/maven-settings.xml -f examples/pom.xml verify -Dexeris-spring-runtime.version="$version"

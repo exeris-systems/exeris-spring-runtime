@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>eu.exeris.examples</groupId>
+        <artifactId>exeris-spring-runtime-examples</artifactId>
+        <version>0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>graph-queries</artifactId>
+    <name>Example :: Graph queries</name>
+
+    <dependencies>
+        <!-- tag::dependencies[] -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-spring-boot-autoconfigure</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-spring-runtime-graph</artifactId>
+        </dependency>
+        <!-- Provides the graph engine (Neo4j Bolt or SQL/PGQ) and the persistence engine the
+             graph subsystem depends on. -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-community</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- The kernel graph subsystem requires the persistence subsystem, which opens a JDBC
+             pool at boot. The kernel declares the PostgreSQL driver optional. -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- end::dependencies[] -->
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>neo4j</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <!-- One Exeris runtime runs per JVM, and each test class boots the application
+                     with a different graph backend: every test class gets a fresh fork. -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <reuseForks>false</reuseForks>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Runnable examples for the guides under docs/guides/. Each module is a small application written
+  the way a consumer writes one: Spring Boot's own parent, this project's BOM, and nothing from the
+  runtime's internal build. CI builds and tests every module against the runtime just built, so a
+  guide that quotes an example cannot drift from the API it describes.
+
+  Not part of the published reactor: nothing here is released.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.5.14</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>eu.exeris.examples</groupId>
+    <artifactId>exeris-spring-runtime-examples</artifactId>
+    <version>0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>Exeris Spring Runtime :: Examples</name>
+
+    <modules>
+        <module>pure-mode-hello</module>
+        <module>compat-mvc</module>
+        <module>secured-routes</module>
+        <module>transactions-jdbc</module>
+        <module>events-and-flows</module>
+        <module>graph-queries</module>
+        <module>operations</module>
+    </modules>
+
+    <properties>
+        <java.version>25</java.version>
+        <!-- CI passes the version of the runtime it just built. -->
+        <exeris-spring-runtime.version>0.8.0-SNAPSHOT</exeris-spring-runtime.version>
+        <exeris-kernel.version>0.13.1</exeris-kernel.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>eu.exeris</groupId>
+                <artifactId>exeris-spring-runtime-bom</artifactId>
+                <version>${exeris-spring-runtime.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>eu.exeris</groupId>
+                <artifactId>exeris-kernel-community</artifactId>
+                <version>${exeris-kernel.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+</project>
