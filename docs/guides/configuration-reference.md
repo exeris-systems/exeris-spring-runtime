@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-spring-runtime
 status: active
-last-verified: 2026-11-01
+last-verified: 2026-11-03
 ---
 
 # Configuration reference
@@ -128,3 +128,11 @@ answers `401`. A partial set fails the kernel boot with `EX-BOOT-0002`. See
 The kernel's HTTP subsystem also reads `exeris.http.port`, `exeris.http.bindHost` and `exeris.http.mode`,
 and their bare `http.*` forms. This runtime answers them from the properties above, and always answers
 `SERVER` for the mode. Do not set them directly.
+
+## Where this does not apply
+
+- **Other versions.** The properties are those of `exeris-spring-runtime` 0.8.0, and the kernel
+  defaults are those of kernel 0.13.1. Another kernel release can change a default or a raw key.
+- **Validation of kernel raw keys.** Neither this runtime nor the kernel rejects an unknown or
+  misspelled raw key: a typo is ignored and the kernel's default applies.
+- **Enterprise kernel settings.** Keys read only by enterprise kernel modules are not listed here.

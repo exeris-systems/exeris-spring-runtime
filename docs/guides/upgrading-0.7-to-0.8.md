@@ -4,7 +4,7 @@ type: migration-guide
 visibility: public
 owning-repo: exeris-spring-runtime
 status: active
-last-verified: 2026-11-01
+last-verified: 2026-11-03
 ---
 
 # Upgrading from 0.7 to 0.8
@@ -106,3 +106,11 @@ records. Look for code that relied on the old behaviour:
   supported: keep `ExerisPlatformTransactionManager` as the transaction manager.
 
 See [Transactions and JDBC](transactions-and-jdbc.md).
+
+## Where this does not apply
+
+- **0.6 or earlier.** Upgrade to 0.7.x first, following its CHANGELOG section, then apply this guide.
+- **Kernel versions other than 0.13.1.** The steps assume the kernel this release is built and tested
+  against. An older kernel lacks the edge keys of step 4.
+- **Behaviour this guide does not list.** It names the changes that need action from an application.
+  The CHANGELOG lists every change, including those that need none.

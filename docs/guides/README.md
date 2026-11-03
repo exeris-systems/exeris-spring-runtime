@@ -1,3 +1,12 @@
+---
+title: "Guides"
+type: reference
+visibility: public
+owning-repo: exeris-spring-runtime
+status: active
+last-verified: 2026-11-03
+---
+
 # Guides
 
 Task-oriented documentation for `exeris-spring-runtime` 0.8.0. Every guide quotes a runnable application
@@ -17,13 +26,7 @@ its example.
 | [Configuration reference](configuration-reference.md) | reference | — |
 | [Upgrading from 0.7 to 0.8](upgrading-0.7-to-0.8.md) | migration guide | — |
 
-To run the examples yourself:
-
-```bash
-mvn -s .github/maven-settings.xml -Pmatrix-sb3 install -DskipTests
-mvn -f examples/pom.xml verify
-```
-
-The graph example starts Neo4j and PostgreSQL containers, so it needs Docker.
+To build and run the examples locally, see
+[Getting started — Run the examples from this repository](getting-started.md#run-the-examples-from-this-repository).
 
 For the architecture behind these guides, see [`docs/architecture/overview.md`](../architecture/overview.md).

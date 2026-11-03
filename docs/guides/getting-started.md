@@ -4,7 +4,7 @@ type: tutorial
 visibility: public
 owning-repo: exeris-spring-runtime
 status: active
-last-verified: 2026-11-01
+last-verified: 2026-11-03
 ---
 
 # Getting started: your first Pure Mode application
@@ -159,6 +159,18 @@ beans that still use it: ingress closes, in-flight requests finish, then the sub
   controllers on Exeris, see [Migrating a Spring MVC application](compatibility-mode-migration.md).
 - **Servlet filters, `HttpServletRequest`, `DispatcherServlet`.** None of them exist on this path.
 - **Reactive stacks.** WebFlux and Reactor are not part of either mode.
+
+## Run the examples from this repository
+
+Every guide's example lives under [`examples/`](../../examples). That aggregator is not part of the
+published build, so install the runtime from this checkout first, then verify the examples against it:
+
+```bash
+mvn -s .github/maven-settings.xml -Pmatrix-sb3 install -DskipTests
+mvn -f examples/pom.xml verify
+```
+
+The graph example starts Neo4j and PostgreSQL containers, so it needs Docker.
 
 ## Next steps
 
