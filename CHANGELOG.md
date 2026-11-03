@@ -21,12 +21,14 @@ application framework; Exeris is the runtime owner. See [`docs/architecture/over
 **Status: preview**, as 0.7.0. Nothing in this release graduates a module. The section freezes when the
 tag is cut.
 
-0.8.0 adds three things to 0.7.0:
+0.8.0 adds four things to 0.7.0, and fixes defects that 0.7.0 shipped with (see [Fixes](#fixes)):
 
 - **Per-path route authorization** that the kernel enforces at admission (ADR-063). It closes the one
   gap in 0.7.0 with a security consequence.
 - **The kernel pin moves from 0.11.0 to 0.13.1.** This runtime now owns the stop sequence alone.
 - **Releases resolve from Maven Central** (ADR-107), with no repository entry and no credentials.
+- **Transaction propagation behaves as Spring defines it** inside an existing transaction, within the
+  limits a kernel request route sets (ADR-109).
 
 The 0.8.0 train in `docs/roadmap-1.0-trl9.md` was scheduled for the Spring Boot 4 dual matrix, but that
 shipped in 0.7.0. See the roadmap for what this train carries instead.
@@ -124,6 +126,38 @@ do not change. The items below reach you through this runtime's own paths.
   `EX-` code and, for a subsystem, its name, phase and detail, for example
   `[EX-BOOT-0002] subsystem 'security' failed in INITIALIZE: security.jwks.uri is not set…`. Before, it
   ended at the kernel's constant "Subsystem lifecycle failure".
+
+### Transactions — propagation inside an existing transaction
+
+- **`ExerisPlatformTransactionManager` now recognises a transaction that is already active.** In
+  0.7.0 every call started a new one: `REQUIRED` and `REQUIRES_NEW` inside a transaction failed (on
+  a request with SQLState `25001`, off it with `Cannot activate transaction synchronization`, which
+  left the thread's bindings behind), `MANDATORY` always threw, and `SUPPORTS`, `NEVER` and
+  `NOT_SUPPORTED` ran inside the outer transaction. Now `REQUIRED`, `SUPPORTS` and `MANDATORY` join
+  it, `NEVER` throws, and a joined participant that rolls back makes the outer commit fail with
+  `UnexpectedRollbackException`.
+- **`REQUIRES_NEW` and `NOT_SUPPORTED` suspend and resume off the request path.** On a kernel request
+  route the kernel holds one connection for the whole request, so there is no second connection to
+  suspend onto. There both fail with `IllegalTransactionStateException` before the inner work runs,
+  and the outer transaction stays usable. `NESTED` still throws `UnsupportedOperationException`, now
+  inside a transaction too. The matrix is defined by ADR-109 (amending ADR-017) and stated in
+  `docs/phases/phase-3-invariants.md` #4.
+- **Suspending off the request path needs a free pool slot.** To detect a request route, every
+  suspension borrows and returns one pooled connection, so `NOT_SUPPORTED` inside a transaction needs
+  a free slot as `REQUIRES_NEW` does. With none free it fails with `CannotCreateTransactionException`
+  after `exeris.runtime.persistence.connection-timeout-ms`. A kernel SPI signal is requested to
+  replace this check.
+- **From `afterCommit` / `afterCompletion` callbacks**, `REQUIRES_NEW` starts a new transaction, and
+  `REQUIRED`, `SUPPORTS` and `MANDATORY` fail with `IllegalTransactionStateException` instead of
+  joining the transaction that has just ended.
+- **`JdbcTemplate` works over `ExerisDataSource` inside an Exeris transaction.** The data source bound
+  its connection proxy where Spring's `DataSourceUtils` expects a `ConnectionHolder`, so `JdbcTemplate`
+  threw `ClassCastException`. The proxy is now bound under a key private to the data source, and
+  `JdbcTemplate` joins the Exeris transaction.
+- **`JdbcTransactionManager` over `ExerisDataSource` is not a supported pairing.** It no longer throws
+  `ClassCastException` from `getConnection()`, but it lets Spring demarcate raw JDBC transactions on an
+  Exeris-owned connection, bypassing `PersistenceConnection.beginTransaction` / `commit`. ADR-017
+  rejects that split ownership. Use `ExerisPlatformTransactionManager` (`exeris.runtime.tx.enabled`).
 
 ### Distribution and metadata
 

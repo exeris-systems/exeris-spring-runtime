@@ -4,5 +4,17 @@
     "since": "0.8",
     "adr": "ADR-107",
     "justification": "Published BOM: it no longer manages any third-party coordinate. Up to 0.7.0 it inherited the parent's dependencyManagement, about 1600 coordinates: the Spring Boot 3.5.14 BOM, the kernel BOM and the parent's own pins. Importing it gave every consumer the SB3 line's versions, so a Spring Boot 4 application resolved Spring Framework 6.2.x and did not start (#90). From 0.8.0 the BOM is published flattened, with no parent, and manages only the eu.exeris module coordinates it declares (ADR-107 amendment 2026-10-31); build.yml fails the build if it manages anything else. An application that relied on the BOM for Spring or other third-party versions, with no spring-boot-starter-parent and no spring-boot-dependencies import of its own, imports org.springframework.boot:spring-boot-dependencies for its own Spring Boot line; the 0.8.0 CHANGELOG carries the upgrade step. No class or module pom changes."
+  },
+  {
+    "signature": "eu.exeris.spring.runtime.tx.ExerisPlatformTransactionManager (propagation inside an existing transaction)",
+    "since": "0.8",
+    "adr": "ADR-109",
+    "justification": "Behaviour change; no method or type changes. Up to 0.7.0 the manager never saw an existing transaction, so every propagation behaviour inside one was wrong: REQUIRED and REQUIRES_NEW failed, MANDATORY always threw, NEVER did not throw and NOT_SUPPORTED did not suspend. From 0.8.0 REQUIRED, SUPPORTS and MANDATORY join, NEVER throws, REQUIRES_NEW and NOT_SUPPORTED suspend and resume off a kernel request route and fail early with IllegalTransactionStateException on one (the kernel holds one connection per request), NESTED is refused, and a joining propagation from a completion callback is refused. Code that relied on the old behaviour, for example a REQUIRED call inside a transaction committing on its own, now joins the outer transaction. ADR-109 records the matrix; the CHANGELOG carries the upgrade notes."
+  },
+  {
+    "signature": "eu.exeris.spring.runtime.data.compat.ExerisDataSource (transaction-bound connection resource key)",
+    "since": "0.8",
+    "adr": "ADR-109",
+    "justification": "Behaviour change; no method or type changes. The data source binds its transaction-bound connection proxy under a key private to the instance instead of under the data source itself, where Spring's DataSourceUtils expects a ConnectionHolder; JdbcTemplate inside an Exeris transaction therefore works instead of throwing ClassCastException. Code that read the proxy with TransactionSynchronizationManager.getResource(dataSource) no longer finds it; it calls getConnection(), which returns the transaction's proxy. A second, separately constructed ExerisDataSource does not share the transaction's connection. JdbcTransactionManager over ExerisDataSource no longer throws but is not supported (ADR-109, ADR-017)."
   }
 ]

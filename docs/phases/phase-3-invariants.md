@@ -1,3 +1,12 @@
+---
+title: "Phase 3 Invariants"
+type: reference
+visibility: public
+owning-repo: exeris-spring-runtime
+status: active
+last-verified: 2026-11-01
+---
+
 # Phase 3 Invariants
 
 **Status:** Locked-in (Phase 3 closed at sub-phases 3A + 3C-L2 + 3D; 3B originally deferred to 3.x — **graduated 2026-05-17 per ADR-029 (3B-α) and ADR-031 (3B-β/γ, reserved); see `phase-3b-alpha-invariants.md` for 3B-α-specific invariants**)
@@ -35,8 +44,11 @@ transactions or the JDBC bridge.
 ## 2. `PersistenceConnection` lives in Spring's transaction infrastructure, not in a separate `ScopedValue`
 
 The active `PersistenceConnection` is carried inside `ExerisTransactionObject`, stored
-by Spring's `AbstractPlatformTransactionManager` inside `DefaultTransactionStatus`. It
-is **not** duplicated into a `ScopedValue` slot.
+by Spring's `AbstractPlatformTransactionManager` inside `DefaultTransactionStatus`, and bound
+to Spring's `TransactionSynchronizationManager` under the transaction manager as key for the
+duration of the transaction. That binding is the same object, not a copy: it is how a
+participating call finds the transaction it joins, and it is unbound on suspension and on
+completion. The connection is **not** duplicated into a `ScopedValue` slot.
 
 Rationale: a hybrid `ScopedValue` + Spring `TransactionSynchronizationManager` dual
 binding (originally proposed in the Phase 3 plan) would have introduced a second source
@@ -66,20 +78,45 @@ invariant #12.
 
 | Spring propagation | Status | Notes |
 |:---|:---|:---|
-| `REQUIRED` | ✅ | Default; joins existing or starts new |
-| `REQUIRES_NEW` | ✅ | Always opens a second independent connection |
-| `MANDATORY` | ✅ | Throws if no active transaction |
+| `REQUIRED` | ✅ | Default; joins existing or starts new. A joined participant that rolls back marks the transaction rollback-only; the outer commit then fails with `UnexpectedRollbackException` |
 | `SUPPORTS` | ✅ | Joins if present, runs without otherwise |
-| `NEVER` | ✅ | Throws if active transaction present |
-| `NESTED` | ❌ | `UnsupportedOperationException` (kernel savepoint API not exposed) |
-| `NOT_SUPPORTED` | ❌ | `UnsupportedOperationException` (would require connection suspension) |
+| `MANDATORY` | ✅ | Joins if present; `IllegalTransactionStateException` if none |
+| `NEVER` | ✅ | `IllegalTransactionStateException` if a transaction is active |
+| `REQUIRES_NEW` | ✅ off a request · ❌ on a request | Off the request path: suspends the outer transaction, runs on a second connection, resumes the outer. On a kernel request route: `IllegalTransactionStateException` (see below) |
+| `NOT_SUPPORTED` | ✅ off a request · ❌ on a request | Off the request path: suspends the outer transaction and runs without one. On a kernel request route: `IllegalTransactionStateException` (see below) |
+| `NESTED` | ❌ | `UnsupportedOperationException`, inside a transaction or not (kernel savepoint API not exposed) |
 
-Adding support for `NESTED` or `NOT_SUPPORTED` requires a new ADR that documents the
-kernel API surface relied on (savepoints, suspension) and the connection-lifecycle
-implications.
+Suspension needs a second connection. On a kernel request route the kernel holds one connection
+for the whole request, and `PersistenceEngine.openConnection()` returns that same connection each
+time, so there is nothing to suspend onto. The manager checks for this when it suspends, before
+any inner work runs, and fails with `IllegalTransactionStateException` instead of letting the
+inner work run inside the outer transaction. The outer transaction stays active and usable.
 
-- **Guards:** `ExerisPlatformTransactionManagerTest` covers all five supported
-  propagation rules + the two unsupported error paths.
+**Cost of the check.** To tell the two cases apart, every suspension opens one connection from the
+engine and closes it again. On a request route that is the request's own connection and costs
+nothing. Off the request route every suspension borrows and returns one pooled connection, so
+`NOT_SUPPORTED` — which otherwise needs no connection — needs a free pool slot besides the one the
+suspended transaction holds, as `REQUIRES_NEW` does. With none free, the suspension waits for the
+pool's connection timeout (`exeris.runtime.persistence.connection-timeout-ms`) and then fails with
+`CannotCreateTransactionException`; the outer transaction stays usable. A kernel SPI signal that
+names the request-scoped connection is requested; it would replace the probe.
+
+**Completion callbacks.** A transaction stays bound to the thread from begin until cleanup, which
+runs after `afterCommit` / `afterCompletion` callbacks (and `@TransactionalEventListener` phases).
+Whether a transaction exists is decided by that binding, not by whether its connection is open. From
+such a callback, `REQUIRES_NEW` gets a new transaction — off the request route on a second
+connection, on a request route on the request's connection, which the completed transaction no
+longer uses. A joining propagation (`REQUIRED`, `SUPPORTS`, `MANDATORY`) fails with
+`IllegalTransactionStateException` rather than running in a transaction that has already ended.
+
+The matrix above is defined by ADR-109, which amends ADR-017. **Any change to the propagation
+matrix requires an ADR.**
+
+- **Guards:** `ExerisTransactionPropagationIntegrationTest` covers every row against a live
+  kernel engine, both off the request path and on a request-session-bound thread, plus the
+  completion-callback cases, the exhausted-pool suspension and the begin-time binding conflict;
+  `ExerisPlatformTransactionManagerTest` covers the `NESTED` and no-transaction `NOT_SUPPORTED`
+  paths.
 
 ## 5. JDBC adapter classes must reside in `*.data.compat.*`
 
@@ -320,7 +357,7 @@ compat-only 500s.
 | Opt-in activation, never default | `ExerisTransactionAutoConfigurationTest`, `ExerisDataAutoConfigurationTest` |
 | Connection lives in Spring's transaction infrastructure | Code review + `ExerisTransactionScaffoldTest` (no `ScopedValue.where(...)` for the connection) |
 | `PERSISTENCE_ENGINE` resolved per call | `ExerisTransactionScaffoldTest`, `ExerisPlatformTransactionManagerTest` |
-| Propagation matrix fixed | `ExerisPlatformTransactionManagerTest` (5 supported + 2 unsupported error paths) |
+| Propagation matrix fixed | `ExerisTransactionPropagationIntegrationTest` (every row, off and on the request path), `ExerisPlatformTransactionManagerTest` |
 | JDBC adapters confined to `*.data.compat.*` | `DataModuleBoundaryTest#jdbcAdapterClasses_mustResideInCompatPackage` |
 | Level 1 is app code | Documented in this file + master Phase 3 doc; no infrastructure classes shipped |
 | One connection per transaction | `ExerisDataSourceTest`, `ExerisConnectionProxyTest` |

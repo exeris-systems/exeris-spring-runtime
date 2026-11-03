@@ -1,8 +1,17 @@
+---
+title: "ADR-017: JDBC Compatibility Scope for ExerisDataSource"
+type: adr
+visibility: public
+owning-repo: exeris-spring-runtime
+status: active
+slug: adr/ADR-017
+---
+
 # ADR-017: JDBC Compatibility Scope for ExerisDataSource
 
 | Attribute    | Value                                                                                                |
 |:-------------|:-----------------------------------------------------------------------------------------------------|
-| **Status**   | Accepted                                                                                             |
+| **Status**   | Accepted. **Amended by [ADR-109](ADR-109-spring-transaction-propagation-and-the-jdbc-bridges-binding-key-under-a-kernel-that-pins-one-connection-per-request.md)** (2026-11-01) — see [Amendments](#amendments) |
 | **Date**     | 2026-04-07                                                                                           |
 | **Authors**  | Arkadiusz Przychocki                                                                                 |
 | **Related**  | ADR-010 (Host Runtime Model), `docs/architecture/module-boundaries.md`, `docs/phases/phase-3-tx-persistence.md` |
@@ -119,10 +128,17 @@ treat Option A as the default and avoid JPA entirely.
   connection is returned. The caller is responsible for closing it (resource-per-call
   semantics, no pooling at the `DataSource` layer).
 
+*(Amended 2026-11-01 by ADR-109: the proxy is bound under a key private to the `ExerisDataSource`
+instance, not under `ExerisDataSource.class` — see [Amendments](#amendments).)*
+
 `ExerisDataSource.getConnection()` delegates to `ExerisPlatformTransactionManager`'s active
 transaction state (described in §5). The connection returned to JPA/Hibernate is a thin proxy
 wrapping the **real `java.sql.Connection`** obtained by casting the `PersistenceConnection` to
 `JdbcPersistenceConnection` and calling `.rawJdbcConnection()`.
+
+*(Amended 2026-11-01 by ADR-109: the real connection is obtained through the SPI
+`PersistenceConnection.unwrap(Connection.class)`, with no cast to `JdbcPersistenceConnection` — see
+[Amendments](#amendments).)*
 
 This means the real JDBC driver (pgjdbc, H2, etc.) handles all `PreparedStatement`, `ResultSet`,
 metadata, and type handling. `ExerisDataSource` does **not** re-implement the JDBC surface.
@@ -212,6 +228,12 @@ DataSource.getConnection()
           → return proxy (caller owns close)
 ```
 
+*(Amended 2026-11-01 by ADR-109, two lines of this path. The resource is looked up under a key
+private to the `ExerisDataSource` instance, not `ExerisDataSource.class`. The raw connection comes
+from the SPI `PersistenceConnection.unwrap(Connection.class)`, which fails fast with
+`UnsupportedOperationException` when empty; there is no cast to `JdbcPersistenceConnection` and no
+`.rawJdbcConnection()` call. See [Amendments](#amendments).)*
+
 ### 4.2 Package Placement
 
 All JDBC adapter implementation classes must reside in:
@@ -275,6 +297,12 @@ Spring's `DataSourceUtils.getConnection()` binding pattern.
     → ExerisConnectionProxy released
 ```
 
+*(Amended 2026-11-01 by ADR-109: every `bindResource` / `getResource` / `unbindResource` above uses a
+key private to the `ExerisDataSource` instance, not `ExerisDataSource.class`. The unbind is done by
+the data source's own synchronization, which also unbinds the proxy on suspend and binds it again on
+resume. The data-source key itself is left to Spring's `DataSourceUtils`. See
+[Amendments](#amendments).)*
+
 There is exactly **one** `PersistenceConnection` per transaction, regardless of how many
 times `DataSource.getConnection()` is called within that transaction scope.
 
@@ -288,6 +316,9 @@ Code calls DataSource.getConnection() without @Transactional
     → caller must close() the proxy when done
     → ExerisConnectionProxy.close() → PersistenceConnection.close()
 ```
+
+*(Amended 2026-11-01 by ADR-109: the lookup uses a key private to the `ExerisDataSource` instance,
+not `ExerisDataSource.class` — see [Amendments](#amendments).)*
 
 This is **not pooled** at the `DataSource` level. Every non-transactional
 `getConnection()` call incurs a real connection open. Applications relying on this
@@ -557,3 +588,29 @@ This prevents silent runtime failures at deep Hibernate call sites.
 | `ExerisConnectionProxy.close()` called in non-transactional scope leaks  | Medium   | Explicit try-with-resources guidance in Javadoc; close delegates to `PersistenceConnection.close()` |
 | Future JPA feature request creep (savepoints, stored procs, scrollable RS) | Medium   | Explicit "out of scope" list in §6.4; scope expansion requires new ADR                          |
 | `ThreadLocal` interaction between `TransactionSynchronizationManager` and VTs | Low    | Documented in Phase 3 plan as VT-safe with explicit cleanup; `ExerisTransactionSynchronizationBridge` scopes binding |
+
+---
+
+## Amendments
+
+Each amendment is marked in place at the text it changes, not rewritten (`adr-conventions.md`
+rule 7). This section indexes them.
+
+- **2026-11-01 — binding key and raw-connection path (ADR-109).**
+  - **Binding key (§3 Option B, §4.1, §5.1, §5.2).** `ExerisDataSource` binds the transaction's
+    `ExerisConnectionProxy` under a key private to the instance. The text names
+    `ExerisDataSource.class`. Through 0.7.0 the implementation bound under the data-source instance,
+    which is the key where Spring's `DataSourceUtils` keeps its `ConnectionHolder`, so `JdbcTemplate`
+    inside an Exeris transaction threw `ClassCastException`. With the private key, `DataSourceUtils`
+    obtains the transaction's proxy through `getConnection()` and takes part in the Exeris
+    transaction. The proxy is unbound on suspend and on completion and bound again on resume. A
+    second `ExerisDataSource` that the application builds itself does not share the transaction's
+    connection. `JdbcTransactionManager` over `ExerisDataSource` no longer throws, but it is not a
+    supported pairing. It is the split transaction ownership §2 item 5 and §4.4 rule out.
+  - **Raw-connection path (§3 Option B, §4.1).** The real `java.sql.Connection` is obtained through the
+    SPI `PersistenceConnection.unwrap(Connection.class)`. An empty result fails fast with
+    `UnsupportedOperationException`. There is no cast to `JdbcPersistenceConnection` and no call to
+    `rawJdbcConnection()`. The SPI path also covers the kernel's per-request forwarding wrapper,
+    which forwards `unwrap` to its delegate.
+  - The §1–§10 decision is otherwise unchanged. ADR-109 also fixes the propagation matrix of
+    `ExerisPlatformTransactionManager` that §5 relies on.

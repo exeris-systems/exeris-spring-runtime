@@ -6,7 +6,7 @@ The authoritative text of local decisions lives in `docs/adr/`. This reference m
 |:--|:--|:--|
 | ADR-010 | Host-Runtime Model | Validating ownership: Spring is application framework, Exeris is runtime owner. Ingress, request lifecycle, and memory belong to Exeris. |
 | ADR-011 | Pure Mode vs Compatibility Mode | Any change to web dispatch, context propagation, or mode toggles (`PURE_MODE` vs `COMPATIBILITY_MODE`). |
-| ADR-017 | JDBC Compact Scope | Persistence bridging: read-only/narrow JDBC compatibility, no HikariCP/JPA ownership. |
+| ADR-017 | JDBC Compact Scope | **Amended by ADR-109.** Persistence bridging: read-only/narrow JDBC compatibility, no HikariCP/JPA ownership. |
 | ADR-021 | Gateway Workloads Out of Compatibility Scope | Verifying that edge gateway concerns stay outside Spring Cloud Gateway emulation. |
 | ADR-027 | EventBus / ApplicationEventPublisher Boundary | Event bridging: Exeris events ↔ Spring events without circular publish loops. |
 | ADR-028 | Spring Boot 4 Nominal Compatibility Scope | Spring Boot 3/4 baseline and dual-matrix compatibility checks. |
@@ -16,6 +16,7 @@ The authoritative text of local decisions lives in `docs/adr/`. This reference m
 | ADR-063 | ExerisHttpSecurity Route Policy Binding | Route policy compilation at startup; kernel decides, runtime compiles. |
 | ADR-067 | Binary Neutrality of the Published Artefact | **Superseded by ADR-107.** Ensuring published JARs have no preview stamps and maintain multi-runtime neutrality. |
 | ADR-107 | One Main Jar Published to Maven Central | Supersedes ADR-067: one SB3-compiled jar per module serves both Spring Boot lines; releases add only sources/javadoc jars and signatures, published to Maven Central. Binary-neutrality job stays mandatory. |
+| ADR-109 | Spring Transaction Propagation and the JDBC Bridge's Binding Key | Amends ADR-017. Any change to `ExerisPlatformTransactionManager` propagation, suspension, or completion-callback behaviour, or to how `ExerisDataSource` binds the transaction's connection. `REQUIRED`/`SUPPORTS`/`MANDATORY` join; `NEVER` throws; `REQUIRES_NEW`/`NOT_SUPPORTED` suspend off the request route and are refused on it; `NESTED` refused. A matrix change needs an ADR. |
 | ADR-068 | Two-Track JDK Artefact Model | GA track (Java 25 LTS, major 69) vs preview track. No preview flags on GA line. |
 
 ## Precedence When Documents Disagree
