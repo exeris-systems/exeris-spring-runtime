@@ -6,13 +6,14 @@ package eu.exeris.spring.runtime.web.autoconfigure;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
+import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -20,6 +21,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.context.annotation.Bean;
 
 import eu.exeris.kernel.spi.telemetry.TelemetryConfig;
@@ -76,27 +78,75 @@ public class ExerisWebAutoConfiguration {
         return new ExerisErrorMapper(statusResolvers.orderedStream().toList());
     }
 
+    // The registry is created empty and filled after every singleton exists. Collecting the
+    // handlers here, while the context is still instantiating, would miss any handler that is
+    // itself mid-creation: a handler depending on a bean that depends on ExerisRuntimeLifecycle sits
+    // inside the lifecycle → dispatcher → registry chain, and getBeansOfType skips beans currently
+    // in creation without an error, leaving the route to answer 404.
     /**
-     * Creates the route registry populated from {@link ExerisRoute} annotated handler beans.
+     * Creates the route registry, populated from {@link ExerisRoute} annotated handler beans by
+     * {@link #exerisRouteRegistryPopulator} once all singletons are instantiated.
      *
-     * @param ctx Spring application context
-     * @return configured route registry
+     * @param ctx the application context; the populator reads it, so this method does not
+     * @return a deferred route registry
      */
     @Bean
     @ConditionalOnMissingBean
     public ExerisRouteRegistry exerisRouteRegistry(ApplicationContext ctx) {
-        Map<String, ExerisRequestHandler> handlers = ctx.getBeansOfType(ExerisRequestHandler.class);
+        return ExerisRouteRegistry.deferred();
+    }
+
+    /**
+     * Populates a deferred {@link ExerisRouteRegistry} from every {@link ExerisRoute} annotated
+     * {@link ExerisRequestHandler} bean. Runs after singleton instantiation and before any
+     * {@code SmartLifecycle} starts, so the table is complete before the kernel accepts a request. A
+     * handler bean that cannot be resolved fails startup and is named; a registry the application
+     * supplied already populated is left as it is.
+     *
+     * @param routeRegistry the registry to populate
+     * @param ctx Spring application context
+     * @return the populating callback
+     */
+    @Bean
+    public SmartInitializingSingleton exerisRouteRegistryPopulator(ExerisRouteRegistry routeRegistry,
+                                                                   ApplicationContext ctx) {
+        return () -> {
+            if (!routeRegistry.isPopulated()) {
+                routeRegistry.populate(collectRoutes(ctx));
+            }
+        };
+    }
+
+    /**
+     * Fails context start when the route registry is still unpopulated, before the kernel binds
+     * ingress.
+     *
+     * @param routeRegistry the registry the dispatcher routes through
+     * @return the start-time guard
+     */
+    @Bean
+    @SuppressWarnings("unused")
+    SmartLifecycle exerisRouteRegistryPopulatedGuard(ExerisRouteRegistry routeRegistry) {
+        return new RouteRegistryPopulatedGuard(routeRegistry);
+    }
+
+    private static ExerisRouteRegistry.Builder collectRoutes(ApplicationContext ctx) {
         ExerisRouteRegistry.Builder builder = ExerisRouteRegistry.builder();
-        for (Map.Entry<String, ExerisRequestHandler> entry : handlers.entrySet()) {
-            String beanName = Objects.requireNonNull(entry.getKey());
-            ExerisRequestHandler handler = entry.getValue();
+        for (String beanName : ctx.getBeanNamesForType(ExerisRequestHandler.class)) {
             ExerisRoute route = ctx.findAnnotationOnBean(beanName, ExerisRoute.class);
             if (route == null) {
                 continue;
             }
+            ExerisRequestHandler handler;
+            try {
+                handler = ctx.getBean(beanName, ExerisRequestHandler.class);
+            } catch (BeansException ex) {
+                throw new IllegalStateException("@ExerisRoute handler bean '" + beanName + "' for "
+                        + route.method() + " " + route.path() + " could not be resolved", ex);
+            }
             builder.register(route.method(), route.path(), handler);
         }
-        return builder.build();
+        return builder;
     }
 
     @Bean(name = FALLBACK_TELEMETRY_SINKS_BEAN_NAME, destroyMethod = "close")

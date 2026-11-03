@@ -8,13 +8,20 @@ import eu.exeris.kernel.spi.http.HttpMethod;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
- * Immutable route table mapping (method, path) pairs to Pure Mode handler beans.
+ * Route table mapping (method, path) pairs to Pure Mode handler beans, written once and immutable
+ * from then on.
  *
- * <p>Built once at application startup by scanning all Spring beans annotated with
- * {@link ExerisRoute}. Route resolution is {@code O(1)} via a pre-computed immutable
- * map — no per-request allocation on the lookup path.
+ * <p>Either built complete through {@link #builder()}, or created {@linkplain #deferred() deferred}
+ * and {@linkplain #populate(Builder) populated} exactly once later. A deferred registry refuses
+ * {@link #resolve} until it is populated, so an empty table is never mistaken for a missing route.
+ * The runtime uses the deferred form: the dispatcher holds the registry before the handler beans
+ * exist, so a handler may depend on beans that themselves depend on the dispatcher, and the table is
+ * filled from every {@link ExerisRoute} bean once the container has instantiated them all — before
+ * the kernel accepts a request. Once written, route resolution is {@code O(1)} via an immutable map —
+ * no per-request allocation on the lookup path.
  *
  * <p><b>Routing Semantics:</b> Supports exact-match routes with query string normalisation.</p>
  *
@@ -22,12 +29,64 @@ import java.util.Map;
  */
 public final class ExerisRouteRegistry {
 
-    private final Map<HttpMethod, Map<String, ExerisRequestHandler>> routes;
+    private static final String NOT_POPULATED =
+            "The route registry was consulted before it was populated; a deferred registry must be "
+                    + "populated before the first request is dispatched";
+
+    // Null only while a deferred registry awaits population; written once with an immutable map,
+    // and never replaced.
+    private volatile Map<HttpMethod, Map<String, ExerisRequestHandler>> routes;
 
     private ExerisRouteRegistry(Map<HttpMethod, Map<String, ExerisRequestHandler>> routes) {
+        this.routes = immutableCopy(routes);
+    }
+
+    private ExerisRouteRegistry() {
+        this.routes = null;
+    }
+
+    private static Map<HttpMethod, Map<String, ExerisRequestHandler>> immutableCopy(
+            Map<HttpMethod, Map<String, ExerisRequestHandler>> routes) {
         Map<HttpMethod, Map<String, ExerisRequestHandler>> immutable = new HashMap<>();
         routes.forEach((method, pathMap) -> immutable.put(method, Map.copyOf(pathMap)));
-        this.routes = Map.copyOf(immutable);
+        return Map.copyOf(immutable);
+    }
+
+    /**
+     * Creates an empty registry whose routes are supplied later, once, by {@link #populate(Builder)}.
+     * Until then {@link #resolve} refuses rather than answer as if no route existed.
+     *
+     * @return a registry awaiting population
+     * @since 0.8
+     */
+    public static ExerisRouteRegistry deferred() {
+        return new ExerisRouteRegistry();
+    }
+
+    /**
+     * Fills a {@linkplain #deferred() deferred} registry with the routes registered on {@code builder}.
+     *
+     * @param builder the complete set of routes
+     * @throws IllegalStateException if this registry already holds its routes
+     * @since 0.8
+     */
+    public synchronized void populate(Builder builder) {
+        Objects.requireNonNull(builder, "builder must not be null");
+        if (routes != null) {
+            throw new IllegalStateException("The route registry is already populated");
+        }
+        routes = immutableCopy(builder.routes);
+    }
+
+    /**
+     * Reports whether this registry holds its routes: always for a built registry, and for a
+     * {@linkplain #deferred() deferred} one once {@link #populate(Builder)} has run.
+     *
+     * @return {@code true} when routes can be resolved
+     * @since 0.8
+     */
+    public boolean isPopulated() {
+        return routes != null;
     }
 
     /**
@@ -49,9 +108,15 @@ public final class ExerisRouteRegistry {
      * @param requestTarget the raw request target (e.g., {@code "/status"} or
      *                      {@code "/api/v1/user?id=1"}); the query string is stripped
      * @return the registered handler, or {@code null} if no route matches
+     * @throws IllegalStateException if this is a {@linkplain #deferred() deferred} registry that has
+     *         not been populated yet
      */
     public ExerisRequestHandler resolve(HttpMethod method, String requestTarget) {
-        Map<String, ExerisRequestHandler> handlersByPath = routes.get(method);
+        Map<HttpMethod, Map<String, ExerisRequestHandler>> table = routes;
+        if (table == null) {
+            throw new IllegalStateException(NOT_POPULATED);
+        }
+        Map<String, ExerisRequestHandler> handlersByPath = table.get(method);
         if (handlersByPath == null) {
             return null;
         }

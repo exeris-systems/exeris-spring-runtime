@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.beans.factory.InitializingBean;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 import org.springframework.core.ExceptionDepthComparator;
@@ -39,7 +40,8 @@ import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
  * No servlet types, no spring-webmvc.
  */
 @CompatibilityMode
-public final class ExerisExceptionHandlerResolver implements ApplicationContextAware, InitializingBean {
+public final class ExerisExceptionHandlerResolver
+        implements ApplicationContextAware, InitializingBean, SmartInitializingSingleton {
 
     private record ExceptionHandlerMethod(Object bean,
                                           Class<?> beanType,
@@ -50,12 +52,18 @@ public final class ExerisExceptionHandlerResolver implements ApplicationContextA
 
     private final HandlerMethodArgumentResolverComposite argumentResolvers;
     private final List<HttpMessageConverter<?>> converters;
-    private List<ExceptionHandlerMethod> adviceHandlers = List.of();
+    // Null until afterSingletonsInstantiated() collects the advice; written once.
+    private volatile List<ExceptionHandlerMethod> adviceHandlers;
+    // Set by afterPropertiesSet(). Lets code that never calls afterSingletonsInstantiated() collect on first use.
+    private volatile boolean collectOnFirstUse;
     private ApplicationContext applicationContext;
 
     /**
      * Creates a resolver. {@code @ControllerAdvice} handlers are discovered in
-     * {@link #afterPropertiesSet()}, not here.
+     * {@link #afterSingletonsInstantiated()}, not here: this resolver
+     * sits in the {@code ExerisRuntimeLifecycle} → dispatcher → bridge chain, so collecting the advice
+     * beans while it is being created would turn an advice that depends on a bean depending on the
+     * lifecycle into an unresolvable creation cycle.
      *
      * @param argumentResolvers resolves the arguments of the exception handler methods
      * @param converters message converters for writing a handler's return value; copied
@@ -71,8 +79,20 @@ public final class ExerisExceptionHandlerResolver implements ApplicationContextA
         this.applicationContext = applicationContext;
     }
 
+    /**
+     * Does not collect. A container calls this while the resolver is still being created, inside the
+     * {@code ExerisRuntimeLifecycle} → dispatcher chain, where collecting would make any advice bean that
+     * depends on that chain an unresolvable creation cycle. A container collects in
+     * {@link #afterSingletonsInstantiated()} instead. Code that drives the resolver outside a container
+     * and never calls that method gets the advice beans collected on first use.
+     */
     @Override
     public void afterPropertiesSet() {
+        collectOnFirstUse = true;
+    }
+
+    @Override
+    public void afterSingletonsInstantiated() {
         if (applicationContext == null) {
             this.adviceHandlers = List.of();
             return;
@@ -93,6 +113,19 @@ public final class ExerisExceptionHandlerResolver implements ApplicationContextA
                 .thenComparing(handler -> handler.beanType().getName())
                 .thenComparing(handler -> handler.method().toGenericString()));
         this.adviceHandlers = List.copyOf(discovered);
+    }
+
+    private List<ExceptionHandlerMethod> adviceHandlers() {
+        List<ExceptionHandlerMethod> handlers = adviceHandlers;
+        if (handlers == null && collectOnFirstUse) {
+            synchronized (this) {
+                if (adviceHandlers == null) {
+                    afterSingletonsInstantiated();
+                }
+            }
+            handlers = adviceHandlers;
+        }
+        return handlers != null ? handlers : List.of();
     }
 
     /**
@@ -129,7 +162,7 @@ public final class ExerisExceptionHandlerResolver implements ApplicationContextA
             return;
         }
 
-        ExceptionHandlerMethod adviceHandler = findBestMatch(ex, adviceHandlers, true);
+        ExceptionHandlerMethod adviceHandler = findBestMatch(ex, adviceHandlers(), true);
         if (adviceHandler != null) {
             invoke(adviceHandler.bean(), adviceHandler.method(), ex, webRequest, springResponse);
             return;

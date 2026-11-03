@@ -41,6 +41,33 @@ class ExerisHandlerMethodRegistryTest {
         }
     }
 
+    /**
+     * Code that drives the registry outside a container through {@code afterPropertiesSet()} alone gets
+     * the controllers collected on first use.
+     */
+    @Test
+    void afterPropertiesSetAlone_collectsOnFirstUse_outsideTheContainer() {
+        try (var controllers = new AnnotationConfigApplicationContext(ControllersOnlyConfig.class)) {
+            ExerisHandlerMethodRegistry registry = new ExerisHandlerMethodRegistry();
+            registry.setApplicationContext(controllers);
+
+            registry.afterPropertiesSet();
+
+            var resolved = registry.resolve(HttpMethod.GET, "/compat-routes/fixed");
+            assertThat(resolved).isPresent();
+            assertThat(resolved.orElseThrow().handlerMethod().getMethod().getName()).isEqualTo("fixedRoute");
+        }
+    }
+
+    @Configuration
+    static class ControllersOnlyConfig {
+
+        @Bean
+        SpecificRouteController specificRouteController() {
+            return new SpecificRouteController();
+        }
+    }
+
     @Configuration
     static class RouteConfig {
 

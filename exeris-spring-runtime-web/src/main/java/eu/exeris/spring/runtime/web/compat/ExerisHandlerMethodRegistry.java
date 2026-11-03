@@ -13,6 +13,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.springframework.beans.factory.InitializingBean;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 import org.springframework.core.MethodIntrospector;
@@ -38,12 +39,19 @@ import eu.exeris.spring.boot.autoconfigure.compat.CompatibilityMode;
  * <p>{@link #PATH_VARIABLES_ATTRIBUTE} is stored on the {@link ExerisNativeWebRequest}
  * so that {@link eu.exeris.spring.runtime.web.compat.resolver.ExerisPathVariableArgumentResolver}
  * can retrieve extracted URI variables.
+ *
+ * <p>Controllers are collected once every singleton is instantiated, not while this registry is
+ * being created: the registry sits in the {@code ExerisRuntimeLifecycle} → dispatcher → bridge chain,
+ * so collecting eagerly would turn any controller that depends on a bean depending on the lifecycle
+ * into an unresolvable creation cycle. Collection completes before any {@code SmartLifecycle} starts,
+ * so before the kernel accepts a request.
  */
 @CompatibilityMode
-public final class ExerisHandlerMethodRegistry implements ApplicationContextAware, InitializingBean {
+public final class ExerisHandlerMethodRegistry
+        implements ApplicationContextAware, InitializingBean, SmartInitializingSingleton {
 
     /**
-     * Creates an empty registry. Controller routes are discovered in {@link #afterPropertiesSet()}.
+     * Creates an empty registry. Controller routes are discovered in {@link #afterSingletonsInstantiated()}.
      */
     public ExerisHandlerMethodRegistry() {
         // No construction logic beyond the superclass constructor.
@@ -58,7 +66,10 @@ public final class ExerisHandlerMethodRegistry implements ApplicationContextAwar
     public static final String PATH_VARIABLES_ATTRIBUTE = "eu.exeris.compat.pathVariables";
 
     private ApplicationContext applicationContext;
-    private final List<RouteEntry> routes = new ArrayList<>();
+    // Null until afterSingletonsInstantiated() collects the controllers; written once.
+    private volatile List<RouteEntry> routes;
+    // Set by afterPropertiesSet(). Lets code that never calls afterSingletonsInstantiated() collect on first use.
+    private volatile boolean collectOnFirstUse;
 
     private record RouteEntry(PathPattern pattern, Set<HttpMethod> methods, HandlerMethod handlerMethod) {}
 
@@ -75,9 +86,22 @@ public final class ExerisHandlerMethodRegistry implements ApplicationContextAwar
         this.applicationContext = applicationContext;
     }
 
+    /**
+     * Does not collect. A container calls this while the registry is still being created, inside the
+     * {@code ExerisRuntimeLifecycle} → dispatcher chain, where collecting would make any controller that
+     * depends on that chain an unresolvable creation cycle. A container collects in
+     * {@link #afterSingletonsInstantiated()} instead. Code that drives the registry outside a container
+     * and never calls that method gets the controllers collected on first use.
+     */
     @Override
     public void afterPropertiesSet() {
+        collectOnFirstUse = true;
+    }
+
+    @Override
+    public void afterSingletonsInstantiated() {
         PathPatternParser parser = PathPatternParser.defaultInstance;
+        List<RouteEntry> collected = new ArrayList<>();
         for (String name : applicationContext.getBeanDefinitionNames()) {
             Class<?> rawType = applicationContext.getType(name, false);
             if (rawType == null) {
@@ -126,15 +150,16 @@ public final class ExerisHandlerMethodRegistry implements ApplicationContextAwar
                 for (String classPrefix : classPrefixes) {
                     for (String methodPath : patterns) {
                         String combined = combinePatterns(classPrefix, methodPath);
-                        routes.add(new RouteEntry(parser.parse(combined), httpMethods, handlerMethod));
+                        collected.add(new RouteEntry(parser.parse(combined), httpMethods, handlerMethod));
                     }
                     if (patterns.length == 0) {
                         String combined = combinePatterns(classPrefix, "");
-                        routes.add(new RouteEntry(parser.parse(combined), httpMethods, handlerMethod));
+                        collected.add(new RouteEntry(parser.parse(combined), httpMethods, handlerMethod));
                     }
                 }
             }
         }
+        this.routes = List.copyOf(collected);
     }
 
     private static String combinePatterns(String classPrefix, String methodPath) {
@@ -166,8 +191,21 @@ public final class ExerisHandlerMethodRegistry implements ApplicationContextAwar
 
         record MatchCandidate(RouteEntry entry, PathPattern.PathMatchInfo info, int methodRank) {}
 
+        List<RouteEntry> table = routes;
+        if (table == null && collectOnFirstUse) {
+            synchronized (this) {
+                if (routes == null) {
+                    afterSingletonsInstantiated();
+                }
+            }
+            table = routes;
+        }
+        if (table == null) {
+            throw new IllegalStateException("The handler method registry was consulted before the "
+                    + "application context finished instantiating its singletons");
+        }
         List<MatchCandidate> matches = new ArrayList<>();
-        for (RouteEntry entry : routes) {
+        for (RouteEntry entry : table) {
             int methodRank = methodMatchRank(method, entry.methods());
             if (methodRank < 0) {
                 continue;

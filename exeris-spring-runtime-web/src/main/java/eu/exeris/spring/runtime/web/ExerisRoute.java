@@ -15,8 +15,8 @@ import java.lang.annotation.Target;
  * Registers a Spring bean as a Pure Mode Exeris HTTP handler.
  *
  * <p>Beans annotated (directly or on their class) with {@code @ExerisRoute} are
- * discovered by {@code ExerisRouteRegistry} at startup and registered as
- * route entries in the Exeris dispatcher.
+ * registered in the {@code ExerisRouteRegistry} at startup, once every singleton is
+ * instantiated and before the kernel accepts a request, whatever the handler depends on.
  *
  * <p>This annotation is the Pure Mode counterpart to {@code @RequestMapping}.
  * It has no relationship to servlet dispatch, Spring MVC's {@code DispatcherServlet},
